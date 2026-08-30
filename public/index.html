@@ -101,6 +101,13 @@
               </div>
               <small class="specialization-reference">AI 工程方向会混入约 1/3 的模型服务题，精选改写自 <a href="https://wanshuiyin.github.io/ARIS-in-AI-Offer/" target="_blank" rel="noopener noreferrer">ARIS-in-AI-Offer</a>（MIT）。</small>
             </div>
+            <div class="setting-row language-row">
+              <div class="setting-copy"><strong>面试语言</strong><small>中英双语会保留常用英文术语，并可能追问英文表达</small></div>
+              <div class="segmented language-segmented" role="radiogroup" aria-label="面试语言">
+                <label><input type="radio" name="language_mode" value="zh"><span>全程中文</span></label>
+                <label><input type="radio" name="language_mode" value="bilingual" checked><span>中英双语</span></label>
+              </div>
+            </div>
             <div class="setting-row setting-row-stacked">
               <div class="setting-copy"><strong>压力程度</strong><small id="stressHint">标准施压：质疑、打断、沉默与连续追问</small></div>
               <div class="segmented level-segmented" role="radiogroup" aria-label="压力面程度">
@@ -125,11 +132,18 @@
                 <div class="number-input-wrap is-hidden" id="durationCustomWrap"><input class="compact-input" id="durationCustom" type="number" min="1" max="180" step="1" inputmode="numeric" value="20" aria-describedby="durationHint"><span>分钟</span></div>
               </div>
             </div>
+            <div class="setting-row memory-row">
+              <div class="setting-copy"><strong>记住本场表现</strong><small id="memoryHint">开启后，下一场会自动加练本场弱项</small></div>
+              <label class="switch" title="控制本场是否参与后续弱项加权">
+                <input id="memoryEnabled" type="checkbox" checked aria-label="记住本场表现" aria-describedby="memoryHint">
+                <span aria-hidden="true"></span>
+              </label>
+            </div>
             <div class="inline-alert is-hidden" id="settingsAlert" role="alert"></div>
           </fieldset>
 
           <button class="primary-button start-button" id="startButton" type="submit"><span class="button-label">开始模拟面试</span><span class="button-arrow" aria-hidden="true">→</span></button>
-          <p class="submit-note">点击开始即表示你知悉：面试内容仅用于本次练习与本地历史复盘。</p>
+          <p class="submit-note">无论是否开启记忆，本场都会生成可查看的报告；记忆开关只影响后续弱项加权。</p>
         </form>
       </section>
     </main>

@@ -14,6 +14,7 @@ const specializationCustom = $('#specializationCustom');
 const durationPreset = $('#durationPreset');
 const durationCustom = $('#durationCustom');
 const durationCustomWrap = $('#durationCustomWrap');
+const memoryEnabled = $('#memoryEnabled');
 const resumeAlert = $('#resumeAlert');
 const settingsAlert = $('#settingsAlert');
 const modePill = $('#modePill');
@@ -114,6 +115,16 @@ function setStressLevel(level) {
   if (target) target.checked = true;
 }
 
+function getLanguageMode() {
+  return $('input[name="language_mode"]:checked')?.value === 'zh' ? 'zh' : 'bilingual';
+}
+
+function setLanguageMode(mode) {
+  const normalized = mode === 'zh' ? 'zh' : 'bilingual';
+  const target = $(`input[name="language_mode"][value="${normalized}"]`);
+  if (target) target.checked = true;
+}
+
 function syncSpecializationControl({ focus = false } = {}) {
   const custom = specializationPreset.value === 'custom';
   specializationCustom.classList.toggle('is-hidden', !custom);
@@ -184,11 +195,21 @@ function restoreSetup() {
   if (company) company.checked = true;
   if (Object.hasOwn(saved, 'duration_minutes')) setDuration(saved.duration_minutes);
   if (saved.specialization) setSpecialization(saved.specialization);
+  if (saved.language_mode) setLanguageMode(saved.language_mode);
   if (saved.stress_level !== undefined || typeof saved.stress === 'boolean') {
     setStressLevel(saved.stress_level ?? (saved.stress ? 2 : 0));
     stressTouched = true;
   }
+  if (typeof saved.memory_enabled === 'boolean') memoryEnabled.checked = saved.memory_enabled;
+  syncMemoryControl();
   updateCompanySelection({ applyDefault: false });
+}
+
+function syncMemoryControl() {
+  $('#memoryHint').textContent = memoryEnabled.checked
+    ? '开启后，下一场会自动加练本场弱项'
+    : '本场仍生成报告，但不会参与后续弱项加权';
+  if (!memoryEnabled.checked) $('#weaknessCard').classList.add('is-hidden');
 }
 
 function extractWeakTopics(payload) {
@@ -233,11 +254,12 @@ async function loadConfig() {
 }
 
 async function loadWeakness() {
+  if (!memoryEnabled.checked) return;
   try {
     const clientId = getClientId();
     const history = await apiFetch(`/api/history?client_id=${encodeURIComponent(clientId)}`, { timeout: 8_000 });
     const topics = extractWeakTopics(history);
-    if (!topics.length) return;
+    if (!topics.length || !memoryEnabled.checked) return;
     $('#weaknessText').textContent = topics.join(' · ');
     $('#weaknessCard').classList.remove('is-hidden');
   } catch {
@@ -280,6 +302,8 @@ async function startInterview(event) {
   const company = $('input[name="company"]:checked')?.value || 'bytedance';
   const stressLevel = getStressLevel();
   const stress = stressLevel > 0;
+  const memory = memoryEnabled.checked;
+  const languageMode = getLanguageMode();
   const clientId = getClientId();
 
   try {
@@ -297,9 +321,11 @@ async function startInterview(event) {
         company,
         role: 'backend',
         specialization,
+        language_mode: languageMode,
         stress_level: stressLevel,
         stress,
         duration_minutes: durationMinutes,
+        memory_enabled: memory,
       },
     });
     const id = session?.id || session?.session_id;
@@ -311,14 +337,24 @@ async function startInterview(event) {
       company,
       role: 'backend',
       specialization,
+      language_mode: languageMode,
       stress_level: stressLevel,
       stress,
       duration_minutes: durationMinutes,
+      memory_enabled: memory,
       voice_mode: normalizeMode(session?.voice_mode || serverMode),
       created_at: session?.created_at || new Date().toISOString(),
     };
     setCurrentSession(current);
-    saveSetup({ company, specialization, stress_level: stressLevel, stress, duration_minutes: durationMinutes });
+    saveSetup({
+      company,
+      specialization,
+      language_mode: languageMode,
+      stress_level: stressLevel,
+      stress,
+      duration_minutes: durationMinutes,
+      memory_enabled: memory,
+    });
     window.location.assign(`/interview?session=${encodeURIComponent(id)}`);
   } catch (error) {
     setButtonBusy(startButton, false);
@@ -366,13 +402,19 @@ $$('input[name="stress_level"]').forEach((input) => input.addEventListener('chan
   updateCompanySelection({ applyDefault: false });
   hideSettingsAlert();
 }));
+$$('input[name="language_mode"]').forEach((input) => input.addEventListener('change', hideSettingsAlert));
 specializationPreset.addEventListener('change', () => syncSpecializationControl({ focus: true }));
 specializationCustom.addEventListener('input', hideSettingsAlert);
 durationPreset.addEventListener('change', () => syncDurationControl({ focus: true }));
 durationCustom.addEventListener('input', hideSettingsAlert);
+memoryEnabled.addEventListener('change', () => {
+  syncMemoryControl();
+  if (memoryEnabled.checked) loadWeakness();
+});
 form.addEventListener('submit', startInterview);
 
 restoreSetup();
+syncMemoryControl();
 syncSpecializationControl();
 syncDurationControl();
 updateCompanySelection({ applyDefault: !stressTouched });

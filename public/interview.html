@@ -23,12 +23,13 @@
         <div class="stage-status"><span class="status-dot"></span><h1 id="stageTitle">等待开始</h1><p id="stageHint">准备好后，面试官会先请你做自我介绍。</p></div>
         <canvas class="waveform" id="waveform" aria-label="实时语音波形"></canvas>
         <div class="ready-panel" id="readyPanel"><p id="readyDescription">点击后将建立面试连接。</p><button class="light-button" id="joinButton" type="button"><span>进入面试</span><span aria-hidden="true">→</span></button><small id="permissionNote">语音模式会请求麦克风权限，建议佩戴耳机。</small></div>
-        <div class="stage-footer"><button class="danger-link" id="endButton" type="button" disabled>提前结束面试</button><span>面试过程中不提供点评</span></div>
+        <div class="stage-footer"><div class="stage-actions"><button class="hint-button" id="hintButton" type="button" disabled><span class="button-label">给我一点提示</span></button><button class="danger-link" id="endButton" type="button" disabled>提前结束面试</button></div><span>提示只拆解思路，不直接给答案</span></div>
       </section>
 
       <section class="transcript-panel" aria-labelledby="transcriptTitle">
         <header class="panel-header"><div><span class="panel-eyebrow">LIVE TRANSCRIPT</span><h2 id="transcriptTitle">实时字幕</h2></div><button class="small-text-button" id="scrollLatest" type="button">回到最新 ↓</button></header>
         <div class="transcript-list" id="transcriptList" aria-live="polite" aria-relevant="additions text"><div class="transcript-placeholder" id="transcriptPlaceholder"><span aria-hidden="true">“</span><p>面试开始后，双方的实时转写会出现在这里。</p></div></div>
+        <aside class="hint-panel is-hidden" id="hintPanel" aria-live="polite"><div><span>思路提示</span><small id="hintMeta">本题提示会记录在报告中</small></div><p id="hintText"></p><button id="closeHint" type="button" aria-label="收起提示">×</button></aside>
         <form class="message-composer" id="messageForm"><label class="sr-only" for="messageInput">输入回答</label><textarea id="messageInput" rows="1" maxlength="4000" placeholder="也可以在这里打字回答…" disabled></textarea><button id="sendButton" type="submit" aria-label="发送回答" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-4 14-3-6-7-1Zm7 1 7-8"/></svg></button><small><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行</small></form>
       </section>
     </main>

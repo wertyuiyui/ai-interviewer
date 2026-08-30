@@ -62,6 +62,13 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
         assert config_payload["references"][0]["name"] == "ARIS-in-AI-Offer"
         assert config.headers["cache-control"] == "no-store"
 
+        catalog = await client.get("/api/resources/catalog")
+        assert catalog.status_code == 200
+        assert catalog.headers["cache-control"] == "no-store"
+        catalog_payload = catalog.json()
+        assert len(catalog_payload["sources"]) >= 15
+        assert "不绕过登录" in catalog_payload["collection_policy"]["social_media"]
+
         home_source = (
             Path(main_module.__file__).resolve().parents[1] / "public" / "index.html"
         ).read_text(encoding="utf-8")

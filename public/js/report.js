@@ -1,7 +1,8 @@
 import {
   $, $$, apiFetch, cacheReport, clamp, clearCachedReports, companyLabel,
   firstValue, formatDate, getCachedReports, getClientId, getCurrentSession,
-  normalizeHistoryPayload, removeCachedReport, score10, showToast, toArray,
+  normalizeHistoryPayload, removeCachedReport, score10, setButtonBusy,
+  setCurrentSession, showToast, toArray,
 } from './common.js';
 
 const query = new URLSearchParams(location.search);
@@ -110,6 +111,14 @@ function normalizeTopicScores(value) {
   return Object.fromEntries(Object.entries(value).map(([topic, score]) => [topic, score10(score)]));
 }
 
+function normalizeHintEvents(value) {
+  return toArray(value).map((event, index) => ({
+    ordinal: Math.max(1, Number(firstValue(event, ['ordinal', 'question_ordinal'], index + 1)) || index + 1),
+    question: String(firstValue(event, ['question', 'prompt'], `第 ${index + 1} 题`) || `第 ${index + 1} 题`),
+    hint: String(firstValue(event, ['hint', 'text'], '') || ''),
+  }));
+}
+
 function normalizeReport(raw, metadata = {}) {
   const report = unwrapReport(raw) || {};
   const rubricRoot = firstValue(report, ['rubric', 'dimension_scores', 'dimensions', '评分细则'], {});
@@ -138,6 +147,8 @@ function normalizeReport(raw, metadata = {}) {
       : (Object.hasOwn(metadata, 'duration_minutes') ? metadata.duration_minutes : 0));
   const stressLevelRaw = firstValue(report, ['stress_level'], firstValue(metadata, ['stress_level'], null));
   const legacyStress = Boolean(firstValue(report, ['stress'], firstValue(metadata, ['stress'], false)));
+  const hintEvents = normalizeHintEvents(firstValue(report, ['hint_events'], firstValue(metadata, ['hint_events'], [])));
+  const memoryEnabled = Boolean(firstValue(report, ['memory_enabled'], firstValue(metadata, ['memory_enabled'], true)));
   const stressLevel = stressLevelRaw === null
     ? (legacyStress ? 2 : 0)
     : clamp(Math.round(Number(stressLevelRaw) || 0), 0, 3);
@@ -147,6 +158,7 @@ function normalizeReport(raw, metadata = {}) {
     company: firstValue(report, ['company'], firstValue(metadata, ['company'], '')),
     role: firstValue(report, ['role'], firstValue(metadata, ['role'], 'backend')),
     specialization: String(firstValue(report, ['specialization'], firstValue(metadata, ['specialization'], '通用后端')) || '通用后端'),
+    languageMode: firstValue(report, ['language_mode'], firstValue(metadata, ['language_mode'], 'bilingual')) === 'zh' ? 'zh' : 'bilingual',
     stress: stressLevel > 0,
     stressLevel,
     unlimited: durationRaw === null,
@@ -159,6 +171,8 @@ function normalizeReport(raw, metadata = {}) {
     questions: toArray(questionsRaw).map(normalizeQuestion),
     practice: toArray(practiceRaw).map(normalizePractice),
     topicScores: normalizeTopicScores(firstValue(report, ['topic_scores', 'knowledge_scores', '知识点得分'], {})),
+    hintEvents,
+    memoryEnabled,
   };
 }
 
@@ -273,18 +287,38 @@ function renderPractice(report) {
   });
 }
 
+function renderHintUsage(report) {
+  const events = report.hintEvents || [];
+  $('#hintUsageCount').textContent = `${events.length} 次`;
+  $('#hintUsageEmpty').classList.toggle('is-hidden', events.length > 0);
+  const list = $('#hintUsageList');
+  list.replaceChildren();
+  events.forEach((event) => {
+    const item = createElement('article', 'hint-usage-item');
+    item.append(
+      createElement('span', '', `第 ${event.ordinal} 题`),
+      createElement('strong', '', event.question),
+      createElement('p', '', event.hint || '本题使用了一次思路拆解提示。'),
+    );
+    list.append(item);
+  });
+}
+
 function renderCurrent(report) {
   currentReport = report;
   $('#reportTitle').textContent = `${companyLabel(report.company)} · ${report.specialization}一面报告`;
   const pressureLabels = ['无压力', '温和压力', '标准压力', '高压'];
   const durationLabel = report.unlimited ? '不限时 · 手动结束' : (report.duration ? `${report.duration} 分钟` : '');
-  const tags = [formatDate(report.endedAt), durationLabel, pressureLabels[report.stressLevel]].filter(Boolean);
+  const memoryLabel = report.memoryEnabled ? '参与弱项记忆' : '未参与弱项记忆';
+  const languageLabel = report.languageMode === 'zh' ? '全程中文' : '中英双语';
+  const tags = [formatDate(report.endedAt), durationLabel, pressureLabels[report.stressLevel], languageLabel, memoryLabel].filter(Boolean);
   $('#reportMeta').textContent = tags.join(' · ');
   $('#reportSummary').textContent = report.summary;
   $('#overallScore').textContent = report.overall.toFixed(1);
   renderRubric(report);
   renderQuestions(report);
   renderPractice(report);
+  renderHintUsage(report);
 }
 
 function showView(view) {
@@ -474,11 +508,14 @@ function mergeHistory(remoteRows) {
       company: currentReport.company,
       role: currentReport.role,
       specialization: currentReport.specialization,
+      language_mode: currentReport.languageMode,
       stress: currentReport.stress,
       stress_level: currentReport.stressLevel,
       duration_minutes: currentReport.unlimited ? null : currentReport.duration,
       ended_at: currentReport.endedAt,
       end_reason: currentReport.endReason,
+      memory_enabled: currentReport.memoryEnabled,
+      hint_events: currentReport.hintEvents,
     });
   }
   const byId = new Map();
@@ -530,10 +567,13 @@ async function loadCurrentReport() {
           ...enriched,
           company: currentReport.company,
           specialization: currentReport.specialization,
+          language_mode: currentReport.languageMode,
           stress: currentReport.stress,
           stress_level: currentReport.stressLevel,
           duration_minutes: currentReport.unlimited ? null : currentReport.duration,
           ended_at: currentReport.endedAt,
+          memory_enabled: currentReport.memoryEnabled,
+          hint_events: currentReport.hintEvents,
         }, sessionId);
         renderCurrent(currentReport);
         await loadHistory();
@@ -594,6 +634,36 @@ async function clearHistory() {
   $('#clearHistory').disabled = false;
 }
 
+async function retryWeaknesses() {
+  if (!currentReport?.id) return;
+  const button = $('#retryWeakButton');
+  try {
+    setButtonBusy(button, true, '正在创建弱项复练…');
+    const session = await apiFetch(`/api/interviews/${encodeURIComponent(currentReport.id)}/retry`, {
+      method: 'POST',
+      timeout: 65_000,
+      json: { client_id: getClientId() },
+    });
+    const id = String(session?.id || session?.session_id || '');
+    if (!id) throw new Error('服务端没有返回新面试编号。');
+    setCurrentSession({
+      ...session,
+      id,
+      client_id: getClientId(),
+      company: session?.company || currentReport.company,
+      role: session?.role || currentReport.role || 'backend',
+      specialization: session?.specialization || currentReport.specialization,
+      memory_enabled: true,
+      created_at: session?.created_at || new Date().toISOString(),
+    });
+    showToast('已复用原简历，并把本场弱项加入新剧本。', 'success');
+    window.location.assign(`/interview?session=${encodeURIComponent(id)}`);
+  } catch (error) {
+    setButtonBusy(button, false);
+    showToast(error?.message || '创建弱项复练失败。', 'error', 5200);
+  }
+}
+
 $$('.report-tab').forEach((tab) => tab.addEventListener('click', () => showView(tab.dataset.view)));
 $('#currentCompare').addEventListener('change', () => {
   if ($('#previousCompare').value === $('#currentCompare').value) {
@@ -607,6 +677,7 @@ $('#historyList').addEventListener('click', (event) => {
   if (button) deleteHistoryItem(button.dataset.deleteId);
 });
 $('#clearHistory').addEventListener('click', clearHistory);
+$('#retryWeakButton').addEventListener('click', retryWeaknesses);
 $('#copySummary').addEventListener('click', async () => {
   if (!currentReport) return;
   const text = `${companyLabel(currentReport.company)}后端一面：${currentReport.overall.toFixed(1)} 分\n${currentReport.summary}`;

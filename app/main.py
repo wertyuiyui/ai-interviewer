@@ -25,13 +25,18 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import ROOT_DIR, Settings, get_settings
-from .content import COMPANIES, SPECIALIZATIONS, load_style_card
+from .content import (
+    COMPANIES,
+    SPECIALIZATIONS,
+    load_source_catalog,
+    load_style_card,
+)
 from .db import Database
 from .errors import AppError
 from .interview_engine import InterviewEngine
 from .report_engine import ReportEngine
 from .resume import ResumeParser, extract_pdf_text
-from .schemas import InterviewCreate, InterviewFinish
+from .schemas import InterviewCreate, InterviewFinish, InterviewRetry
 from .voice_session import BrowserVoiceSession
 
 
@@ -195,6 +200,10 @@ async def config() -> dict[str, Any]:
             {"level": 2, "name": "标准"},
             {"level": 3, "name": "高压"},
         ],
+        "language_modes": [
+            {"id": "zh", "name": "全程中文"},
+            {"id": "bilingual", "name": "中英双语"},
+        ],
         "references": [
             {
                 "name": "ARIS-in-AI-Offer",
@@ -205,6 +214,13 @@ async def config() -> dict[str, Any]:
         ],
         "daily_interview_limit": settings.daily_interview_limit,
     }
+
+
+@app.get("/api/resources/catalog")
+async def resource_catalog() -> dict[str, Any]:
+    """Expose the curated provenance catalog without copying source bodies."""
+
+    return load_source_catalog()
 
 
 @app.post("/api/resumes/parse")
@@ -250,6 +266,18 @@ async def create_interview(request: InterviewCreate) -> dict[str, Any]:
 async def get_interview(interview_id: str) -> dict[str, Any]:
     interview = await _require_interview(interview_id)
     return _public_interview(interview)
+
+
+@app.post("/api/interviews/{interview_id}/hint")
+async def get_interview_hint(interview_id: str) -> dict[str, Any]:
+    return await interview_engine.hint(interview_id)
+
+
+@app.post("/api/interviews/{interview_id}/retry", status_code=201)
+async def retry_interview(
+    interview_id: str, request: InterviewRetry
+) -> dict[str, Any]:
+    return await interview_engine.retry(interview_id, request.client_id)
 
 
 @app.post("/api/interviews/{interview_id}/finish", status_code=202)
@@ -684,12 +712,17 @@ def _public_interview(interview: dict[str, Any]) -> dict[str, Any]:
             "company",
             "role",
             "specialization",
+            "language_mode",
             "stress",
             "stress_level",
             "duration_minutes",
+            "memory_enabled",
             "voice_mode",
             "status",
             "weak_topics",
+            "last_question",
+            "hint_count",
+            "hint_events",
             "created_at",
             "started_at",
             "deadline_at",

@@ -26,9 +26,11 @@ CREATE TABLE IF NOT EXISTS interviews (
     company TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'backend',
     specialization TEXT NOT NULL DEFAULT '通用后端',
+    language_mode TEXT NOT NULL DEFAULT 'bilingual',
     stress INTEGER NOT NULL DEFAULT 0,
     stress_level INTEGER NOT NULL DEFAULT 0,
     duration_minutes INTEGER,
+    memory_enabled INTEGER NOT NULL DEFAULT 1,
     voice_mode TEXT NOT NULL,
     resume_json TEXT NOT NULL,
     style_json TEXT NOT NULL,
@@ -37,6 +39,7 @@ CREATE TABLE IF NOT EXISTS interviews (
     status TEXT NOT NULL DEFAULT 'created',
     breakdown_streak INTEGER NOT NULL DEFAULT 0,
     last_question TEXT NOT NULL DEFAULT '',
+    hint_events_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     started_at REAL,
     deadline_at REAL,
@@ -108,6 +111,11 @@ class Database:
                     "ALTER TABLE interviews ADD COLUMN specialization TEXT "
                     "NOT NULL DEFAULT '通用后端'"
                 )
+            if "language_mode" not in columns:
+                connection.execute(
+                    "ALTER TABLE interviews ADD COLUMN language_mode TEXT "
+                    "NOT NULL DEFAULT 'bilingual'"
+                )
             if "stress_level" not in columns:
                 connection.execute(
                     "ALTER TABLE interviews ADD COLUMN stress_level INTEGER "
@@ -118,6 +126,16 @@ class Database:
                 connection.execute(
                     "UPDATE interviews SET stress_level = "
                     "CASE WHEN stress <> 0 THEN 2 ELSE 0 END"
+                )
+            if "memory_enabled" not in columns:
+                connection.execute(
+                    "ALTER TABLE interviews ADD COLUMN memory_enabled INTEGER "
+                    "NOT NULL DEFAULT 1"
+                )
+            if "hint_events_json" not in columns:
+                connection.execute(
+                    "ALTER TABLE interviews ADD COLUMN hint_events_json TEXT "
+                    "NOT NULL DEFAULT '[]'"
                 )
             connection.commit()
 
@@ -131,9 +149,11 @@ class Database:
         company: str,
         role: str,
         specialization: str,
+        language_mode: str,
         stress: bool,
         stress_level: int,
         duration_minutes: int | None,
+        memory_enabled: bool,
         voice_mode: str,
         resume: ResumeData,
         style: dict[str, Any],
@@ -147,11 +167,13 @@ class Database:
             company,
             role,
             specialization,
+            language_mode,
             int(stress),
             stress_level,
             # Older deployed databases declared this column NOT NULL. A zero
             # sentinel keeps those databases writable and is decoded as None.
             duration_minutes if duration_minutes is not None else 0,
+            int(memory_enabled),
             voice_mode,
             resume.model_dump_json(by_alias=True),
             json.dumps(style, ensure_ascii=False),
@@ -165,11 +187,11 @@ class Database:
             connection.execute(
                 """
                 INSERT INTO interviews (
-                    id, client_id, company, role, specialization, stress,
-                    stress_level, duration_minutes, voice_mode, resume_json,
+                    id, client_id, company, role, specialization, language_mode, stress,
+                    stress_level, duration_minutes, memory_enabled, voice_mode, resume_json,
                     style_json, weak_topics_json, system_prompt, last_question,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 values,
             )
@@ -280,6 +302,56 @@ class Database:
             connection.commit()
 
         await self._run(operation)
+
+    async def record_hint(
+        self,
+        interview_id: str,
+        *,
+        ordinal: int,
+        question: str,
+        hint: str,
+    ) -> dict[str, Any]:
+        """Persist at most one scaffold hint for each question ordinal."""
+
+        def operation(connection: sqlite3.Connection) -> dict[str, Any]:
+            row = connection.execute(
+                "SELECT hint_events_json FROM interviews WHERE id = ?",
+                (interview_id,),
+            ).fetchone()
+            if not row:
+                return {}
+            try:
+                events = json.loads(row["hint_events_json"] or "[]")
+            except (TypeError, ValueError, json.JSONDecodeError):
+                events = []
+            if not isinstance(events, list):
+                events = []
+            existing = next(
+                (
+                    event
+                    for event in events
+                    if isinstance(event, dict)
+                    and int(event.get("ordinal") or 0) == ordinal
+                ),
+                None,
+            )
+            if existing:
+                return {**existing, "created": False, "hint_count": len(events)}
+            event = {
+                "ordinal": ordinal,
+                "question": question,
+                "hint": hint,
+                "created_at": _utc_iso(),
+            }
+            events.append(event)
+            connection.execute(
+                "UPDATE interviews SET hint_events_json = ? WHERE id = ?",
+                (json.dumps(events, ensure_ascii=False), interview_id),
+            )
+            connection.commit()
+            return {**event, "created": True, "hint_count": len(events)}
+
+        return await self._run(operation)
 
     async def set_voice_mode(self, interview_id: str, voice_mode: str) -> None:
         if voice_mode not in {"L0", "L1", "L2", "L3"}:
@@ -398,26 +470,40 @@ class Database:
 
         return await self._run(operation)
 
-    async def history(self, client_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    async def history(
+        self,
+        client_id: str,
+        limit: int = 20,
+        *,
+        memory_only: bool = False,
+    ) -> list[dict[str, Any]]:
         def operation(connection: sqlite3.Connection) -> list[dict[str, Any]]:
             rows = connection.execute(
                 """
-                SELECT r.report_json, i.role, i.specialization, i.stress,
+                SELECT r.report_json, i.role, i.specialization, i.language_mode, i.stress,
                        i.stress_level, i.duration_minutes, i.ended_at,
-                       i.end_reason
+                       i.end_reason, i.memory_enabled, i.hint_events_json
                 FROM reports r
                 JOIN interviews i ON i.id = r.interview_id
                 WHERE r.client_id = ?
+                  AND (? = 0 OR i.memory_enabled = 1)
                 ORDER BY r.created_at DESC LIMIT ?
                 """,
-                (client_id, limit),
+                (client_id, int(memory_only), limit),
             ).fetchall()
             reports: list[dict[str, Any]] = []
             for row in rows:
                 report = json.loads(row["report_json"])
+                try:
+                    hint_events = json.loads(row["hint_events_json"] or "[]")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    hint_events = []
+                if not isinstance(hint_events, list):
+                    hint_events = []
                 report.update(
                     role=row["role"],
                     specialization=row["specialization"],
+                    language_mode=row["language_mode"],
                     stress_level=int(row["stress_level"]),
                     stress=int(row["stress_level"]) > 0,
                     duration_minutes=(
@@ -432,7 +518,10 @@ class Database:
                         else report.get("generated_at")
                     ),
                     end_reason=row["end_reason"],
+                    memory_enabled=bool(row["memory_enabled"]),
+                    hint_events=hint_events,
                 )
+                report["hint_count"] = len(report["hint_events"])
                 reports.append(report)
             return reports
 
@@ -463,7 +552,7 @@ class Database:
         return await self._run(operation)
 
     async def weak_topics(self, client_id: str, limit: int = 3) -> list[str]:
-        reports = await self.history(client_id, limit=3)
+        reports = await self.history(client_id, limit=3, memory_only=True)
         if not reports:
             return []
         weights = [0.6, 0.3, 0.1]
@@ -540,6 +629,10 @@ class Database:
         data["stress_level"] = stress_level
         data["stress"] = stress_level > 0
         data["specialization"] = str(data.get("specialization") or "通用后端")
+        data["language_mode"] = (
+            "zh" if data.get("language_mode") == "zh" else "bilingual"
+        )
+        data["memory_enabled"] = bool(data.get("memory_enabled", 1))
         duration = data.get("duration_minutes")
         data["duration_minutes"] = (
             int(duration) if duration is not None and int(duration) > 0 else None
@@ -547,6 +640,12 @@ class Database:
         data["resume"] = json.loads(data.pop("resume_json"))
         data["style"] = json.loads(data.pop("style_json"))
         data["weak_topics"] = json.loads(data.pop("weak_topics_json"))
+        try:
+            hint_events = json.loads(data.pop("hint_events_json", "[]") or "[]")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            hint_events = []
+        data["hint_events"] = hint_events if isinstance(hint_events, list) else []
+        data["hint_count"] = len(data["hint_events"])
         deadline = data.get("deadline_at")
         data["remaining_seconds"] = (
             max(0, int(float(deadline) - time.time())) if deadline else None

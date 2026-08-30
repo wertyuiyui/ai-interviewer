@@ -58,11 +58,15 @@ class InterviewCreate(BaseModel):
     company: Company
     role: Literal["backend"] = "backend"
     specialization: str = Field(default="通用后端", min_length=1, max_length=80)
+    language_mode: Literal["zh", "bilingual"] = "bilingual"
     # ``stress`` is retained as a compatibility alias for older clients. New
     # clients should send stress_level; when both are present, stress_level wins.
     stress: bool = False
     stress_level: int = Field(default=0, ge=0, le=3, strict=True)
     duration_minutes: int | None = Field(default=15, ge=1, le=180, strict=True)
+    # Reports are always available. This switch only controls whether this
+    # interview reads and contributes weak topics for later interview scripts.
+    memory_enabled: bool = True
 
     @model_validator(mode="before")
     @classmethod
@@ -103,6 +107,19 @@ class InterviewCreate(BaseModel):
 
 class InterviewFinish(BaseModel):
     reason: Literal["manual", "time"] = "manual"
+
+
+class InterviewRetry(BaseModel):
+    client_id: str = Field(min_length=8, max_length=128)
+
+    @field_validator("client_id")
+    @classmethod
+    def clean_client_id(cls, value: str) -> str:
+        value = value.strip()
+        allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
+        if not value or any(char not in allowed for char in value):
+            raise ValueError("client_id 格式不正确")
+        return value
 
 
 class TurnAssessment(BaseModel):
@@ -181,6 +198,13 @@ class PracticeItem(BaseModel):
     resource_url: str
 
 
+class HintEvent(BaseModel):
+    ordinal: int = Field(ge=1)
+    question: str
+    hint: str
+    created_at: str = Field(default_factory=utc_now_iso)
+
+
 class InterviewReport(BaseModel):
     schema_version: Literal["1.0"] = "1.0"
     report_id: str
@@ -195,6 +219,9 @@ class InterviewReport(BaseModel):
     summary: str
     next_focus: list[str]
     comparison: dict[str, Any] = Field(default_factory=dict)
+    memory_enabled: bool = True
+    hint_count: int = Field(default=0, ge=0)
+    hint_events: list[HintEvent] = Field(default_factory=list)
 
 
 class ApiError(BaseModel):

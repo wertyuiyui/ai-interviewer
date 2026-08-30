@@ -14,6 +14,7 @@ from .db import Database
 from .errors import AppError, LLMError
 from .llm import BailianChatClient
 from .schemas import (
+    HintEvent,
     InterviewReport,
     InterviewTurn,
     PracticeItem,
@@ -164,6 +165,9 @@ class ReportEngine:
             must_practice=practice,
             summary=summary,
             next_focus=focus,
+            memory_enabled=bool(interview.get("memory_enabled", True)),
+            hint_count=len(interview.get("hint_events") or []),
+            hint_events=interview.get("hint_events") or [],
         )
 
     def _normalize(
@@ -178,6 +182,12 @@ class ReportEngine:
         candidate.report_id = candidate.report_id or uuid.uuid4().hex
         candidate.interview_id = interview["id"]
         candidate.company = interview["company"]
+        candidate.memory_enabled = bool(interview.get("memory_enabled", True))
+        candidate.hint_count = len(interview.get("hint_events") or [])
+        candidate.hint_events = [
+            HintEvent.model_validate(event)
+            for event in (interview.get("hint_events") or [])
+        ]
 
         normalized_feedback: list[QuestionFeedback] = []
         for index, turn in enumerate(turns):
