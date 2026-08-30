@@ -12,7 +12,7 @@ def test_unscored_report_frontend_contract() -> None:
 
     assert 'id="overallScoreUnit"' in report_html
     assert "hasOverallScore ? report.overall.toFixed(1) : '—'" in report_js
-    assert "['insufficient_data', 'unscorable', 'not_scorable'].includes" in report_js
+    assert "['insufficient_data', 'unscorable', 'not_scorable', 'unscored', 'missing'].includes" in report_js
     assert "有效回答不足，暂不评分" in report_js
     assert "if (!report?.scored || !report.rubric.every" in report_js
     assert "historyReports.filter((report) => report.scored)" in report_js
@@ -23,6 +23,7 @@ def test_extended_evidence_report_and_source_visibility_contract() -> None:
     index_html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
     report_html = (ROOT / "public" / "report.html").read_text(encoding="utf-8")
     report_js = (ROOT / "public" / "js" / "report.js").read_text(encoding="utf-8")
+    common_js = (ROOT / "public" / "js" / "common.js").read_text(encoding="utf-8")
 
     for element_id in (
         "scoreCoverage",
@@ -47,3 +48,7 @@ def test_extended_evidence_report_and_source_visibility_contract() -> None:
     assert "!Number.isFinite(dimensions[index].score)" in report_js
     assert "JavaGuide" in report_js and "CodeTop" in report_js
     assert "ARIS-in-AI-Offer" not in index_html
+    assert "mock_interview.report_cache.v2" in common_js
+    assert "localStorage.removeItem(STORAGE.legacyReports)" in common_js
+    assert "firstValue(metadata, ['score_status'], '')" in report_js
+    assert "firstValue(metadata, ['scored'], undefined)" in report_js

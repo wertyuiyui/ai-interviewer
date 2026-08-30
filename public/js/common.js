@@ -2,7 +2,8 @@ const STORAGE = {
   clientId: 'mock_interview.client_id.v1',
   currentSession: 'mock_interview.current_session.v1',
   setup: 'mock_interview.setup.v1',
-  reports: 'mock_interview.report_cache.v1',
+  reports: 'mock_interview.report_cache.v2',
+  legacyReports: 'mock_interview.report_cache.v1',
 };
 
 export const COMPANY_LABELS = Object.freeze({
@@ -112,6 +113,10 @@ export function saveSetup(setup) {
 }
 
 export function getCachedReports() {
+  // v1 could contain pre-fix demo reports whose uncovered dimensions were
+  // serialized as neutral-looking 5.0 values. They are intentionally not
+  // migrated: retaining them would make an offline fallback look scored.
+  try { localStorage.removeItem(STORAGE.legacyReports); } catch { /* no storage */ }
   const reports = readStorage(STORAGE.reports, []);
   return Array.isArray(reports) ? reports : [];
 }
@@ -120,7 +125,13 @@ export function cacheReport(report, sessionId = '') {
   if (!report || typeof report !== 'object') return false;
   const id = String(report.id || report.session_id || sessionId || '');
   if (!id) return false;
-  const record = { ...report, id, session_id: report.session_id || id, _cached_at: new Date().toISOString() };
+  const record = {
+    ...report,
+    id,
+    session_id: report.session_id || id,
+    _cache_schema: 2,
+    _cached_at: new Date().toISOString(),
+  };
   const reports = getCachedReports().filter((item) => String(item.id || item.session_id) !== id);
   reports.unshift(record);
   return writeStorage(STORAGE.reports, reports.slice(0, 20));

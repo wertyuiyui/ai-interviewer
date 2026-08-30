@@ -297,10 +297,14 @@ function normalizeReport(raw, metadata = {}) {
   const scoreStatus = String(firstValue(
     report,
     ['score_status'],
-    firstValue(metadata, ['score_status'], 'scored'),
-  ) || 'scored');
-  const scored = !['insufficient_data', 'unscorable', 'not_scorable'].includes(scoreStatus.toLowerCase())
-    && flagEnabled(firstValue(report, ['scored'], firstValue(metadata, ['scored'], true)));
+    firstValue(metadata, ['score_status'], ''),
+  ) || '');
+  const explicitScored = firstValue(report, ['scored'], firstValue(metadata, ['scored'], undefined));
+  const normalizedStatus = scoreStatus.toLowerCase();
+  const declaredScored = normalizedStatus === 'scored'
+    || (explicitScored !== undefined && flagEnabled(explicitScored, false));
+  const scored = declaredScored
+    && !['insufficient_data', 'unscorable', 'not_scorable', 'unscored', 'missing'].includes(normalizedStatus);
   const rubricRoot = firstValue(report, ['rubric', 'dimension_scores', 'dimensions', '评分细则'], {});
   const scoresRoot = firstValue(report, ['scores', 'score_breakdown', '评分'], {});
   const rubric = rubricDefinitions.map((definition) => {
