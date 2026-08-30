@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict, deque
+import hmac
 import json
 import re
 import time
@@ -13,6 +14,7 @@ from fastapi import (
     FastAPI,
     File,
     Form,
+    Header,
     Query,
     Request,
     UploadFile,
@@ -28,8 +30,8 @@ from pydantic import ValidationError
 from .config import ROOT_DIR, Settings, get_settings
 from .content import (
     COMPANIES,
-    SPECIALIZATIONS,
     load_interview_skill,
+    load_specialization_catalog,
     load_source_catalog,
     load_style_card,
 )
@@ -43,6 +45,9 @@ from .practice import (
     PracticeService,
     PracticeSessionCreate,
 )
+from .profile import ProfileService
+from .profile_routes import create_profile_router
+from .project_context import enrich_interview_with_profile_project
 from .report_engine import ReportEngine
 from .resume import ResumeParser, extract_pdf_text
 from .schemas import (
@@ -60,6 +65,7 @@ resume_parser = ResumeParser(settings)
 interview_engine = InterviewEngine(db, settings)
 report_engine = ReportEngine(db, settings)
 practice_service = PracticeService(db, settings)
+profile_service = ProfileService(db, settings, resume_parser=resume_parser)
 background_tasks: set[asyncio.Task[Any]] = set()
 session_locks: dict[str, asyncio.Lock] = {}
 VOICE_END_DRAIN_TIMEOUT_SECONDS = 5.0
@@ -95,6 +101,7 @@ practice_answer_limiter = SlidingWindowLimiter()
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await db.initialize()
     await practice_service.initialize()
+    await profile_service.initialize()
     yield
     pending = list(background_tasks)
     for task in pending:
@@ -110,6 +117,9 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url=None,
 )
+app.include_router(
+    create_profile_router(lambda: profile_service, lambda: settings)
+)
 
 if settings.allowed_origins:
     app.add_middleware(
@@ -117,7 +127,7 @@ if settings.allowed_origins:
         allow_origins=list(settings.allowed_origins),
         allow_credentials=False,
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "X-Profile-Key"],
     )
 
 
@@ -217,7 +227,8 @@ async def config() -> dict[str, Any]:
         "llm_configured": settings.has_api_key or settings.mock_llm,
         "mock_mode": settings.mock_llm,
         "companies": companies,
-        "specializations": SPECIALIZATIONS,
+        "specializations": load_specialization_catalog(),
+        "custom_specialization": {"enabled": True, "max_length": 80},
         "durations": [10, 15, 25],
         "custom_duration": {"min": 1, "max": 180, "unlimited": True},
         "stress_levels": [
@@ -233,6 +244,7 @@ async def config() -> dict[str, Any]:
         ],
         "interview_types": [
             {"id": "technical", "name": "技术面"},
+            {"id": "hr", "name": "综合面（HR 面）"},
             {"id": "technical_hr", "name": "技术 / 综合（HR）面"},
         ],
         "daily_interview_limit": settings.daily_interview_limit,
@@ -622,8 +634,29 @@ async def parse_resume(
 
 
 @app.post("/api/interviews", status_code=201)
-async def create_interview(request: InterviewCreate) -> dict[str, Any]:
-    return await interview_engine.create(request)
+async def create_interview(
+    request: InterviewCreate,
+    profile_key: str | None = Header(default=None, alias="X-Profile-Key"),
+) -> dict[str, Any]:
+    if request.profile_project_id and (
+        not profile_key
+        or len(profile_key) < 24
+        or not hmac.compare_digest(profile_key, request.client_id)
+    ):
+        raise AppError(
+            "PROFILE_KEY_MISMATCH",
+            "使用匿名 Profile 项目时需要校验当前浏览器密钥",
+            status_code=403,
+        )
+    # Check quotas before an optional, potentially paid project-analysis call.
+    # InterviewEngine.create checks again to close the race with concurrent
+    # session creation.
+    await interview_engine.ensure_budget_available(request.client_id)
+    enriched = await enrich_interview_with_profile_project(request, profile_service)
+    created = await interview_engine.create(enriched)
+    if request.profile_project_id:
+        created["profile_project_id"] = request.profile_project_id
+    return created
 
 
 @app.get("/api/interviews/{interview_id}")
@@ -1451,3 +1484,8 @@ async def report_page() -> FileResponse:
 @app.get("/practice", include_in_schema=False)
 async def practice_page() -> FileResponse:
     return FileResponse(PUBLIC_DIR / "practice.html")
+
+
+@app.get("/project", include_in_schema=False)
+async def project_page() -> FileResponse:
+    return FileResponse(PUBLIC_DIR / "project.html")

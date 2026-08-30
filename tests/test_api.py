@@ -64,6 +64,7 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
         ]
         assert [item["id"] for item in config_payload["interview_types"]] == [
             "technical",
+            "hr",
             "technical_hr",
         ]
         assert "references" not in config_payload
