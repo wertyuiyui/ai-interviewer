@@ -45,6 +45,7 @@ class EngineResult:
     pressure_action: str
     silence_seconds: int
     breakdown_streak: int
+    recommended_answer_seconds: int
     turn: InterviewTurn
 
 
@@ -123,6 +124,7 @@ class InterviewEngine:
             "voice_mode": self.settings.voice_mode,
             "weak_topics": weak_topics,
             "initial_question": first_question,
+            "recommended_answer_seconds": self.recommended_answer_seconds(first_question),
             "company": request.company,
             "role": request.role,
             "specialization": request.specialization,
@@ -258,7 +260,14 @@ class InterviewEngine:
             candidates.extend(topic for topic, _ in sorted(scored, key=lambda pair: pair[1]))
         return cls._normalize_weak_topics(candidates)
 
-    async def answer(self, interview_id: str, answer: str) -> EngineResult:
+    async def answer(
+        self,
+        interview_id: str,
+        answer: str,
+        *,
+        input_mode: str = "text",
+        answer_duration_seconds: float | None = None,
+    ) -> EngineResult:
         interview = await self.db.get_interview(interview_id)
         if not interview:
             raise AppError("INTERVIEW_NOT_FOUND", "面试不存在", status_code=404)
@@ -347,6 +356,20 @@ class InterviewEngine:
             proposed=decision.pressure_action,
         )
         question = self._apply_pressure_copy(question, pressure_action)
+        recommended_seconds = self.recommended_answer_seconds(question)
+        current_recommended_seconds = self.recommended_answer_seconds(
+            str(interview["last_question"])
+        )
+        normalized_duration = (
+            round(max(0.0, min(float(answer_duration_seconds), 3600.0)), 2)
+            if answer_duration_seconds is not None
+            else None
+        )
+        speech_rate_cpm = (
+            round(len(re.sub(r"\s+", "", answer)) * 60 / normalized_duration, 1)
+            if input_mode == "voice" and normalized_duration
+            else None
+        )
         turn = InterviewTurn(
             ordinal=completed_turns,
             question=interview["last_question"],
@@ -354,12 +377,18 @@ class InterviewEngine:
             category=current_dimension,
             topic=current_topic or "综合基础",
             score=decision.assessment.score,
+            scorable=decision.assessment.scorable and decision.assessment.score is not None,
+            score_source=decision.assessment.score_source,
             deductions=decision.assessment.deductions
             or (["回答缺少可验证的关键细节"] if decision.assessment.failed else []),
             failed=decision.assessment.failed,
             drill_dimension=current_drill_dimension,
             drill_depth=current_drill_depth,
             anchor_keyword=anchor,
+            input_mode="voice" if input_mode == "voice" else "text",
+            answer_duration_seconds=normalized_duration,
+            speech_rate_cpm=speech_rate_cpm,
+            recommended_answer_seconds=current_recommended_seconds,
         )
         streak = await self.db.append_turn(interview_id, turn, question)
         threshold = self._breakdown_threshold(interview["stress_level"])
@@ -368,6 +397,7 @@ class InterviewEngine:
         if ended:
             end_reason = "poor_performance"
             question = "今天的面试就到这里，感谢你的时间。"
+            recommended_seconds = 0
             await self.db.finish_interview(interview_id, end_reason)
 
         return EngineResult(
@@ -377,8 +407,127 @@ class InterviewEngine:
             pressure_action=pressure_action,
             silence_seconds=10 if pressure_action == "silence" and not ended else 0,
             breakdown_streak=streak,
+            recommended_answer_seconds=0 if ended else recommended_seconds,
             turn=turn,
         )
+
+    async def correct_answer(
+        self, interview_id: str, *, ordinal: int, text: str
+    ) -> dict[str, Any]:
+        """Re-score and persist an edited ASR transcript before reporting."""
+
+        interview = await self.db.get_interview(interview_id)
+        if not interview:
+            raise AppError("INTERVIEW_NOT_FOUND", "面试不存在", status_code=404)
+        if interview["status"] in {"reporting", "reported"}:
+            raise AppError(
+                "REPORT_ALREADY_GENERATED",
+                "报告已开始生成，不能再修改转写；请在面试过程中完成修正。",
+                status_code=409,
+            )
+        text = re.sub(r"\x00", "", text).strip()
+        if not text:
+            raise AppError("EMPTY_TRANSCRIPT", "修正后的转写不能为空", status_code=422)
+        if len(text) > 10000:
+            raise AppError("ANSWER_TOO_LONG", "单次回答不能超过 10000 字", status_code=413)
+        turns = await self.db.list_turns(interview_id)
+        target = next((turn for turn in turns if turn.ordinal == ordinal), None)
+        if target is None:
+            raise AppError("TURN_NOT_FOUND", "待修正的回答不存在", status_code=404)
+        prior_turns = [turn for turn in turns if turn.ordinal < ordinal]
+        resume = ResumeData.model_validate(interview["resume"])
+        scoring_interview = dict(interview)
+        scoring_interview["last_question"] = target.question
+        decision = await self._decide(scoring_interview, resume, prior_turns, text)
+        deductions = decision.assessment.deductions or (
+            ["回答仍缺少可验证的关键细节"]
+            if decision.assessment.failed
+            else []
+        )
+        try:
+            return await self.db.correct_turn_answer(
+                interview_id,
+                ordinal=ordinal,
+                text=text,
+                score=decision.assessment.score,
+                scorable=decision.assessment.scorable,
+                score_source=decision.assessment.score_source,
+                deductions=deductions,
+                failed=decision.assessment.failed,
+            )
+        except RuntimeError as exc:
+            if str(exc) == "report_already_generated":
+                raise AppError(
+                    "REPORT_ALREADY_GENERATED",
+                    "报告已开始生成，不能再修改转写；请在面试过程中完成修正。",
+                    status_code=409,
+                ) from exc
+            raise
+        except KeyError as exc:
+            raise AppError("TURN_NOT_FOUND", "待修正的回答不存在", status_code=404) from exc
+        except LookupError as exc:
+            raise AppError("INTERVIEW_NOT_FOUND", "面试不存在", status_code=404) from exc
+
+    async def preserve_unscored_answer(
+        self,
+        interview_id: str,
+        text: str,
+        *,
+        input_mode: str = "text",
+        answer_duration_seconds: float | None = None,
+        ordinal: int | None = None,
+    ) -> InterviewTurn:
+        """Persist an accepted transcript when its model assessment is cancelled.
+
+        Ending a session must not erase text already shown as recorded. The
+        fallback deliberately carries no numeric score and therefore cannot
+        pollute the report or next-session memory.
+        """
+
+        interview = await self.db.get_interview(interview_id)
+        if not interview:
+            raise AppError("INTERVIEW_NOT_FOUND", "面试不存在", status_code=404)
+        normalized = re.sub(r"\x00", "", text).strip()
+        if not normalized:
+            raise AppError("EMPTY_ANSWER", "回答不能为空", status_code=422)
+        turns = await self.db.list_turns(interview_id)
+        expected_ordinal = ordinal or (len(turns) + 1)
+        # The normal path may have committed just before cancellation reached
+        # its caller. Reuse that row instead of creating a duplicate turn.
+        existing = next(
+            (turn for turn in turns if turn.ordinal == expected_ordinal), None
+        )
+        if existing is not None:
+            return existing
+        duration = (
+            round(max(0.0, min(float(answer_duration_seconds), 3600.0)), 2)
+            if answer_duration_seconds is not None
+            else None
+        )
+        speech_rate = (
+            round(len(re.sub(r"\s+", "", normalized)) * 60 / duration, 1)
+            if input_mode == "voice" and duration
+            else None
+        )
+        question = str(interview.get("last_question") or "本轮回答")
+        turn = InterviewTurn(
+            ordinal=expected_ordinal,
+            question=question,
+            answer=normalized,
+            category="communication",
+            topic="结束时保留的未评分回答",
+            score=None,
+            scorable=False,
+            score_source="unavailable",
+            deductions=["本轮回答已被保留，但结束面试时评分尚未完成，因此不生成数值分。"],
+            failed=False,
+            input_mode="voice" if input_mode == "voice" else "text",
+            answer_duration_seconds=duration,
+            speech_rate_cpm=speech_rate,
+            recommended_answer_seconds=self.recommended_answer_seconds(question),
+        )
+        await self.db.append_turn(interview_id, turn, question)
+        return turn
 
     async def _decide(
         self,
@@ -464,6 +613,8 @@ class InterviewEngine:
         fallback = self._fallback_decision(interview, resume, turns, answer)
         fallback.assessment = TurnAssessment(
             score=score,
+            scorable=True,
+            score_source="mock",
             failed=failed,
             dimension=fallback.assessment.dimension,
             topic=fallback.assessment.topic,
@@ -501,14 +652,22 @@ class InterviewEngine:
             category = str(item.get("category", "基础知识"))
             dimension = "coding_thought" if category == "手撕思路" else "fundamentals"
             topic = str(item.get("topic") or category)
+        # A malformed/failed scoring call is operational missing data, not
+        # evidence of average performance.  Keep the interview moving while
+        # explicitly marking this turn unavailable for numeric aggregation.
+        fallback_score = None
+        fallback_failed = False
+        deductions = ["本轮评分服务不可用；保留问答原文，但不计入数值评分"]
         return TurnDecision(
             next_question=question,
             assessment=TurnAssessment(
-                score=5.0,
-                failed=False,
+                score=fallback_score,
+                scorable=False,
+                score_source="unavailable",
+                failed=fallback_failed,
                 dimension=dimension,  # type: ignore[arg-type]
                 topic=topic,
-                deductions=[],
+                deductions=deductions,
             ),
             drill_dimension="基础知识",
             drill_depth=0,
@@ -532,9 +691,9 @@ class InterviewEngine:
         if stress_level <= 0:
             return "none"
         if stress_level == 1:
-            if ordinal % 3:
+            if ordinal % 2:
                 return "none"
-            return ("chain", "challenge")[((ordinal // 3) - 1) % 2]
+            return ("chain", "challenge")[((ordinal // 2) - 1) % 2]
         if stress_level == 2:
             cycle = {1: "chain", 2: "challenge", 3: "interrupt", 0: "silence"}
             return cycle[ordinal % 4]
@@ -572,8 +731,23 @@ class InterviewEngine:
 
     @staticmethod
     def _apply_pressure_copy(question: str, action: str) -> str:
+        if action == "chain":
+            return f"不要停留在结论，请沿着刚才的细节继续回答：{question}"
         if action == "challenge":
-            return f"我对这个前提存疑，{question}"
+            return f"我不接受没有证据的结论。这个前提我存疑，{question}"
         if action == "interrupt":
-            return f"先停一下，{question}"
+            return f"先停一下，请直接给结论和依据。{question}"
         return question
+
+    @staticmethod
+    def recommended_answer_seconds(question: str) -> int:
+        lowered = question.lower()
+        if "自我介绍" in question:
+            return 60
+        if any(marker in lowered for marker in ("手撕", "算法", "lru", "复杂度", "实现")):
+            return 180
+        if any(marker in question for marker in ("项目", "链路", "故障", "取舍", "指标口径")):
+            return 90
+        if any(marker in question for marker in ("前沿", "怎么看", "研究", "论文", "趋势")):
+            return 120
+        return 60

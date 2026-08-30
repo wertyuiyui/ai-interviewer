@@ -122,6 +122,10 @@ def test_prompt_contains_non_negotiable_interview_rules() -> None:
     assert "绝不点评" in prompt
     assert "沉默10秒" in prompt
     assert "qwen" not in prompt.lower()
+    assert "source_ids" not in prompt
+    assert "source_ref" not in prompt
+    assert "nowcoder.com" not in prompt
+    assert "experience-" not in prompt
     assert "QPS 从 800 提升到 3000" in prompt
     weighted = select_questions("bytedance", ["Redis"], 15)
     assert [item["category"] for item in weighted[:3]] == ["Redis"] * 3
@@ -301,7 +305,8 @@ def test_interview_parameter_contract_and_pressure_levels() -> None:
 
     assert InterviewEngine._pressure_action(0, 1, "interrupt") == "none"
     assert InterviewEngine._pressure_action(1, 1, "chain") == "none"
-    assert InterviewEngine._pressure_action(1, 3, "none") == "chain"
+    assert InterviewEngine._pressure_action(1, 2, "none") == "chain"
+    assert InterviewEngine._pressure_action(1, 4, "none") == "challenge"
     assert InterviewEngine._pressure_action(2, 3, "none") == "interrupt"
     assert InterviewEngine._pressure_action(3, 2, "none") == "interrupt"
     assert InterviewEngine._breakdown_threshold(1) == 3
@@ -447,7 +452,7 @@ async def test_zero_turn_report_is_unscored_without_llm_or_memory_pollution(
         report.rubric.fundamentals.score,
         report.rubric.coding_thought.score,
         report.rubric.communication.score,
-    } == {0}
+    } == {None}
     assert report.question_feedback == []
     assert report.topic_scores == {}
     assert report.must_practice == []
@@ -642,6 +647,28 @@ async def test_three_layer_drill_early_end_report_and_memory(tmp_path) -> None:
     assert report.rubric.fundamentals.weight == 0.3
     assert report.rubric.coding_thought.weight == 0.2
     assert report.rubric.communication.weight == 0.1
+    assert report.rubric.fundamentals.score is None
+    assert report.rubric.coding_thought.score is None
+    assert report.rubric.fundamentals.scorable is False
+    assert report.scoring_coverage == 0.5
+    assert report.resume_analysis.layout_scorable is False
+    assert "未保存" in report.resume_analysis.layout_evidence[0]
+    assert report.company_insights.company_label == "字节跳动"
+    assert "个人" in report.company_insights.sample_caveat
+    assert report.company_insights.citations
+    assert all(
+        item.url.startswith("https://www.nowcoder.com/")
+        for item in report.company_insights.citations
+    )
+    assert {item.key for item in report.radar} >= {
+        "project_depth",
+        "resume_content",
+        "time_control",
+        "speech_rate",
+        "wording",
+        "fluency",
+        "role_fit",
+    }
 
     second = await engine.create(
         InterviewCreate(
@@ -682,7 +709,7 @@ async def test_three_layer_drill_early_end_report_and_memory(tmp_path) -> None:
     failed_once = await engine.answer(stress["id"], "不知道")
     assert failed_once.breakdown_streak == 1
     assert failed_once.pressure_action == "challenge"
-    assert failed_once.question.startswith("我对这个前提存疑")
+    assert failed_once.question.startswith("我不接受没有证据的结论")
     failed_twice = await engine.answer(stress["id"], "不会")
     assert failed_twice.ended
     assert failed_twice.pressure_action == "interrupt"
@@ -692,3 +719,179 @@ async def test_three_layer_drill_early_end_report_and_memory(tmp_path) -> None:
 
 def test_json_parser_handles_fenced_output() -> None:
     assert parse_json_content('```json\n{"ok": true}\n```') == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_live_transcript_correction_rescores_target_and_report_uses_edit(tmp_path) -> None:
+    settings = replace(mock_settings(tmp_path), mock_llm=False)
+    database = Database(settings)
+    await database.initialize()
+
+    class RecordingDecisionClient:
+        def __init__(self) -> None:
+            self.questions: list[str] = []
+
+        async def chat_json(self, messages, **_kwargs):
+            payload = json.loads(messages[1]["content"])
+            self.questions.append(payload["current_question"])
+            corrected = "修正后" in payload["candidate_answer"]
+            return {
+                "next_question": "请继续解释这个设计的故障边界。",
+                "assessment": {
+                    "score": 8.2 if corrected else 4.2,
+                    "scorable": True,
+                    "score_source": "llm",
+                    "failed": False,
+                    "dimension": "project_depth",
+                    "topic": "Redis",
+                    "deductions": [] if corrected else ["转写缺少关键链路"],
+                },
+                "pressure_action": "none",
+                "drill_dimension": "业务背景",
+                "drill_depth": 1,
+                "anchor_keyword": "Redis",
+                "should_end": False,
+            }
+
+    client = RecordingDecisionClient()
+    engine = InterviewEngine(database, settings, client=client)
+    created = await engine.create(
+        InterviewCreate(
+            client_id="correction-client-001",
+            resume=sample_resume(),
+            company="bytedance",
+        )
+    )
+    await database.start_interview(created["id"])
+    initial_question = created["initial_question"]
+    first = await engine.answer(
+        created["id"],
+        "原始误识别 Redis",
+        input_mode="voice",
+        answer_duration_seconds=12.0,
+    )
+    assert first.turn.speech_rate_cpm is not None
+    original_speech_rate = first.turn.speech_rate_cpm
+
+    corrected_text = "修正后：我负责 Redis Lua 库存预扣，并通过压测验证 QPS 3000。"
+    corrected = await engine.correct_answer(
+        created["id"], ordinal=1, text=corrected_text
+    )
+    assert corrected["original_text"] == "原始误识别 Redis"
+    assert corrected["text"] == corrected_text
+    assert corrected["score"] == 8.2
+    # The second scoring payload must use the question answered by turn 1,
+    # not interview.last_question, which already points at the next question.
+    assert client.questions == [initial_question, initial_question]
+
+    stored = (await database.list_turns(created["id"]))[0]
+    assert stored.answer == corrected_text
+    assert stored.original_answer == "原始误识别 Redis"
+    assert stored.transcript_edited is True
+    assert stored.input_mode == "voice"
+    assert stored.score == 8.2
+    assert stored.speech_rate_cpm == original_speech_rate
+
+    await database.finish_interview(created["id"], "manual")
+    report_settings = replace(settings, mock_llm=True)
+    report = await ReportEngine(database, report_settings).generate(created["id"])
+    assert report.question_feedback[0].answer == corrected_text
+    assert report.question_feedback[0].transcript_edited is True
+    assert report.question_feedback[0].answer_duration_seconds == 12.0
+    assert report.process_analysis.time_control.scorable is True
+    assert report.process_analysis.speech_rate.scorable is True
+    assert report.process_analysis.fluency.scorable is True
+    assert "声学流畅度" in report.process_analysis.fluency.evidence[-1]
+
+    with pytest.raises(AppError) as exc_info:
+        await engine.correct_answer(created["id"], ordinal=1, text="报告后的修改")
+    assert exc_info.value.code == "REPORT_ALREADY_GENERATED"
+
+
+@pytest.mark.asyncio
+async def test_failed_scoring_call_never_becomes_default_five(tmp_path) -> None:
+    settings = replace(mock_settings(tmp_path), mock_llm=False)
+    database = Database(settings)
+    await database.initialize()
+
+    class InvalidJsonClient:
+        async def chat_json(self, *_args, **_kwargs):
+            return {}
+
+    engine = InterviewEngine(database, settings, client=InvalidJsonClient())
+    created = await engine.create(
+        InterviewCreate(
+            client_id="unscorable-client-001",
+            resume=sample_resume(),
+            company="tencent",
+        )
+    )
+    await database.start_interview(created["id"])
+    result = await engine.answer(
+        created["id"],
+        "我会先给出结论，再用监控和压测数据说明方案边界。",
+    )
+    assert result.turn.scorable is False
+    assert result.turn.score is None
+    assert result.turn.score_source == "unavailable"
+    await database.finish_interview(created["id"], "manual")
+    report = await ReportEngine(
+        database, settings, client=InvalidJsonClient()
+    ).generate(created["id"])
+    assert report.scored is False
+    assert report.score_status == "unscorable"
+    assert report.overall_score == 0
+    assert report.question_feedback[0].answer
+    assert report.question_feedback[0].score is None
+    assert report.question_feedback[0].scorable is False
+    assert all(
+        item.score is None
+        for item in (
+            report.rubric.project_depth,
+            report.rubric.fundamentals,
+            report.rubric.coding_thought,
+            report.rubric.communication,
+        )
+    )
+
+
+@pytest.mark.asyncio
+async def test_legacy_default_dimensions_are_removed_and_overall_recomputed(tmp_path) -> None:
+    settings = mock_settings(tmp_path)
+    database = Database(settings)
+    await database.initialize()
+    engine = InterviewEngine(database, settings)
+    created = await engine.create(
+        InterviewCreate(
+            client_id="legacy-midpoint-client",
+            resume=sample_resume(),
+            company="meituan",
+        )
+    )
+    await database.start_interview(created["id"])
+    await engine.answer(
+        created["id"],
+        "我负责 Redis Lua 库存链路，并用压测验证 QPS 从 800 提升到 3000。",
+    )
+    await database.finish_interview(created["id"], "manual")
+    generated = await ReportEngine(database, settings).generate(created["id"])
+    payload = generated.model_dump()
+    payload["schema_version"] = "1.0"
+    payload["overall_score"] = 5.0
+    for name in ("fundamentals", "coding_thought"):
+        payload["rubric"][name].update(score=5.0, scorable=True, status="scored")
+    with sqlite3.connect(settings.db_path) as connection:
+        connection.execute(
+            "UPDATE reports SET overall_score = 5, report_json = ? WHERE interview_id = ?",
+            (json.dumps(payload, ensure_ascii=False), created["id"]),
+        )
+        connection.commit()
+
+    repaired = await database.get_report(created["id"])
+    assert repaired is not None
+    assert repaired["rubric"]["fundamentals"]["score"] is None
+    assert repaired["rubric"]["coding_thought"]["score"] is None
+    assert repaired["rubric"]["fundamentals"]["scorable"] is False
+    assert repaired["rubric"]["communication"]["score"] is None
+    assert repaired["scoring_coverage"] == 0.4
+    assert repaired["overall_score"] != 5.0

@@ -59,11 +59,19 @@ CREATE TABLE IF NOT EXISTS interview_turns (
     category TEXT NOT NULL,
     topic TEXT NOT NULL,
     score REAL NOT NULL,
+    scorable INTEGER NOT NULL DEFAULT 1,
+    score_source TEXT NOT NULL DEFAULT 'llm',
     deductions_json TEXT NOT NULL,
     failed INTEGER NOT NULL DEFAULT 0,
     drill_dimension TEXT NOT NULL DEFAULT '',
     drill_depth INTEGER NOT NULL DEFAULT 0,
     anchor_keyword TEXT NOT NULL DEFAULT '',
+    input_mode TEXT NOT NULL DEFAULT 'text',
+    answer_duration_seconds REAL,
+    speech_rate_cpm REAL,
+    transcript_edited INTEGER NOT NULL DEFAULT 0,
+    original_answer TEXT NOT NULL DEFAULT '',
+    recommended_answer_seconds INTEGER NOT NULL DEFAULT 60,
     created_at TEXT NOT NULL,
     UNIQUE(interview_id, ordinal)
 );
@@ -91,7 +99,9 @@ def _utc_iso() -> str:
 
 
 def _normalize_report_scoring(
-    report: dict[str, Any], effective_turn_count: int
+    report: dict[str, Any],
+    effective_turn_count: int,
+    observed_dimensions: set[str] | None = None,
 ) -> dict[str, Any]:
     """Expose one unambiguous score state, including for legacy report JSON.
 
@@ -101,19 +111,73 @@ def _normalize_report_scoring(
     """
 
     normalized = dict(report)
-    raw_scored = report.get("scored")
-    explicitly_unscored = (
-        raw_scored is False
-        or raw_scored == 0
-        or (
-            isinstance(raw_scored, str)
-            and raw_scored.strip().lower() in {"false", "0", "no", "off"}
+    score_status = str(report.get("score_status") or "")
+    insufficient = effective_turn_count <= 0 or score_status == "insufficient_data"
+    if not insufficient:
+        feedback = normalized.get("question_feedback") or []
+        observed = (
+            set()
+            if score_status == "unscorable"
+            else set(observed_dimensions or ())
         )
-        or report.get("score_status") == "insufficient_data"
-    )
-    if effective_turn_count > 0 and not explicitly_unscored:
-        normalized["scored"] = True
-        normalized["score_status"] = "scored"
+        if not observed and score_status != "unscorable":
+            observed = {
+                str(item.get("category"))
+                for item in feedback
+                if isinstance(item, dict)
+                and item.get("answer", "").strip()
+                and item.get("scorable", True)
+                and isinstance(item.get("score"), (int, float))
+            }
+        # Schema 1.0 filled every missing rubric dimension with 5.0. Do not
+        # infer that expression was observed merely because another category
+        # had an answer; only 2.0 reports have evidence-derived communication.
+        if observed and str(normalized.get("schema_version") or "1.0") == "2.0":
+            observed.add("communication")
+        rubric = normalized.get("rubric")
+        weights = {
+            "project_depth": 0.4,
+            "fundamentals": 0.3,
+            "coding_thought": 0.2,
+            "communication": 0.1,
+        }
+        usable_weight = 0.0
+        weighted_score = 0.0
+        if isinstance(rubric, dict):
+            for dimension, weight in weights.items():
+                item = rubric.get(dimension)
+                if not isinstance(item, dict):
+                    item = {"weight": weight, "deductions": []}
+                    rubric[dimension] = item
+                raw_score = item.get("score")
+                is_observed = (
+                    dimension in observed
+                    and isinstance(raw_score, (int, float))
+                )
+                item["weight"] = weight
+                item["scorable"] = is_observed
+                item["status"] = "scored" if is_observed else "not_observed"
+                item.setdefault("evidence", [])
+                if not is_observed:
+                    item["score"] = None
+                    item["deductions"] = []
+                else:
+                    usable_weight += weight
+                    weighted_score += float(raw_score) * weight
+            normalized["scoring_coverage"] = round(
+                usable_weight, 2
+            )
+        if usable_weight > 0:
+            normalized["scored"] = True
+            normalized["score_status"] = "scored"
+            # Normalize by the dimensions actually observed.  This removes
+            # the legacy midpoint contribution from dimensions never asked.
+            normalized["overall_score"] = round(weighted_score / usable_weight, 1)
+        else:
+            normalized["scored"] = False
+            normalized["score_status"] = "unscorable"
+            normalized["overall_score"] = 0.0
+            normalized["scoring_coverage"] = 0.0
         return normalized
 
     normalized.update(
@@ -121,10 +185,10 @@ def _normalize_report_scoring(
         score_status="insufficient_data",
         overall_score=0.0,
         rubric={
-            "project_depth": {"score": 0.0, "weight": 0.4, "deductions": []},
-            "fundamentals": {"score": 0.0, "weight": 0.3, "deductions": []},
-            "coding_thought": {"score": 0.0, "weight": 0.2, "deductions": []},
-            "communication": {"score": 0.0, "weight": 0.1, "deductions": []},
+            "project_depth": {"score": None, "weight": 0.4, "scorable": False, "status": "not_observed", "evidence": [], "deductions": []},
+            "fundamentals": {"score": None, "weight": 0.3, "scorable": False, "status": "not_observed", "evidence": [], "deductions": []},
+            "coding_thought": {"score": None, "weight": 0.2, "scorable": False, "status": "not_observed", "evidence": [], "deductions": []},
+            "communication": {"score": None, "weight": 0.1, "scorable": False, "status": "not_observed", "evidence": [], "deductions": []},
         },
         question_feedback=[],
         topic_scores={},
@@ -135,6 +199,7 @@ def _normalize_report_scoring(
             "本场没有有效回答或可用转写，评分数据不足，因此本次不计分，"
             "也不会写入后续面试的弱项记忆。"
         ),
+        scoring_coverage=0.0,
     )
     return normalized
 
@@ -186,6 +251,27 @@ class Database:
                     "ALTER TABLE interviews ADD COLUMN hint_events_json TEXT "
                     "NOT NULL DEFAULT '[]'"
                 )
+            turn_columns = {
+                str(row["name"])
+                for row in connection.execute(
+                    "PRAGMA table_info(interview_turns)"
+                ).fetchall()
+            }
+            turn_migrations = {
+                "scorable": "INTEGER NOT NULL DEFAULT 1",
+                "score_source": "TEXT NOT NULL DEFAULT 'llm'",
+                "input_mode": "TEXT NOT NULL DEFAULT 'text'",
+                "answer_duration_seconds": "REAL",
+                "speech_rate_cpm": "REAL",
+                "transcript_edited": "INTEGER NOT NULL DEFAULT 0",
+                "original_answer": "TEXT NOT NULL DEFAULT ''",
+                "recommended_answer_seconds": "INTEGER NOT NULL DEFAULT 60",
+            }
+            for name, declaration in turn_migrations.items():
+                if name not in turn_columns:
+                    connection.execute(
+                        f"ALTER TABLE interview_turns ADD COLUMN {name} {declaration}"
+                    )
             connection.commit()
 
         await self._run(operation)
@@ -299,9 +385,12 @@ class Database:
                 """
                 INSERT INTO interview_turns (
                     interview_id, ordinal, question, answer, category, topic,
-                    score, deductions_json, failed, drill_dimension, drill_depth,
-                    anchor_keyword, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    score, scorable, score_source, deductions_json, failed,
+                    drill_dimension, drill_depth,
+                    anchor_keyword, input_mode, answer_duration_seconds,
+                    speech_rate_cpm, transcript_edited, original_answer,
+                    recommended_answer_seconds, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     interview_id,
@@ -310,12 +399,20 @@ class Database:
                     turn.answer,
                     turn.category,
                     turn.topic,
-                    turn.score,
+                    turn.score if turn.score is not None else 0.0,
+                    int(turn.scorable and turn.score is not None),
+                    turn.score_source,
                     json.dumps(turn.deductions, ensure_ascii=False),
                     int(turn.failed),
                     turn.drill_dimension,
                     turn.drill_depth,
                     turn.anchor_keyword,
+                    turn.input_mode,
+                    turn.answer_duration_seconds,
+                    turn.speech_rate_cpm,
+                    int(turn.transcript_edited),
+                    turn.original_answer,
+                    turn.recommended_answer_seconds,
                     turn.created_at,
                 ),
             )
@@ -335,6 +432,106 @@ class Database:
             )
             connection.commit()
             return streak
+
+        return await self._run(operation)
+
+    async def correct_turn_answer(
+        self,
+        interview_id: str,
+        *,
+        ordinal: int,
+        text: str,
+        score: float | None,
+        scorable: bool,
+        score_source: str,
+        deductions: list[str],
+        failed: bool,
+    ) -> dict[str, Any]:
+        """Atomically replace a transcript and its private assessment.
+
+        Corrections are rejected once report generation starts so persisted
+        feedback can never describe a different answer than the report input.
+        """
+
+        def operation(connection: sqlite3.Connection) -> dict[str, Any]:
+            interview = connection.execute(
+                "SELECT status FROM interviews WHERE id = ?", (interview_id,)
+            ).fetchone()
+            if not interview:
+                raise LookupError("interview_not_found")
+            if interview["status"] in {"reporting", "reported"} or connection.execute(
+                "SELECT 1 FROM reports WHERE interview_id = ?", (interview_id,)
+            ).fetchone():
+                raise RuntimeError("report_already_generated")
+            row = connection.execute(
+                """
+                SELECT answer, original_answer, transcript_edited,
+                       speech_rate_cpm
+                FROM interview_turns
+                WHERE interview_id = ? AND ordinal = ?
+                """,
+                (interview_id, ordinal),
+            ).fetchone()
+            if not row:
+                raise KeyError("turn_not_found")
+            original = (
+                str(row["original_answer"] or "")
+                if bool(row["transcript_edited"])
+                else str(row["answer"] or "")
+            )
+            # Editing an ASR transcript changes the semantic answer used for
+            # technical scoring, not what was actually spoken. Preserve the
+            # original live-transcript rate for delivery analysis.
+            speech_rate = row["speech_rate_cpm"]
+            connection.execute(
+                """
+                UPDATE interview_turns
+                SET answer = ?, score = ?, scorable = ?, score_source = ?,
+                    deductions_json = ?, failed = ?,
+                    transcript_edited = 1, original_answer = ?
+                WHERE interview_id = ? AND ordinal = ?
+                """,
+                (
+                    text,
+                    score if score is not None else 0.0,
+                    int(scorable and score is not None),
+                    score_source,
+                    json.dumps(deductions, ensure_ascii=False),
+                    int(failed),
+                    original,
+                    interview_id,
+                    ordinal,
+                ),
+            )
+            failed_rows = connection.execute(
+                """
+                SELECT failed FROM interview_turns
+                WHERE interview_id = ? ORDER BY ordinal DESC
+                """,
+                (interview_id,),
+            ).fetchall()
+            streak = 0
+            for failed_row in failed_rows:
+                if not bool(failed_row["failed"]):
+                    break
+                streak += 1
+            connection.execute(
+                "UPDATE interviews SET breakdown_streak = ? WHERE id = ?",
+                (streak, interview_id),
+            )
+            connection.commit()
+            return {
+                "ordinal": ordinal,
+                "text": text,
+                "original_text": original,
+                "transcript_edited": True,
+                "score": score,
+                "scorable": bool(scorable and score is not None),
+                "score_source": score_source,
+                "deductions": deductions,
+                "failed": failed,
+                "speech_rate_cpm": speech_rate,
+            }
 
         return await self._run(operation)
 
@@ -431,12 +628,26 @@ class Database:
                     answer=row["answer"],
                     category=row["category"],
                     topic=row["topic"],
-                    score=row["score"],
+                    score=row["score"] if bool(row["scorable"]) else None,
+                    scorable=bool(row["scorable"]),
+                    score_source=(
+                        row["score_source"]
+                        if row["score_source"] in {"llm", "mock", "unavailable"}
+                        else "unavailable"
+                    ),
                     deductions=json.loads(row["deductions_json"]),
                     failed=bool(row["failed"]),
                     drill_dimension=row["drill_dimension"],
                     drill_depth=row["drill_depth"],
                     anchor_keyword=row["anchor_keyword"],
+                    input_mode=(
+                        "voice" if row["input_mode"] == "voice" else "text"
+                    ),
+                    answer_duration_seconds=row["answer_duration_seconds"],
+                    speech_rate_cpm=row["speech_rate_cpm"],
+                    transcript_edited=bool(row["transcript_edited"]),
+                    original_answer=row["original_answer"],
+                    recommended_answer_seconds=row["recommended_answer_seconds"],
                     created_at=row["created_at"],
                 )
                 for row in rows
@@ -516,7 +727,12 @@ class Database:
                 SELECT r.report_json,
                        (SELECT COUNT(*) FROM interview_turns t
                         WHERE t.interview_id = r.interview_id
-                          AND has_effective_text(t.answer) = 1) AS effective_turn_count
+                          AND has_effective_text(t.answer) = 1) AS effective_turn_count,
+                       (SELECT group_concat(DISTINCT t.category)
+                        FROM interview_turns t
+                        WHERE t.interview_id = r.interview_id
+                          AND has_effective_text(t.answer) = 1
+                          AND t.scorable = 1) AS observed_dimensions
                 FROM reports r WHERE r.interview_id = ?
                 """,
                 (interview_id,),
@@ -524,7 +740,9 @@ class Database:
             if not row:
                 return None
             return _normalize_report_scoring(
-                json.loads(row["report_json"]), int(row["effective_turn_count"])
+                json.loads(row["report_json"]),
+                int(row["effective_turn_count"]),
+                set(str(row["observed_dimensions"] or "").split(",")) - {""},
             )
 
         return await self._run(operation)
@@ -546,7 +764,12 @@ class Database:
                        i.end_reason, i.memory_enabled, i.hint_events_json,
                        (SELECT COUNT(*) FROM interview_turns t
                         WHERE t.interview_id = r.interview_id
-                          AND has_effective_text(t.answer) = 1) AS effective_turn_count
+                          AND has_effective_text(t.answer) = 1) AS effective_turn_count,
+                       (SELECT group_concat(DISTINCT t.category)
+                        FROM interview_turns t
+                        WHERE t.interview_id = r.interview_id
+                          AND has_effective_text(t.answer) = 1
+                          AND t.scorable = 1) AS observed_dimensions
                 FROM reports r
                 JOIN interviews i ON i.id = r.interview_id
                 WHERE r.client_id = ?
@@ -579,7 +802,9 @@ class Database:
             reports: list[dict[str, Any]] = []
             for row in rows:
                 report = _normalize_report_scoring(
-                    json.loads(row["report_json"]), int(row["effective_turn_count"])
+                    json.loads(row["report_json"]),
+                    int(row["effective_turn_count"]),
+                    set(str(row["observed_dimensions"] or "").split(",")) - {""},
                 )
                 try:
                     hint_events = json.loads(row["hint_events_json"] or "[]")

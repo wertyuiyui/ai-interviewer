@@ -123,7 +123,12 @@ class InterviewRetry(BaseModel):
 
 
 class TurnAssessment(BaseModel):
-    score: float = Field(default=5, ge=0, le=10)
+    # A missing model score must fail schema validation and enter the explicit
+    # evidence-based fallback.  A neutral-looking midpoint is not a safe
+    # default because it is indistinguishable from a genuine 5/10 assessment.
+    score: float | None = Field(ge=0, le=10)
+    scorable: bool = True
+    score_source: Literal["llm", "mock", "unavailable"] = "llm"
     failed: bool = False
     dimension: Literal[
         "project_depth", "fundamentals", "coding_thought", "communication"
@@ -134,7 +139,7 @@ class TurnAssessment(BaseModel):
 
 class TurnDecision(BaseModel):
     next_question: str
-    assessment: TurnAssessment = Field(default_factory=TurnAssessment)
+    assessment: TurnAssessment
     pressure_action: Literal[
         "none", "chain", "challenge", "interrupt", "silence"
     ] = "none"
@@ -160,18 +165,29 @@ class InterviewTurn(BaseModel):
     answer: str
     category: str
     topic: str
-    score: float = Field(ge=0, le=10)
+    score: float | None = Field(default=None, ge=0, le=10)
+    scorable: bool = True
+    score_source: Literal["llm", "mock", "unavailable"] = "llm"
     deductions: list[str] = Field(default_factory=list)
     failed: bool = False
     drill_dimension: str = ""
     drill_depth: int = 0
     anchor_keyword: str = ""
+    input_mode: Literal["voice", "text"] = "text"
+    answer_duration_seconds: float | None = Field(default=None, ge=0, le=3600)
+    speech_rate_cpm: float | None = Field(default=None, ge=0, le=2000)
+    transcript_edited: bool = False
+    original_answer: str = ""
+    recommended_answer_seconds: int = Field(default=60, ge=15, le=600)
     created_at: str = Field(default_factory=utc_now_iso)
 
 
 class RubricDimension(BaseModel):
-    score: float = Field(ge=0, le=10)
+    score: float | None = Field(default=None, ge=0, le=10)
     weight: float = Field(ge=0, le=1)
+    scorable: bool = False
+    status: Literal["scored", "not_observed"] = "not_observed"
+    evidence: list[str] = Field(default_factory=list)
     deductions: list[str] = Field(default_factory=list)
 
 
@@ -186,9 +202,17 @@ class QuestionFeedback(BaseModel):
     question: str
     answer: str
     category: str
-    score: float = Field(ge=0, le=10)
+    score: float | None = Field(default=None, ge=0, le=10)
+    scorable: bool = True
+    status: Literal["scored", "not_scorable"] = "scored"
+    evidence: list[str] = Field(default_factory=list)
     deductions: list[str] = Field(min_length=1)
     better_answer: str = Field(min_length=1)
+    recommended_answer_seconds: int = Field(default=60, ge=15, le=600)
+    answer_duration_seconds: float | None = Field(default=None, ge=0, le=3600)
+    input_mode: Literal["voice", "text"] = "text"
+    transcript_edited: bool = False
+    original_answer: str = ""
 
 
 class PracticeItem(BaseModel):
@@ -205,8 +229,84 @@ class HintEvent(BaseModel):
     created_at: str = Field(default_factory=utc_now_iso)
 
 
+class TranscriptCorrection(BaseModel):
+    text: str = Field(min_length=1, max_length=10000)
+    ordinal: int | None = Field(default=None, ge=1)
+    item_id: str | None = Field(default=None, max_length=256)
+
+    @field_validator("text")
+    @classmethod
+    def clean_text(cls, value: str) -> str:
+        value = value.replace("\x00", "").strip()
+        if not value:
+            raise ValueError("修正后的转写不能为空")
+        return value
+
+
+class EvidenceAnalysis(BaseModel):
+    score: float | None = Field(default=None, ge=0, le=10)
+    scorable: bool = False
+    evidence: list[str] = Field(default_factory=list)
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    suggestions: list[str] = Field(default_factory=list)
+
+
+class ResumeAnalysis(BaseModel):
+    overall: EvidenceAnalysis = Field(default_factory=EvidenceAnalysis)
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    content_suggestions: list[str] = Field(default_factory=list)
+    layout_suggestions: list[str] = Field(default_factory=list)
+    layout_scorable: bool = False
+    layout_evidence: list[str] = Field(default_factory=list)
+    rewritten_examples: list[str] = Field(default_factory=list)
+
+
+class ProcessAnalysis(BaseModel):
+    time_control: EvidenceAnalysis = Field(default_factory=EvidenceAnalysis)
+    speech_rate: EvidenceAnalysis = Field(default_factory=EvidenceAnalysis)
+    wording: EvidenceAnalysis = Field(default_factory=EvidenceAnalysis)
+    fluency: EvidenceAnalysis = Field(default_factory=EvidenceAnalysis)
+    average_answer_seconds: float | None = Field(default=None, ge=0)
+    average_speech_rate_cpm: float | None = Field(default=None, ge=0)
+
+
+class RoleFitAnalysis(BaseModel):
+    overall: EvidenceAnalysis = Field(default_factory=EvidenceAnalysis)
+    matched_requirements: list[str] = Field(default_factory=list)
+    gaps: list[str] = Field(default_factory=list)
+    improvement_plan: list[str] = Field(default_factory=list)
+
+
+class CompanyExperienceCitation(BaseModel):
+    title: str
+    url: str
+    platform: str = ""
+    published_at: str = ""
+    round: str = ""
+    report_takeaway: str = ""
+    takeaways: list[str] = Field(default_factory=list)
+
+
+class CompanyInsights(BaseModel):
+    company_label: str = ""
+    sample_caveat: str = ""
+    recurring_patterns: list[str] = Field(default_factory=list)
+    interview_advice: list[str] = Field(default_factory=list)
+    citations: list[CompanyExperienceCitation] = Field(default_factory=list)
+
+
+class RadarAxis(BaseModel):
+    key: str
+    label: str
+    score: float | None = Field(default=None, ge=0, le=10)
+    scorable: bool = False
+    evidence: list[str] = Field(default_factory=list)
+
+
 class InterviewReport(BaseModel):
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "2.0"] = "2.0"
     report_id: str
     interview_id: str
     generated_at: str = Field(default_factory=utc_now_iso)
@@ -215,7 +315,7 @@ class InterviewReport(BaseModel):
     # Keep that state distinct from a genuine numeric score so API consumers do
     # not mistake a placeholder rubric for performance evidence.
     scored: bool = True
-    score_status: Literal["scored", "insufficient_data"] = "scored"
+    score_status: Literal["scored", "insufficient_data", "unscorable"] = "scored"
     overall_score: float = Field(ge=0, le=10)
     rubric: Rubric
     question_feedback: list[QuestionFeedback]
@@ -227,6 +327,12 @@ class InterviewReport(BaseModel):
     memory_enabled: bool = True
     hint_count: int = Field(default=0, ge=0)
     hint_events: list[HintEvent] = Field(default_factory=list)
+    scoring_coverage: float = Field(default=0, ge=0, le=1)
+    resume_analysis: ResumeAnalysis = Field(default_factory=ResumeAnalysis)
+    process_analysis: ProcessAnalysis = Field(default_factory=ProcessAnalysis)
+    role_fit: RoleFitAnalysis = Field(default_factory=RoleFitAnalysis)
+    company_insights: CompanyInsights = Field(default_factory=CompanyInsights)
+    radar: list[RadarAxis] = Field(default_factory=list)
 
 
 class ApiError(BaseModel):
