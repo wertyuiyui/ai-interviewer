@@ -1,21 +1,21 @@
 # 砺面：AI 模拟面试官
 
-面向中国本科生的「大厂后端开发实习一面」语音陪练 Web 应用。候选人上传文字版简历 PDF（也可粘贴文字），选择字节跳动 / 美团 / 腾讯 / 阿里巴巴 / 百度 / 华为、技术面或技术 + 综合（HR）面、后端细分方向、压力程度和面试时长后，AI 会按公司风格围绕简历连续下钻；也可以跳过完整模拟，直接用真实公开、许可可追溯的题库进行语音或文字单题练习。面试结束后生成逐题扣分、公开 rubric、改写示范和下次必练清单，并用本地匿名设备 ID 对比历次成绩。
+面向中国本科生的「大厂后端开发实习一面」语音陪练 Web 应用。候选人上传文字版简历 PDF（也可粘贴文字），选择字节跳动 / 美团 / 腾讯 / 阿里巴巴 / 百度 / 华为、技术面 / 综合（HR）面 / 技术+综合面、后端细分方向、压力程度和面试时长后，AI 会按公司风格围绕简历连续下钻；也可以跳过完整模拟，直接用真实公开、许可可追溯的题库进行语音或文字单题练习。面试结束后生成逐题扣分、公开 rubric、改写示范和下次必练清单，并用匿名 Profile 对比历次成绩。
 
 这是 16 小时黑客松范围内的 MVP，只做后端实习一面。明确不包含岗位推荐、面试外部实时辅助（作弊向）、视频/微表情、代码运行判题、RAG、账号系统或运行时面经爬虫。产品内的“提示”只服务于模拟练习，提供回答结构而非答案，并会如实记入最终报告。
 
 ## 已实现的闭环
 
 - 六家公司风格卡与独立 `interview_skills`，含证据等级、环节顺序、语气、选题权重、难度阶梯、项目追问、压力策略、综合面重点和三种语言 profile；剧本会实际加载对应 skill。资料只够做题库索引、无法支撑公司风格的其它公司没有被冒充成“精准模拟”。
-- 面试类型可选纯技术面或技术 + 综合（HR）面，旧请求默认保持技术面。综合面仍以技术判断为主体，并按公司分别考察价值观与公司契合、人生规划和选择、薪酬期待；面向本科实习候选人，不套用管理岗问题，也不因薪酬数值本身扣分。
-- 首批字节 / 美团 / 腾讯各有 36 道人工题：MySQL、Redis、Java 并发、计网各 8 道，手撕思路 4 道；每题还有至少两条公司化追问。新增公司通过独立 skill 应用公司节奏和追问规则，并复用可追溯的后端公共题池。
-- 公开面经只作为可追溯的自述资料：开发者人工提炼考察信号后重新编写“面经衍生题”，按公司放入候选题短名单。它们未经招聘企业确认，不是官方真题，也不会复制原帖叙事、答案、图片或长题单。
-- `/practice` 快速刷题只从经过审核的静态授权题库选题，当前包含 66 道中英双语短题，覆盖 Java / Go、MySQL、Redis、并发、操作系统、计网、分布式系统、AI 工程和英文行为题。题目选自或经压缩、翻译自固定版本的 JavaGuide、interview-go、Tech Interview Handbook 与 ARIS-in-AI-Offer；每题内部保留来源路径、提交版本和 Apache-2.0 / MIT 许可证，但这些字段不会返回到学习端 API 或显示在作答、评分 UI。
-- 快速刷题支持中文、中英双语和纯英文，按公司适用范围、方向与难度筛选；每道题可用文字或语音作答，语音经实时 ASR 进入可编辑文本框，用户确认或修正后才提交评分。同一题可以重复作答，评分失败会明确显示“不可评分”，不会补成默认 5.0。
+- 面试类型可选纯技术面、独立综合（HR）面或技术+综合面，旧请求默认保持技术面。HR 环节分别考察价值观与公司契合、人生规划和选择、协作证据与薪酬沟通；面向本科实习候选人，不套用管理岗问题，也不因薪酬数值本身扣分。
+- 固定主问题只来自 108 道可追溯公共题池；每道主问题后允许一次绑定上一答关键词的个性化追问，再切到下一道。六份公司 skill 只改变题目排序、节奏、深挖维度和压力方式，不把公共题冒充为某公司的独家真题。
+- 公开面经只作为公司风格与报告建议的可追溯样本，不进入可逐字提问的固定题面数组。它们未经招聘企业确认，不是官方标准，也不会复制原帖叙事、答案、图片或长题单。
+- `/practice` 快速刷题只从经过审核的静态授权题库选题，当前包含 108 道中英双语短题，覆盖 Java / Go、MySQL、Redis、并发、操作系统、计网、分布式系统、口述算法、AI 工程和英文行为题。题目选自或经压缩、翻译自固定版本的 JavaGuide、interview-go、Tech Interview Handbook 与 ARIS-in-AI-Offer；每题内部保留来源路径、提交版本和 Apache-2.0 / MIT 许可证，但这些字段不会返回到学习端 API 或显示在作答、评分 UI。
+- 快速刷题支持中文、中英双语和纯英文，按公司练习侧重、面试类型、方向与难度筛选；公司选择会按对应 skill 对同一审核公共题池重新排序，组合面稳定保留技术题与行为题。每道题可用文字或语音作答，语音经实时 ASR 进入可编辑文本框，用户确认或修正后才提交评分。同一题可以重复作答，评分失败会明确显示“不可评分”，不会补成默认 5.0。
 - CloudWeGo Hertz / Kitex、Spring PetClinic、PingCAP Talent Plan / TinyKV 等开源项目会被改写成背压、重试预算、事务边界、崩溃一致性等工程场景题，并按岗位细分方向匹配。候选人无需读过指定仓库，仓库只提供可追溯的实践背景。
 - 岗位仍限定为后端实习，但支持通用、Java、Go、C++、Python、基础架构、云原生、数据库与存储、中间件、分布式系统、AI 工程后端等常见细分方向，也支持 1–80 字自定义方向。
-- AI 工程后端 / LLM Infra 方向额外启用 31 道静态精选题，覆盖模型请求状态机、TTFT/TPOT、continuous batching、KV cache、量化、Agent 工具安全和评测。知识点经人工改写自 MIT 许可的 [ARIS-in-AI-Offer](https://wanshuiyin.github.io/ARIS-in-AI-Offer/)，不会进入默认通用后端题池。
-- AI 工程后端 / LLM Infra 方向还会轮换加入前沿讨论题，围绕推理路由、KV cache、软硬件协同和 Agent 安全聊实践、验证方法与 trade-off；不要求背论文公式、实验数字或实现细节，也不会仅因没读过指定论文判定答崩。
+- AI 工程后端 / LLM Infra 方向会把已审核短名单中的模型服务题控制在约三分之一，当前 12 道覆盖请求状态机、TTFT/TPOT、continuous batching、KV cache、量化、RAG 与评测；知识点经人工改写自 MIT 许可的 [ARIS-in-AI-Offer](https://wanshuiyin.github.io/ARIS-in-AI-Offer/)，不会进入默认通用后端题池。
+- 这些 AI 工程题以实践、验证方法和 trade-off 为主，不要求背论文公式、实验数字或实现细节，也不会仅因没读过指定论文判定答崩。
 - PyMuPDF 提取 PDF 文字层，一次百炼调用输出固定 `{教育, 实习经历[], 项目[], 技能[]}` Schema；扫描件明确提示改传文字版。
 - 首题自我介绍只了解学校专业、学习进度、课程基础、技术方向和求职目标；听完后服务端必须另开一题，单独选择项目或实习经历，不把两段内容挤在同一道题里。
 - 服务端强制七维项目/实习下钻：业务背景、个人职责、请求链路、技术选型理由、难点与故障、数据指标口径、边界与 trade-off。技术面默认强制 4 层；技术 + 综合（HR）面为给综合环节留出有效时间，默认强制 3 层，若上场项目深度较弱则扩为 4 层。
@@ -45,6 +45,8 @@
 5. 打开 `/practice` 可按公司、方向、难度、题量和语言创建快速练习。语音模式会把增量转写实时写入回答框；停止录音即释放麦克风，提交前仍可手动改字。报告页的“重答低分题”也会进入同一页面，并显示原扣分点供对照。
 
 所有题库和资料来源均为随代码发布的静态 JSON。运行时不会抓取第三方页面、不会构建 RAG 或向量索引，也不会抓取小红书；面经/工程参考目录可通过 `GET /api/resources/catalog` 查看来源 URL、来源类型、授权/使用方式、核验日期和考察信号。快速刷题的逐题来源不会出现在学习 UI 或 `/api/practice/*` 的公开响应中，开发者可在 [`resources/practice_source_manifest.json`](resources/practice_source_manifest.json) 和 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 审核固定版本与许可证。完整策展规则见 [`references/CURATED_SOURCES.md`](references/CURATED_SOURCES.md)。
+
+`/root/workspace/weiyi/data` 不是 66 道题的平铺题库，而是一份包含知识库、面经索引、社区和项目资源的调研目录；去重口径与 108 道上线审核题的组成见 [`references/DATA_INVENTORY.md`](references/DATA_INVENTORY.md)。
 
 ## 技术栈
 
@@ -213,6 +215,11 @@ REST：
 - `POST /api/practice/sessions/{id}/answers`，提交文字或语音转写，可用 `reattempt: true` 重答同题
 - `POST /api/practice/sessions/{id}/hint`
 - `GET /api/practice/history?client_id=...&limit=20`
+- `GET /api/profile`，使用 `X-Profile-Key` 读取当前匿名 Profile 的简历/项目元数据
+- `POST /api/profile/resumes`、`POST /api/profile/resumes/text`，保存并结构化 PDF 或粘贴文本
+- `POST /api/profile/projects`、`POST /api/profile/projects/github`，保存多文件/ZIP 或公开 GitHub 项目快照
+- `PATCH /api/profile/projects/{id}/selection`、`DELETE /api/profile/projects/{id}`，选择或手动删除项目
+- `POST /api/profile/projects/{id}/analysis`，生成项目架构、风险、追问和复盘参考回答
 - `POST /api/resumes/parse`，multipart 的 `file` 或 `text`
 - `POST /api/interviews`
 - `GET /api/interviews/{id}`
@@ -239,7 +246,7 @@ REST：
 }
 ```
 
-`interview_type` 为 `technical` 或 `technical_hr`，缺省为 `technical` 以兼容旧客户端；`specialization` 可自由输入；`language_mode` 为 `zh`、`bilingual` 或 `en`；`stress_level` 为 0–3；`duration_minutes` 接受 1–180 整数，`null` 表示无限且只由用户手动结束；`memory_enabled` 控制本场是否读取和贡献后续弱项记忆。旧客户端的 `stress: true/false` 仍兼容映射为标准压力 / 关闭。
+`interview_type` 为 `technical`、`hr` 或 `technical_hr`，缺省为 `technical`；旧客户端的 `tech_hr` 会规范化为 `technical_hr`。`specialization` 可自由输入，服务端预设目录由已审核真实题库的 `direction_tags/topics` 覆盖生成，题库不可用时回退到兼容目录；`language_mode` 为 `zh`、`bilingual` 或 `en`；`stress_level` 为 0–3；`duration_minutes` 接受 1–180 整数，`null` 表示无限且只由用户手动结束；`memory_enabled` 控制本场是否读取和贡献后续弱项记忆。旧客户端的 `stress: true/false` 仍兼容映射为标准压力 / 关闭。快速刷题请求同样接受 `interview_type`：技术面排除行为题，HR 面只使用行为题，组合面按技术 60% / 行为 40% 选题。创建面试时若带 `profile_project_id`，还必须发送与 `client_id` 一致的 `X-Profile-Key`。
 
 正式面试连接 `/ws/interviews/{id}`；首页可选硬件检查连接 `/ws/hardware-test`，后者只做短时 ASR 和麦克风状态测试，不创建面试记录。上行音频固定为 16 kHz、单声道、PCM16LE 二进制帧；每题用 `answer.start / answer.end` 明确回答边界，服务端照常记录按钮之间的完整用时。服务端把供应商事件统一为 `candidate.transcript.*`、`interviewer.text.*`、`interviewer.audio.synced`、`audio.chunk/file/clear`、`input.speech_started`、`timer.sync`、`interview.ended`。转写修正使用 `candidate.transcript.correct / corrected`；API Key 从不发送到浏览器。
 
@@ -254,13 +261,13 @@ pytest -q
 
 测试不访问外网，覆盖：
 
-- 六家公司卡片 / skill 完整性、首批三家公司题库数量、类别、追问字段和链接白名单。
+- 六家公司卡片 / skill 完整性、公司侧重排序、三类面试状态机和链接白名单。
 - 授权快速题库的来源路径、固定提交、许可证、审核状态与中英文题面，以及学习端不泄露逐题来源。
-- 快速刷题的公司/方向/难度/语言筛选、文字与语音转写提交、重复作答、不可评分状态和面后低分题重答。
+- 快速刷题的公司/类型/方向/难度/语言筛选、文字与语音转写提交、重复作答、不可评分状态和面后低分题重答。
 - ARIS 精选题仅在匹配 AI 工程细分方向时占约三分之一候选题，普通后端不会混入。
 - PDF 文字层 / 扫描件判断、中文简历 Schema，以及 5 份虚构 PDF 的可提取性。
 - 自定义细分方向、1–180 分钟 / 无限时长、四档压力参数与旧 API/SQLite 迁移兼容。
-- 自我介绍与项目/实习开题严格分题，技术 + 综合（HR）面完整覆盖三类综合问题，项目至少三层下钻、连续答崩提前终止、rubric 和第二场弱项记忆。
+- 自我介绍与项目/实习开题严格分题，技术 / HR / 技术+HR 均按“审核主问+锚定追问”推进，项目至少三层下钻，并覆盖连续答崩提前终止、rubric 和第二场弱项记忆。
 - Omni / Paraformer 事件解析、握手、二进制 PCM、取消竞态、`response.done` 状态校验、发送侧断链降级与结束语播放 ACK。
 - provider-ready 上行门控、48 kHz 到 16 kHz / 100 ms 分帧、中英混合转写与播放、空转写恢复、麦克风断流与播放排空。
 - 压力面只有在部分转写呈现明显表达问题且持续存在时才真实插话、语音链路超时结束，以及文字输入 barge-in。
@@ -268,8 +275,9 @@ pytest -q
 
 ## 数据、预算与安全边界
 
-- SQLite 和 localStorage 使用浏览器生成的匿名 `client_id`，没有账号或身份认证；随机 ID 不是安全登录凭证，所以历史接口不会提供全站列表。
-- 不保存 PCM 音频；SQLite 只保存结构化简历、逐题转写、私有评分和报告。公开部署应在隐私说明中明确保留周期，并定期清理 `data/`。
+- SQLite 和 localStorage 使用浏览器生成的高熵匿名 Profile 密钥，没有账号或身份认证；它是匿名 capability 而不是可找回的登录凭证，清空浏览器存储后无法自动恢复同一 Profile。
+- 不保存 PCM 音频；SQLite 会保存简历提取文字、结构化简历、项目文本快照、逐题转写、私有评分和报告。简历解析、项目解读和面试/报告生成会把对应文字发送给阿里云百炼；删除 Profile 资料不会反向删除已经写入历史面试的结构化快照。公开部署应明确保留周期并定期清理 `data/`。
+- Caddy 把请求体限制为 12 MB；应用层再限制 PDF、项目单文件、ZIP、解压体积、文件数量与匿名 Profile 项目数，并跳过 ZIP 中的图片、构建目录和二进制附件。
 - PDF 上限 8 MB；扫描件不做 OCR；简历中的“指令”会作为不可信数据包裹，不能改写 system prompt。
 - 新开面试有全站 / 设备双重每日保险丝，简历解析还有 IP 滑动窗口限制。黑客松期间先用百炼免费额度，并在百炼控制台设置用量告警；达到预算时可把 `DAILY_INTERVIEW_LIMIT=0` 或直接停用新建入口。
 - JavaGuide / CodeTop 资源 URL 由服务端白名单映射，不接受模型生成的任意链接。
