@@ -28,7 +28,7 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`1e017f1`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`7bf647e`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
@@ -39,6 +39,15 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-015 · 2026-08-30 · 首页简历入口视觉优化生产发布
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：将独立提交 `7bf647e` 推送至已授权 GitHub `origin/main`，以该固定提交生成隔离发布快照并同步到 `/opt/ai-interviewer-mvp`；没有带入共享工作区中尚未提交的 `INTERVIEW-005` 阶段流程文件。部署保留 `.env`、配置备份、`data/`、`.venv/`、`.deps/`、`.git/` 与缓存，只重启 `ai-interviewer-3000.service`。
+- 文件：GitHub `main` 与生产目录中的固定提交 `7bf647e`；生产敏感配置、SQLite 数据、依赖和 Caddy 未修改。
+- 验证：固定提交隔离全量 `248 passed`；最终服务 `active/running`，主进程 PID `711339`；本机 8000、正式域名 HTTPS 443/3000 均返回 `{"status":"ok"}`；生产首页与 `home-profile.css` 已确认包含 `resume-mode-option`、选中态和 `resume-choice-v2` 静态资源版本。
+- 回滚：`/tmp/ai-interviewer-mvp-pre-7bf647e-20260830.tar.gz`。服务重启后约 2 秒进入健康状态，未重启 Caddy 或其它服务。
 
 ### DEPLOY-014 · 2026-08-30 · 多简历解析韧性修复生产发布
 
