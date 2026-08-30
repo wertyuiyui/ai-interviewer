@@ -82,6 +82,9 @@ class InterviewCreate(BaseModel):
     interview_type: InterviewType = "technical"
     specialization: str = Field(default="通用后端", min_length=1, max_length=80)
     language_mode: Literal["zh", "bilingual", "en"] = "bilingual"
+    # Candidate input is selected per interview. Text sessions deliberately
+    # reuse the durable L3 path so reconnects never start microphone capture.
+    answer_mode: Literal["voice", "text"] = "voice"
     # ``stress`` is retained as a compatibility alias for older clients. New
     # clients should send stress_level; when both are present, stress_level wins.
     stress: bool = False

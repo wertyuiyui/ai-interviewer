@@ -19,6 +19,7 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
+| `INTERVIEW-002` | `/root` | `in_progress` | 模拟面试增加简历—回答一致性检测；严重基础不符时提示疑似选错简历并支持退出首页，高压场次可据此打断；文字回答采用更宽松的时长评判 | `app/interview_engine.py`, `app/prompt_engine.py`, `public/interview.html`, `public/js/interview.js`, `public/assets/interview.css`, `tests/test_core.py`, `tests/test_voice_session.py`, `tests/test_frontend_interview_controls.py`, `process.md` | 避开 `PROFILE-001` 的页面和路由文件；承接已完成但尚未集成提交的 `INTERVIEW-001` 文字模式改动 |
 
 登记模板：
 
@@ -255,3 +256,21 @@
 - 文件：生产目录中的提交 `4e29845` 工作树；生产密钥、SQLite 数据和依赖目录未修改。
 - 验证：`ai-interviewer-3000.service` 为 `active (running)`，主进程 PID `613050`；`http://127.0.0.1:8000/healthz`、以正式域名 SNI 直连本机 Caddy 的 443 与 HTTPS 3000 均返回 `{"status":"ok"}`；生产 `/project` 已包含“论文/项目解读”、类型选择和 arXiv 文案，生产 OpenAPI 已注册 `/api/profile/projects/links`；回滚包及生产 `.env`、`data/`、`.deps/` 均确认存在。
 - 风险或后续事项：服务刚重启的启动窗口内，沙箱网络命名空间两次无法连接 8000；宿主侧状态显示应用在约 2 秒后完成启动，随后三处健康检查全部正常。GitHub 同步状态见上一条 `PAPER-001`，不影响当前生产运行。
+
+### INTERVIEW-001 · 2026-08-30 · 模拟面试纯文字回答模式
+
+- Agent：`/root`；协作只读审计：`/root/practice_audit`。
+- 状态：`completed`
+- 摘要：模拟面试设置新增“语音回答 / 文字回答”选择并保存上次偏好；选择文字后立即停止并隐藏入场麦克风测试，创建请求携带严格的 `answer_mode=text`。服务端将文字场次持久化为既有 `L3` 模式，因此首次进入、刷新和断线重连均不会枚举、连接或请求麦克风权限；仍复用原有题目状态机、逐题计时、文字评分和报告生成。缺省请求继续按语音模式处理；全局仅支持 L3 时前端自动安全降级到文字。
+- 文件：`app/schemas.py`、`app/interview_engine.py`、`public/index.html`、`public/js/home.js`、`tests/test_core.py`、`tests/test_frontend_home_ui.py`、`process.md`。
+- 验证：Python 编译、`node --check public/js/home.js`、`git diff --check` 通过；参数/持久化、首页、面试控制及音频生命周期专项 `16 passed`。共享工作区全量回归为 `215 passed, 2 failed`，两项失败均是进行中的 `PROFILE-001` 已迁移 `/profile` 导航和首页 Profile 文案、其对应旧断言尚在同步，与本任务服务端和回答模式文件无关。
+- 风险或后续事项：文字模式复用纯文字 L3，面试官也以文字出题，不启动付费语音供应商；如果后续需要“听 AI 语音、候选人只打字”的混合模式，应独立拆分输出播放与候选人采集协议。`PROFILE-001` 后续编辑首页时必须保留本任务的回答方式 DOM、payload/setup 与麦克风测试禁用逻辑。
+
+### PROFILE-001 · 2026-08-30 · 独立个人档案与首页快捷编辑
+
+- Agent：`/root`；只读协作审计：`/root/profile_data_audit`、`/root/profile_frontend_audit`、`/root/profile_test_audit`。
+- 状态：`completed`
+- 摘要：全站右上角“个人档案”改为独立 `/profile` 页面；首页完整模拟仍保留可展开的快捷编辑，可选择/上传简历、选择论文/项目并继续传递 `profile_project_id`。独立页集中展示结构化教育、实习、论文/项目经历和技能，支持 PDF/文字简历、源码/论文文件及 GitHub/arXiv 链接上传；项目经历只在规范化名称唯一精确匹配时显示对应链接，避免重名和近似名误关联。页面同时整合错题本、模拟面试历史和快速刷题历史，分别容错加载并支持错题移除。简历头像不再硬编码“历”，而是从清理通用简历词后的资料名称提取首个中文姓氏字符，无法可靠取得时显示中性的“人”。
+- 文件：`app/main.py`、`public/profile.html`、`public/js/profile.js`、`public/assets/profile.css`、`public/index.html`、`public/js/home.js`、`public/practice.html`、`public/project.html`、`public/coding.html`、`public/report.html`、`tests/test_frontend_navigation.py`、`tests/test_frontend_profile_project_ui.py`、`process.md`。
+- 验证：`node --check public/js/profile.js public/js/home.js`、`python3 -m py_compile app/main.py`、`git diff --check` 通过；Profile/Profile API/错题/报告相关专项 `72 passed`；最终全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `218 passed`，包含并发完成的 `INTERVIEW-001` 纯文字面试回归。
+- 风险或后续事项：简历结构当前没有候选人姓名或持久化经历关联 ID，因此头像姓氏是保守文件名回退，项目链接仅做唯一精确名称关联；未匹配项会明确显示未关联而不模糊猜配。页面不会自动调用项目分析接口，避免首次打开触发付费模型请求。当前环境无可用 Chromium，未做真实浏览器视觉回归；移动端布局、键盘焦点和空态已通过静态契约检查。

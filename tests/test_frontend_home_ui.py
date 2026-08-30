@@ -70,3 +70,25 @@ def test_home_pressure_copy_describes_conditional_interruptions() -> None:
     assert "针对模糊、矛盾和技术漏洞连续下钻" in html
     assert "仅在明显跑题或表述失控时打断" in script
     assert "更频繁打断" not in script
+
+
+def test_home_can_create_a_persistent_microphone_free_text_interview() -> None:
+    html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    home = (ROOT / "public" / "js" / "home.js").read_text(encoding="utf-8")
+    interview = (ROOT / "public" / "js" / "interview.js").read_text(encoding="utf-8")
+
+    assert 'name="answer_mode" value="voice"' in html
+    assert 'name="answer_mode" value="text"' in html
+    assert 'id="hardwareTestSection"' in html
+    assert "/js/home.js?v=20260830-text-interview-v1" in html
+    assert "function getAnswerMode()" in home
+    assert "serverMode === 'L3' ? 'text' : preferredAnswerMode" in home
+    assert home.count("answer_mode: answerMode") == 2
+    assert "answer_mode: session?.answer_mode" in home
+    assert "hardwareTestSection?.classList.toggle('is-hidden', textOnly)" in home
+    assert "hardwareTestButton.disabled = textOnly" in home
+    assert "hardwareTest?.stop({ immediate: true, quiet: true })" in home
+
+    join_block = interview.split("async function joinInterview", 1)[1].split("async function finishInterview", 1)[0]
+    assert "if (voiceMode !== 'L3')" in join_block
+    assert "initializeAudio(true" in join_block

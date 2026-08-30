@@ -429,6 +429,7 @@ def test_interview_parameter_contract_and_pressure_levels() -> None:
                 "duration_minutes": 0,
             }
         )
+
     with pytest.raises(ValidationError):
         InterviewCreate.model_validate(
             {
@@ -519,6 +520,46 @@ def test_interview_parameter_contract_and_pressure_levels() -> None:
         )
         == "Redis 的淘汰策略？"
     )
+
+
+@pytest.mark.asyncio
+async def test_text_answer_mode_is_persisted_as_microphone_free_l3(tmp_path) -> None:
+    settings = mock_settings(tmp_path, voice_mode="L0")
+    database = Database(settings)
+    await database.initialize()
+    engine = InterviewEngine(database, settings)
+
+    text_session = await engine.create(
+        InterviewCreate(
+            client_id="text-session-client",
+            resume=sample_resume(),
+            company="bytedance",
+            answer_mode="text",
+        )
+    )
+    stored_text = await database.get_interview(text_session["id"])
+    assert text_session["answer_mode"] == "text"
+    assert text_session["voice_mode"] == "L3"
+    assert stored_text is not None and stored_text["voice_mode"] == "L3"
+    assert stored_text["last_question"] == text_session["initial_question"]
+
+    voice_session = await engine.create(
+        InterviewCreate(
+            client_id="voice-session-client",
+            resume=sample_resume(),
+            company="bytedance",
+        )
+    )
+    assert voice_session["answer_mode"] == "voice"
+    assert voice_session["voice_mode"] == "L0"
+
+    with pytest.raises(ValidationError):
+        InterviewCreate(
+            client_id="invalid-mode-client",
+            resume=sample_resume(),
+            company="bytedance",
+            answer_mode="keyboard",  # type: ignore[arg-type]
+        )
 
 
 @pytest.mark.asyncio

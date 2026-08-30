@@ -1561,3 +1561,8 @@ async def coding_page() -> FileResponse:
 @app.get("/project", include_in_schema=False)
 async def project_page() -> FileResponse:
     return FileResponse(PUBLIC_DIR / "project.html")
+
+
+@app.get("/profile", include_in_schema=False)
+async def profile_page() -> FileResponse:
+    return FileResponse(PUBLIC_DIR / "profile.html")

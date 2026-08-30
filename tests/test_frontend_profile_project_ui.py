@@ -64,6 +64,47 @@ def test_anonymous_profile_supports_multiple_resume_and_project_assets() -> None
     assert "String(url).startsWith('/api/')" in common
 
 
+def test_standalone_profile_integrates_assets_mistakes_and_history() -> None:
+    page = (PUBLIC / "profile.html").read_text(encoding="utf-8")
+    script = (PUBLIC / "js" / "profile.js").read_text(encoding="utf-8")
+    style = (PUBLIC / "assets" / "profile.css").read_text(encoding="utf-8")
+
+    for element_id in (
+        "profileAvatar",
+        "profileResumeFiles",
+        "profileResumeText",
+        "profileResumeList",
+        "profileProjectType",
+        "profileProjectFiles",
+        "profileProjectLinks",
+        "profileProjectList",
+        "profileMistakeList",
+        "profileInterviewHistory",
+        "profilePracticeHistory",
+    ):
+        assert f'id="{element_id}"' in page
+
+    assert "简历中的论文/项目行会与同名档案链接自动对应" in page
+    assert "function resumeSurname" in script
+    assert "|| '人'" in script
+    assert "icon.textContent = '历'" not in (PUBLIC / "js" / "home.js").read_text(encoding="utf-8")
+    assert "function linkedProjectFor" in script
+    assert "matches.length === 1" in script
+    assert "normalizeMatchName(project?.name) === key" in script
+    assert "noopener noreferrer" in script
+    assert "apiFetch('/api/profile'" in script
+    assert "apiFetch('/api/profile/resumes'" in script
+    assert "apiFetch('/api/profile/resumes/text'" in script
+    assert "apiFetch('/api/profile/projects'" in script
+    assert "'/api/profile/projects/github'" in script
+    assert "'/api/profile/projects/links'" in script
+    assert "/api/practice/mistakes?client_id=" in script
+    assert "/api/history?client_id=" in script
+    assert "/api/practice/history?client_id=" in script
+    assert "Promise.allSettled" in script
+    assert "@media (max-width: 720px)" in style
+
+
 def test_three_interview_types_are_available_in_full_and_quick_practice() -> None:
     home = (PUBLIC / "index.html").read_text(encoding="utf-8")
     home_script = (PUBLIC / "js" / "home.js").read_text(encoding="utf-8")

@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 PUBLIC = Path(__file__).resolve().parents[1] / "public"
-NAV_PAGES = ("index.html", "practice.html", "project.html", "coding.html", "report.html")
+NAV_PAGES = ("index.html", "profile.html", "practice.html", "project.html", "coding.html", "report.html")
 
 
 def _top_navigation(page: str) -> tuple[list[str], list[str]]:
@@ -26,15 +26,22 @@ def test_every_primary_page_has_only_the_three_global_navigation_options() -> No
     for filename in NAV_PAGES:
         page = (PUBLIC / filename).read_text(encoding="utf-8")
         hrefs, labels = _top_navigation(page)
-        assert hrefs == ["/", "/#profilePanel", "/report?view=history"], filename
+        assert hrefs == ["/", "/profile", "/report?view=history"], filename
         assert labels == ["首页", "个人档案", "历史报告"], filename
 
 
-def test_profile_navigation_opens_existing_profile_panel_without_new_data_flow() -> None:
+def test_profile_navigation_uses_a_standalone_page_and_home_keeps_quick_edit() -> None:
     page = (PUBLIC / "index.html").read_text(encoding="utf-8")
     script = (PUBLIC / "js" / "home.js").read_text(encoding="utf-8")
+    profile_page = (PUBLIC / "profile.html").read_text(encoding="utf-8")
+    main_source = (PUBLIC.parent / "app" / "main.py").read_text(encoding="utf-8")
 
     assert 'id="profilePanel"' in page
+    assert "模拟面试快捷编辑" in page
+    assert 'href="/profile"' in page
+    assert 'href="/profile" aria-current="page"' in profile_page
+    assert '@app.get("/profile", include_in_schema=False)' in main_source
+    assert 'return FileResponse(PUBLIC_DIR / "profile.html")' in main_source
     assert "function openProfileFromHash" in script
     assert "profilePanel.open = true" in script
     assert "window.addEventListener('hashchange', openProfileFromHash)" in script

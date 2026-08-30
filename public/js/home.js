@@ -19,6 +19,9 @@ const memoryEnabled = $('#memoryEnabled');
 const resumeAlert = $('#resumeAlert');
 const settingsAlert = $('#settingsAlert');
 const modePill = $('#modePill');
+const hardwareTestSection = $('#hardwareTestSection');
+const hardwareTestButton = $('#hardwareTestButton');
+const answerModeHint = $('#answerModeHint');
 const profilePanel = $('#profilePanel');
 const profileStatus = $('#profileStatus');
 const profileResumeFiles = $('#profileResumeFiles');
@@ -38,6 +41,7 @@ let selectedResumeId = '';
 let profile = { resumes: [], projects: [], selected_project_id: '' };
 let stressTouched = false;
 let serverMode = 'L3';
+let preferredAnswerMode = 'voice';
 
 const PROFILE_RESUME_KEY = 'mock_interview.profile_resume.v1';
 
@@ -127,6 +131,16 @@ function profileItemName(item, fallback) {
   return String(item?.name || item?.file_name || item?.title || fallback).trim();
 }
 
+function profileResumeSurname(item) {
+  const candidate = profileItemName(item, '')
+    .replace(/\.pdf$/i, '')
+    .replace(/(?:个人)?简历|求职|应聘|resume|curriculum\s*vitae|\bcv\b/gi, '')
+    .replace(/后端|前端|开发|实习|工程师|技术|校招|社招|本科生|应届生|最终版|最新版|附件/g, '')
+    .replace(/^\d{4,}[-_. ]*/, '')
+    .trim();
+  return candidate.match(/[\u3400-\u9fff]/u)?.[0] || '人';
+}
+
 function updateProfileStatus(message = '') {
   if (!profileStatus) return;
   profileStatus.textContent = message || `${profile.resumes.length} 份简历 · ${profile.projects.length} 个项目 · 当前设备`;
@@ -206,7 +220,7 @@ function renderProfileResumes() {
     });
     const icon = document.createElement('span');
     icon.className = 'profile-item-icon';
-    icon.textContent = '历';
+    icon.textContent = profileResumeSurname(resume);
     const copy = document.createElement('span');
     copy.className = 'profile-item-copy';
     const title = document.createElement('strong');
@@ -680,6 +694,28 @@ function getDurationMinutes() {
   return value;
 }
 
+function getAnswerMode() {
+  return serverMode === 'L3' ? 'text' : preferredAnswerMode;
+}
+
+function syncAnswerMode({ stopHardware = false } = {}) {
+  const answerMode = getAnswerMode();
+  $$('input[name="answer_mode"]').forEach((input) => {
+    input.checked = input.value === answerMode;
+    input.disabled = serverMode === 'L3' && input.value === 'voice';
+  });
+  const textOnly = answerMode === 'text';
+  hardwareTestSection?.classList.toggle('is-hidden', textOnly);
+  hardwareTestSection?.setAttribute('aria-hidden', String(textOnly));
+  if (hardwareTestButton) hardwareTestButton.disabled = textOnly;
+  if (answerModeHint) answerModeHint.textContent = textOnly
+    ? '纯文字面试不会请求或连接麦克风，仍会生成完整评分和报告'
+    : '语音回答会在进入面试时请求麦克风权限';
+  if (textOnly && stopHardware) {
+    hardwareTest?.stop({ immediate: true, quiet: true }).catch(() => {});
+  }
+}
+
 function restoreSetup() {
   const saved = getSavedSetup();
   if (!saved || typeof saved !== 'object') return;
@@ -689,12 +725,14 @@ function restoreSetup() {
   if (saved.specialization) setSpecialization(saved.specialization);
   if (saved.language_mode) setLanguageMode(saved.language_mode);
   if (saved.interview_type) setInterviewType(saved.interview_type);
+  preferredAnswerMode = saved.answer_mode === 'text' ? 'text' : 'voice';
   if (saved.stress_level !== undefined || typeof saved.stress === 'boolean') {
     setStressLevel(saved.stress_level ?? (saved.stress ? 2 : 0));
     stressTouched = true;
   }
   if (typeof saved.memory_enabled === 'boolean') memoryEnabled.checked = saved.memory_enabled;
   syncMemoryControl();
+  syncAnswerMode();
   updateCompanySelection({ applyDefault: false });
 }
 
@@ -735,11 +773,13 @@ async function loadConfig() {
     const config = await apiFetch('/api/config', { timeout: 8_000 });
     applySpecializationCatalog(config?.specializations);
     serverMode = normalizeMode(config?.voice_mode || config?.mode || config?.VOICE_MODE);
+    syncAnswerMode({ stopHardware: true });
     $('span', modePill).textContent = modeLabel(serverMode);
     modePill.classList.remove('is-loading');
     modePill.title = serverMode === 'L3' ? '本场使用文字对话，不会请求麦克风' : '本场支持实时语音与打断';
   } catch (error) {
     serverMode = 'L3';
+    syncAnswerMode({ stopHardware: true });
     $('span', modePill).textContent = '服务状态待确认';
     modePill.classList.remove('is-loading');
     modePill.classList.add('is-offline');
@@ -832,6 +872,7 @@ async function startInterview(event) {
   const memory = memoryEnabled.checked;
   const languageMode = getLanguageMode();
   const interviewType = getInterviewType();
+  const answerMode = getAnswerMode();
   const clientId = getClientId();
 
   try {
@@ -852,6 +893,7 @@ async function startInterview(event) {
         specialization,
         interview_type: interviewType,
         language_mode: languageMode,
+        answer_mode: answerMode,
         stress_level: stressLevel,
         stress,
         duration_minutes: durationMinutes,
@@ -870,6 +912,7 @@ async function startInterview(event) {
       specialization,
       interview_type: interviewType,
       language_mode: languageMode,
+      answer_mode: session?.answer_mode || (normalizeMode(session?.voice_mode || serverMode) === 'L3' ? 'text' : answerMode),
       stress_level: stressLevel,
       stress,
       duration_minutes: durationMinutes,
@@ -883,6 +926,7 @@ async function startInterview(event) {
       specialization,
       interview_type: interviewType,
       language_mode: languageMode,
+      answer_mode: answerMode,
       stress_level: stressLevel,
       stress,
       duration_minutes: durationMinutes,
@@ -951,6 +995,13 @@ memoryEnabled.addEventListener('change', () => {
   syncMemoryControl();
   if (memoryEnabled.checked) loadWeakness();
 });
+$$('input[name="answer_mode"]').forEach((input) => {
+  input.addEventListener('change', () => {
+    if (!input.checked) return;
+    preferredAnswerMode = input.value === 'text' ? 'text' : 'voice';
+    syncAnswerMode({ stopHardware: true });
+  });
+});
 profileResumeFiles?.addEventListener('change', uploadProfileResumes);
 profileProjectFiles?.addEventListener('change', uploadProfileProject);
 profileProjectPartialScope?.addEventListener('change', () => {
@@ -982,6 +1033,7 @@ setInterviewType(getInterviewType());
 syncMemoryControl();
 syncSpecializationControl();
 syncDurationControl();
+syncAnswerMode();
 updateCompanySelection({ applyDefault: !stressTouched });
 selectedResumeId = readSelectedResumeId();
 Promise.allSettled([loadConfig(), loadWeakness(), loadProfile()]);

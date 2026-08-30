@@ -128,6 +128,9 @@ class InterviewEngine:
         first_question = initial_question(
             request.company, request.language_mode, request.interview_type
         )
+        effective_voice_mode = (
+            "L3" if request.answer_mode == "text" else self.settings.voice_mode
+        )
         await self.db.create_interview(
             interview_id=interview_id,
             client_id=request.client_id,
@@ -140,7 +143,7 @@ class InterviewEngine:
             stress_level=request.stress_level,
             duration_minutes=request.duration_minutes,
             memory_enabled=request.memory_enabled,
-            voice_mode=self.settings.voice_mode,
+            voice_mode=effective_voice_mode,
             resume=request.resume,
             style=style,
             weak_topics=weak_topics,
@@ -150,7 +153,8 @@ class InterviewEngine:
         return {
             "id": interview_id,
             "status": "created",
-            "voice_mode": self.settings.voice_mode,
+            "voice_mode": effective_voice_mode,
+            "answer_mode": "text" if effective_voice_mode == "L3" else "voice",
             "weak_topics": weak_topics,
             "initial_question": first_question,
             "recommended_answer_seconds": self.recommended_answer_seconds(first_question),
