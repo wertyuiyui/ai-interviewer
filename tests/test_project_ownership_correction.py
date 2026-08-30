@@ -94,5 +94,6 @@ async def test_project_ownership_correction_reopens_resume_grounded_experience(
         created["id"], "校园订单系统是我参与的，我负责 Redis 缓存和订单接口。"
     )
     assert "ai-interviewer" not in continued.question
-    assert "Redis" in continued.question
-    assert "本人完成" in continued.question
+    assert "校园订单系统" in continued.question
+    assert "要解决的问题" in continued.question
+    assert "负责范围" in continued.question

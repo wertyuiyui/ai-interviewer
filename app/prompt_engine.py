@@ -838,7 +838,7 @@ def build_system_prompt(
     if interview_type == "hr":
         interview_type_copy = "综合面（HR 面）：只考察真实行为经历、动机、协作、成长规划与沟通"
         phase_copy = (
-            "简短自我介绍 → 价值观与公司契合 → 人生规划与选择 → "
+            "简短自我介绍（含一段代表性项目或实习） → 价值观与公司契合 → 人生规划与选择 → "
             "薪酬期待 → 其他真实行为题 → 反问"
         )
         project_rule = (
@@ -849,12 +849,12 @@ def build_system_prompt(
             "所有行为题题面必须来自下方服务端题库，不得自行发明管理岗、脑筋急转弯或"
             "所谓价值观标准答案。追问只核实情境、本人行动、结果和复盘。"
         )
-        intro_rule = "第一题只做简短自我介绍；听完直接进入服务端行为题，不要求候选人展开项目技术细节。"
+        intro_rule = "第一题做简短自我介绍，并请候选人用两三句话带过一段代表性项目或实习及本人职责；不展开技术细节。简历有经历但首轮未提时，服务端会先补问一次。"
         selection_scope_copy = "行为题按已核验题库顺序由服务端选择。"
     elif interview_type == "technical_hr":
         interview_type_copy = "技术/综合（HR）面：技术判断仍是主体，同时覆盖真实行为题、人生规划与薪酬沟通"
         phase_copy = (
-            "自我介绍（只了解整体和学习状况） → 单独选择一段项目或实习经历 → "
+            "自我介绍（含一段简短项目或实习） → 单独选择一段经历深入 → "
             "项目深挖 → 已核验基础题 → 真实行为题 → 反问"
         )
         project_rule = (
@@ -865,12 +865,12 @@ def build_system_prompt(
             "综合环节只使用下方服务端给出的已核验行为题；结合本科实习候选人的真实经历"
             "追问选择依据、本人行动、结果和复盘，不因薪酬数值本身扣分。"
         )
-        intro_rule = "第一题自我介绍只了解整体和学习状况；听完后另开一题选择项目或实习经历，再进入技术下钻。"
+        intro_rule = "第一题自我介绍包含整体情况、学习方向及一段项目或实习的简短概述与本人职责；不展开技术细节。简历有经历但首轮未提时，服务端会先补问一次，之后再单独选择经历深入。"
         selection_scope_copy = "项目追问贴合简历；非项目基础题按岗位细分标签从已核验题库由服务端选择。"
     else:
         interview_type_copy = "技术面：聚焦项目深度、已核验基础知识题和口述手撕思路"
         phase_copy = (
-            "自我介绍（只了解整体和学习状况） → 单独选择一段项目或实习经历 → "
+            "自我介绍（含一段简短项目或实习） → 单独选择一段经历深入 → "
             "项目深挖 → 已核验基础题 → 反问"
         )
         project_rule = (
@@ -878,7 +878,7 @@ def build_system_prompt(
             "回答提供新的具体事实时再自然追深；部分或模糊回答最多澄清一次，明确不会则关闭当前项目话题并进入下一阶段。"
         )
         hr_behavior_rule = "本场是技术面，不主动进入价值观、人生规划或薪酬期待等综合面环节。"
-        intro_rule = "第一题自我介绍只了解整体和学习状况；听完后另开一题选择项目或实习经历，再进入技术下钻。"
+        intro_rule = "第一题自我介绍包含整体情况、学习方向及一段项目或实习的简短概述与本人职责；不展开技术细节。简历有经历但首轮未提时，服务端会先补问一次，之后再单独选择经历深入。"
         selection_scope_copy = "项目追问贴合简历；非项目基础题按岗位细分标签从已核验题库由服务端选择。"
     return f"""你正在主持一场面向求职实习的中国本科生的{COMPANIES[company]}后端开发一面。本场类型是：{interview_type_copy}。{selection_scope_copy}
 
@@ -963,24 +963,25 @@ def initial_question(
             return (
                 "Let's start with a brief introduction. Tell me about your academic "
                 "background, what you are looking for in this internship, and what "
-                "matters most to you when choosing a team. We will discuss specific "
-                "experiences in the behavioral questions that follow."
+                "matters most to you when choosing a team. Briefly include one project "
+                "or internship and what you personally did; no technical deep dive yet."
             )
         return (
             "Let's start with a brief introduction. Tell me about your academic "
             "background, your current progress at university, and the kind of "
-            "backend internship you are looking for. We will discuss your projects separately."
+            "backend internship you are looking for. Briefly include one project or "
+            "internship and what you personally did; we can explore it separately later."
         )
     if interview_type == "hr":
         return (
-            "你好，先用一分钟介绍你的学校专业、目前的学习阶段和实习目标。"
-            "项目技术细节先不用展开，后面我会结合具体经历提问。"
+            "你好，先用一分钟介绍你的学校专业、目前的学习阶段和实习目标，"
+            "再用两三句话带过一段代表性项目或实习以及你负责的部分，技术细节先不用展开。"
         )
     if company == "bytedance":
-        return "面试开始。先用一分钟介绍一下你的基本情况、目前的学习进度和想做的技术方向，项目先不用展开。"
+        return "面试开始。先用一分钟介绍你的基本情况、目前的学习进度和技术方向，再用两三句话带过一段代表性项目或实习以及你负责的部分，技术细节先不用展开。"
     if company == "meituan":
-        return "你好，先用一分钟介绍一下你的学校专业、现在的学习情况和求职方向，项目经历我们等会儿单独聊。"
-    return "你好，我们先简单认识一下。请介绍你的基本情况、目前的学习进度，以及你想找什么方向的实习，项目先不用展开。"
+        return "你好，先用一分钟介绍你的学校专业、现在的学习情况和求职方向，再简单带过一段项目或实习以及你负责的部分，技术细节后面再聊。"
+    return "你好，我们先简单认识一下。请介绍你的基本情况、学习进度和实习方向，再简单带过一段项目或实习以及你负责的部分，技术细节后面再聊。"
 
 
 def interview_drill_target(weak_topics: list[str], interview_type: str) -> int:

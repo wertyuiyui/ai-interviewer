@@ -39,6 +39,14 @@
 
 ## 变更日志
 
+### INTERVIEW-018 · 2026-08-30 · 自我介绍经历覆盖与简历缺口追问
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：中英文自我介绍首题现在要求候选人在学校专业、学习进度和求职方向之外，用两三句话带过一段代表性项目或实习、用途及本人职责，技术细节留到后续阶段。服务端对简历含项目/实习的首轮回答做一次保守覆盖检查：项目名、公司名，或“项目/实习/我主要负责/做过”等明确经历表达任一命中即可；若只谈学习与方向，则停留在自我介绍并点名一段简历经历补问，补充后再进入项目深挖。匿名 Profile 项目会先要求确认是否亲自参与，否认后改问下一段简历真实经历。
+- 实际文件：`app/prompt_engine.py`、`app/interview_engine.py`、`tests/test_interviewer_skill.py`、`tests/test_interview_stage_flow.py`、`tests/test_core.py`、`tests/test_english_company_flow.py`、`tests/test_project_ownership_correction.py`、`process.md`。
+- 验证：自我介绍/阶段/中英文/项目归属专项 `71 passed`；最新隔离基线全量 `267 passed`；Python compileall 与 `git diff --check` 通过。回归覆盖遗漏经历时留在自我介绍、补充后推进、首轮已简述时不重复追问、英文完整流程及匿名 Profile 项目否认后的真实经历切换。
+- 风险或后续事项：覆盖检查只使用简历短字段与明确经历词，不调用模型、不做模糊相似度；候选人若用非常隐晦且无项目/实习语义的说法，可能收到一次无害的补充确认。
+
 ### DEPLOY-029 · 2026-08-30 · 人性化上下文追问生产发布
 
 - Agent：`/root`；状态：`completed`。

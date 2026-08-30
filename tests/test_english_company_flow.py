@@ -227,7 +227,7 @@ async def test_mock_combined_interview_keeps_every_candidate_question_english(
     await database.start_interview(created["id"])
 
     answers = [
-        "I am a third-year computer science student. I have completed databases and operating systems and I am now focusing on backend reliability.",
+        "I am a third-year computer science student focusing on backend reliability. I built the campus order service and owned its API, cache, and database schema.",
         "I built the campus order service myself. It processes student orders and I owned the API, cache, database schema, and load tests.",
         "A request enters through the gateway, reaches the Java service, checks Redis, writes MySQL in a transaction, and publishes an event.",
         "I chose cache-aside because reads dominate. I compared database-only reads and a local cache but needed shared invalidation across instances.",

@@ -42,7 +42,9 @@ async def test_unknown_closes_project_stage_and_clears_anchor(tmp_path) -> None:
         )
     )
     await database.start_interview(created["id"])
-    opened = await engine.answer(created["id"], "我是计算机专业学生，主要学习后端开发。")
+    opened = await engine.answer(
+        created["id"], "我是计算机专业学生，主要学习后端开发；做过订单系统，负责后端开发。"
+    )
     assert opened.stage["current"]["id"] == "project_deep_dive"
     assert "订单系统" in opened.question
 

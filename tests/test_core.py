@@ -583,7 +583,7 @@ async def test_combined_interview_separates_intro_and_covers_hr_topics(tmp_path)
     )
     assert created["interview_type"] == "technical_hr"
     assert "学习" in created["initial_question"]
-    assert "项目先不用展开" in created["initial_question"]
+    assert "项目或实习" in created["initial_question"]
     stored = await db.get_interview(created["id"])
     assert stored is not None
     assert stored["interview_type"] == "technical_hr"
@@ -592,7 +592,7 @@ async def test_combined_interview_separates_intro_and_covers_hr_topics(tmp_path)
 
     await db.start_interview(created["id"])
     answers = [
-        "我是计算机专业大三学生，目前学过数据结构、操作系统和数据库，希望找后端开发实习。",
+        "我是计算机专业大三学生，目前学过数据结构、操作系统和数据库，希望找后端开发实习；做过校园秒杀系统，负责库存和订单链路。",
         "我选择校园秒杀系统，目标是解决抢票高峰的超卖问题，我负责库存和订单链路。",
         "库存设计和 Redis Lua 脚本是我本人完成的，团队同学负责前端和部署。",
         "请求先到网关，再校验活动状态，用 Lua 原子预扣库存，最后异步写入 MySQL。",

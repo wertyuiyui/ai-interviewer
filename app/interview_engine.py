@@ -639,6 +639,50 @@ class InterviewEngine:
             and not project_ownership_correction
             and not explicit_resume_mismatch
         )
+        experience_names = [
+            value
+            for value in [
+                *(project.name for project in resume.projects),
+                *(
+                    experience.company or experience.role
+                    for experience in resume.internships
+                ),
+            ]
+            if value
+        ]
+        normalized_answer = re.sub(r"\W+", "", answer).casefold()
+        mentions_experience = any(
+            re.sub(r"\W+", "", value).casefold() in normalized_answer
+            for value in experience_names
+            if len(re.sub(r"\W+", "", value)) >= 2
+        ) or any(
+            marker in answer.casefold()
+            for marker in (
+                "项目",
+                "实习",
+                "我负责",
+                "我主要负责",
+                "本人负责",
+                "做过",
+                "开发过",
+                "project",
+                "internship",
+                "worked on",
+                "responsible for",
+                "i built",
+                "i developed",
+            )
+        )
+        intro_experience_missing = (
+            current_stage == "self_intro"
+            and int(stage_state.get("turn_count") or 0) == 0
+            and bool(experience_names)
+            and not mentions_experience
+            and not needs_clarification
+            and not explicit_unknown
+            and not unknown_control
+            and not explicit_resume_mismatch
+        )
         prior_project_corrections = [
             turn
             for turn in turns
@@ -761,7 +805,7 @@ class InterviewEngine:
             current_drill_dimension = ""
             current_drill_depth = 0
         elif current_stage == "self_intro":
-            should_advance_stage = True
+            should_advance_stage = not intro_experience_missing
         elif current_stage == "project_deep_dive":
             should_advance_stage = (
                 explicit_unknown
@@ -886,7 +930,48 @@ class InterviewEngine:
                     if interview.get("language_mode") == "en"
                     else "我还没有听到对当前问题的回答。先说你能确认的部分；如果确实不知道，直接说不知道即可。"
                 )
+        elif intro_experience_missing:
+            experience_name = experience_names[0]
+            if experience_name.startswith("[匿名 Profile 项目]"):
+                question = (
+                    f'The profile materials mention "{experience_name}". First confirm whether '
+                    "you personally worked on it; if so, briefly say what it did and what you owned."
+                    if interview.get("language_mode") == "en"
+                    else f"材料中提到“{experience_name}”，需要你先确认是否亲自参与。"
+                    "如果是，请用两三句话说说它做什么，以及你负责什么。"
+                )
+            else:
+                question = (
+                    f'One more part for the introduction: your resume mentions "{experience_name}". '
+                    "In two or three sentences, what did it do and what were you responsible for?"
+                    if interview.get("language_mode") == "en"
+                    else f"自我介绍里再补一小段经历：简历中提到“{experience_name}”。"
+                    "请用两三句话说说它做什么，以及你负责什么。"
+                )
         elif project_ownership_correction:
+            if current_stage == "self_intro":
+                remaining_name = next(
+                    (
+                        value
+                        for value in [
+                            *(project.name for project in drill_resume.projects),
+                            *(
+                                experience.company or experience.role
+                                for experience in drill_resume.internships
+                            ),
+                        ]
+                        if value
+                    ),
+                    "",
+                )
+                if remaining_name:
+                    question = (
+                        f'Briefly include "{remaining_name}" in your introduction instead: '
+                        "what did it do, and what were you responsible for?"
+                        if interview.get("language_mode") == "en"
+                        else f"自我介绍里改为简单讲讲“{remaining_name}”："
+                        "它做什么，以及你负责什么？"
+                    )
             acknowledgement = (
                 "Understood. We will not treat that project as your experience. "
                 if interview.get("language_mode") == "en"

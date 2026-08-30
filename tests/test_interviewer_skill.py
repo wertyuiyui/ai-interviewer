@@ -75,8 +75,15 @@ async def test_incomplete_self_intro_stays_until_answered_or_skipped(tmp_path) -
         created["id"], "我目前大三，主要学习 Java 后端，希望继续做服务端开发。"
     )
 
-    assert answered.stage["current"]["id"] == "project_deep_dive"
+    assert answered.stage["current"]["id"] == "self_intro"
     assert "校园二手交易平台" in answered.question
+
+    completed = await engine.answer(
+        created["id"], "这个项目服务校内二手交易，我负责商品发布和 Redis 缓存。"
+    )
+
+    assert completed.stage["current"]["id"] == "project_deep_dive"
+    assert "校园二手交易平台" in completed.question
 
 
 def test_every_company_skill_compiles_with_the_same_core_contract() -> None:
@@ -154,7 +161,7 @@ async def test_each_decision_receives_authoritative_interview_context(tmp_path) 
     await database.start_interview(created["id"])
 
     await engine.answer(
-        created["id"], "我目前大三，主修软件工程，想继续做 Java 后端。"
+        created["id"], "我目前大三，主修软件工程，想继续做 Java 后端；做过校园二手交易平台后端，负责商品发布链路。"
     )
     await engine.answer(created["id"], "我负责 Redis 缓存和商品发布链路。")
 
