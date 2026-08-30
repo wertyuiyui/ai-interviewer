@@ -1,0 +1,261 @@
+{
+  "schema_version": "1.0",
+  "allowed_hosts": [
+    "javaguide.cn",
+    "codetop.cc"
+  ],
+  "topics": {
+    "mysql_bplus_tree_index": [
+      {
+        "title": "JavaGuide：MySQL 索引、事务与性能优化专题",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/mysql/"
+      }
+    ],
+    "mysql_composite_index": [
+      {
+        "title": "JavaGuide：MySQL 索引与执行计划",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/mysql/"
+      }
+    ],
+    "mysql_mvcc_isolation": [
+      {
+        "title": "JavaGuide：MySQL 事务与 MVCC",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/mysql/"
+      }
+    ],
+    "mysql_lock_deadlock": [
+      {
+        "title": "JavaGuide：MySQL 事务、锁与死锁",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/mysql/"
+      }
+    ],
+    "mysql_explain_optimization": [
+      {
+        "title": "JavaGuide：MySQL 执行计划与慢 SQL 优化",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/mysql/"
+      }
+    ],
+    "mysql_pagination": [
+      {
+        "title": "JavaGuide：MySQL 索引设计与查询优化",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/mysql/"
+      }
+    ],
+    "mysql_replication_consistency": [
+      {
+        "title": "JavaGuide：MySQL 日志、复制与一致性",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/mysql/"
+      }
+    ],
+    "mysql_sharding_design": [
+      {
+        "title": "JavaGuide：MySQL 工程实践专题",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/mysql/"
+      }
+    ],
+    "redis_data_structures": [
+      {
+        "title": "JavaGuide：Redis 数据结构与典型应用",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/redis/"
+      }
+    ],
+    "redis_cache_consistency": [
+      {
+        "title": "JavaGuide：缓存读写与数据库一致性",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/redis/cache-basics.html"
+      }
+    ],
+    "redis_cache_failures": [
+      {
+        "title": "JavaGuide：缓存穿透、击穿与雪崩",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/redis/cache-basics.html"
+      }
+    ],
+    "redis_distributed_lock": [
+      {
+        "title": "JavaGuide：Redis 工程实践专题",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/redis/"
+      }
+    ],
+    "redis_persistence": [
+      {
+        "title": "JavaGuide：Redis 持久化机制详解",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/redis/redis-persistence.html"
+      }
+    ],
+    "redis_eviction_expiration": [
+      {
+        "title": "JavaGuide：Redis 内存、过期与淘汰",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/redis/"
+      }
+    ],
+    "redis_cluster": [
+      {
+        "title": "JavaGuide：Redis 主从、哨兵与 Cluster 专题",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/redis/"
+      }
+    ],
+    "redis_hot_big_keys": [
+      {
+        "title": "JavaGuide：Redis 阻塞、热 Key 与大 Key 排查",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/database/redis/"
+      }
+    ],
+    "java_jmm_volatile": [
+      {
+        "title": "JavaGuide：Java 内存模型与 volatile",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/java/concurrent/"
+      }
+    ],
+    "java_synchronized": [
+      {
+        "title": "JavaGuide：Java 锁与 synchronized",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/java/concurrent/"
+      }
+    ],
+    "java_aqs_lock": [
+      {
+        "title": "JavaGuide：AQS 详解",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/java/concurrent/aqs.html"
+      }
+    ],
+    "java_thread_pool": [
+      {
+        "title": "JavaGuide：Java 线程池详解",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/java/concurrent/java-thread-pool-summary.html"
+      }
+    ],
+    "java_concurrent_hashmap": [
+      {
+        "title": "JavaGuide：Java 并发容器专题",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/java/concurrent/"
+      }
+    ],
+    "java_cas_aba": [
+      {
+        "title": "JavaGuide：CAS、原子类与 ABA",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/java/concurrent/"
+      }
+    ],
+    "java_completable_future": [
+      {
+        "title": "JavaGuide：CompletableFuture 与异步编排",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/java/concurrent/"
+      }
+    ],
+    "java_threadlocal": [
+      {
+        "title": "JavaGuide：ThreadLocal 详解",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/java/concurrent/threadlocal.html"
+      }
+    ],
+    "network_tcp_lifecycle": [
+      {
+        "title": "JavaGuide：TCP 三次握手和四次挥手",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/cs-basics/network/tcp-connection-and-disconnection.html"
+      }
+    ],
+    "network_tcp_flow_congestion": [
+      {
+        "title": "JavaGuide：TCP 可靠传输、流量与拥塞控制",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/cs-basics/network/tcp-reliability-guarantee.html"
+      }
+    ],
+    "network_http_versions": [
+      {
+        "title": "JavaGuide：从 URL 到页面展示的网络全过程",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/cs-basics/network/the-whole-process-of-accessing-web-pages.html"
+      }
+    ],
+    "network_https_tls": [
+      {
+        "title": "JavaGuide：HTTP 与 HTTPS",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/cs-basics/network/http-vs-https.html"
+      }
+    ],
+    "network_dns": [
+      {
+        "title": "JavaGuide：DNS 域名系统详解",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/cs-basics/network/dns.html"
+      }
+    ],
+    "network_rpc_retry": [
+      {
+        "title": "JavaGuide：计算机网络与应用层协议专题",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/cs-basics/network/application-layer-protocol.html"
+      }
+    ],
+    "network_websocket": [
+      {
+        "title": "JavaGuide：HTTP、WebSocket、DNS 等应用层协议",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/cs-basics/network/application-layer-protocol.html"
+      }
+    ],
+    "network_load_balancing": [
+      {
+        "title": "JavaGuide：一次 Web 访问的完整网络链路",
+        "source": "JavaGuide",
+        "url": "https://javaguide.cn/cs-basics/network/the-whole-process-of-accessing-web-pages.html"
+      }
+    ],
+    "coding_lru_cache": [
+      {
+        "title": "CodeTop：大厂高频算法题库（含 LRU 缓存）",
+        "source": "CodeTop",
+        "url": "https://codetop.cc/home"
+      }
+    ],
+    "coding_stream_topk": [
+      {
+        "title": "CodeTop：大厂高频算法题库（堆与 TopK）",
+        "source": "CodeTop",
+        "url": "https://codetop.cc/home"
+      }
+    ],
+    "coding_rate_limiter": [
+      {
+        "title": "CodeTop：后端岗位高频手撕题",
+        "source": "CodeTop",
+        "url": "https://codetop.cc/home"
+      }
+    ],
+    "coding_producer_consumer": [
+      {
+        "title": "CodeTop：后端岗位高频手撕题",
+        "source": "CodeTop",
+        "url": "https://codetop.cc/home"
+      }
+    ]
+  }
+}

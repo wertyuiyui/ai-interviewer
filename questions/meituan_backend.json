@@ -1,0 +1,403 @@
+{
+  "schema_version": "1.0",
+  "company": "meituan",
+  "role": "backend",
+  "questions": [
+    {
+      "id": "mt-mysql-01",
+      "category": "mysql",
+      "topic": "mysql_bplus_tree_index",
+      "question": "订单列表按用户和下单时间查询，你会如何设计 InnoDB 索引？先结合访问链路说明。",
+      "followups": [
+        "为什么 B+ 树适合这个范围查询，叶子页之间如何帮助顺序扫描？",
+        "查询字段不断增加时，你会不会做覆盖索引，额外写入成本怎么衡量？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "mt-mysql-02",
+      "category": "mysql",
+      "topic": "mysql_composite_index",
+      "question": "商家订单表有 merchant_id、status、created_at，联合索引字段顺序怎么定？",
+      "followups": [
+        "请把等值、范围、排序三类条件对索引利用的影响逐项说明。",
+        "白天与夜间状态分布差异很大时，优化器选择可能怎么变，你如何验证？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-mysql-03",
+      "category": "mysql",
+      "topic": "mysql_mvcc_isolation",
+      "question": "用户查订单状态时并发发生更新，InnoDB 在 RC 和 RR 下分别可能读到什么？",
+      "followups": [
+        "请从 undo 版本链和 Read View 的创建时机解释差异。",
+        "如果是库存扣减这种当前读，MVCC 为什么不能替代加锁？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-mysql-04",
+      "category": "mysql",
+      "topic": "mysql_lock_deadlock",
+      "question": "订单事务先锁订单再锁库存，补偿任务顺序相反导致死锁，你怎么定位和改造？",
+      "followups": [
+        "你需要从死锁日志里确认哪些事务、索引和锁范围？",
+        "统一加锁顺序之外，缩短事务和失败重试各自解决什么问题？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-mysql-05",
+      "category": "mysql",
+      "topic": "mysql_explain_optimization",
+      "question": "午高峰商家订单查询 P99 突然升高，你会怎样从监控定位到具体 SQL？",
+      "followups": [
+        "拿到慢 SQL 后，EXPLAIN 和实际执行统计分别能回答哪些问题？",
+        "索引没变但数据倾斜加重时，执行计划为什么可能退化，如何止损？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-mysql-06",
+      "category": "mysql",
+      "topic": "mysql_pagination",
+      "question": "骑手历史订单达到千万级，产品要求一直向下翻页，你会如何避免深分页扫描？",
+      "followups": [
+        "基于最后一条记录游标翻页，需要哪些稳定排序字段？",
+        "订单状态更新导致排序位置变化时，如何定义重复和漏读的业务边界？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "mt-mysql-07",
+      "category": "mysql",
+      "topic": "mysql_replication_consistency",
+      "question": "用户付款后刷新页面仍显示待支付，确认是读从库延迟，你怎么治理？",
+      "followups": [
+        "先说明主从复制各阶段在哪里积压，以及你会看什么指标。",
+        "关键状态读主、会话粘滞和基于位点等待，三种方案如何取舍？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-mysql-08",
+      "category": "mysql",
+      "topic": "mysql_sharding_design",
+      "question": "外卖订单表要分库分表，按 user_id、merchant_id 还是 order_id 分片？请从查询比例出发。",
+      "followups": [
+        "用户端和商家端访问维度冲突时，你会接受广播、冗余表还是异构索引？",
+        "扩容期间如何校验迁移数据，并保证新旧路由不会重复创建订单？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-redis-01",
+      "category": "redis",
+      "topic": "redis_data_structures",
+      "question": "附近热门商家和实时销量榜分别适合哪些 Redis 数据结构，为什么？",
+      "followups": [
+        "GEO 与 ZSET 的底层关系是什么，距离筛选后如何叠加业务排序？",
+        "榜单更新量很大时，写入聚合、过期和冷数据落库怎么安排？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "mt-redis-02",
+      "category": "redis",
+      "topic": "redis_cache_consistency",
+      "question": "订单详情同时存在 MySQL 和 Redis，状态变化时怎样控制不一致窗口？",
+      "followups": [
+        "请给出更新数据库后删缓存仍会读到旧值的并发时间线。",
+        "通过 binlog 驱动失效时，消息重复、乱序和积压各怎么处理？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-redis-03",
+      "category": "redis",
+      "topic": "redis_cache_failures",
+      "question": "大促开始时商家页缓存同时过期，流量压向数据库，你如何先止损再根治？",
+      "followups": [
+        "随机过期、逻辑过期和互斥重建各自影响正确性还是可用性？",
+        "如果热点商家事先未知，你用哪些指标自动发现并预热？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-redis-04",
+      "category": "redis",
+      "topic": "redis_distributed_lock",
+      "question": "优惠券库存扣减想用 Redis 锁保护，先说明锁要保护的资源和一致性目标。",
+      "followups": [
+        "锁过期后原持有者继续执行，如何避免覆盖新持有者的结果？",
+        "如果最终还要落 MySQL，锁、原子扣减和数据库唯一约束如何配合？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-redis-05",
+      "category": "redis",
+      "topic": "redis_persistence",
+      "question": "购物车暂存在 Redis，节点故障时允许丢多少数据决定了怎样的持久化配置？",
+      "followups": [
+        "RDB 快照和 AOF everysec 的丢失窗口、恢复速度分别如何估算？",
+        "AOF 重写或 fork 造成延迟抖动时，你会观察和限制哪些资源？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "mt-redis-06",
+      "category": "redis",
+      "topic": "redis_eviction_expiration",
+      "question": "缓存集群达到 maxmemory 后开始淘汰，你怎样选择策略并验证没有淘汰关键状态？",
+      "followups": [
+        "惰性删除、定期删除与淘汰是怎样的三个不同过程？",
+        "缓存对象大小差异很大时，只看命中率为什么可能误判收益？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "mt-redis-07",
+      "category": "redis",
+      "topic": "redis_cluster",
+      "question": "Redis Cluster 扩容迁槽时，业务请求和批量操作会受到哪些影响？",
+      "followups": [
+        "MOVED 与 ASK 对客户端重定向和槽缓存的含义有什么不同？",
+        "一个订单操作涉及多个 key，怎样用 hash tag，又会引入什么热点？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-redis-08",
+      "category": "redis",
+      "topic": "redis_hot_big_keys",
+      "question": "节假日某城市活动 key 把单个 Redis 节点打满，你如何无损定位并拆分？",
+      "followups": [
+        "不能执行 KEYS 时，可用哪些采样、监控和离线分析手段？",
+        "拆成多个 key 后，读取聚合的延迟和一致性成本怎么控制？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-jc-01",
+      "category": "java_concurrency",
+      "topic": "java_jmm_volatile",
+      "question": "用 volatile 做动态降级开关是否足够？请从可见性和复合状态一致性分析。",
+      "followups": [
+        "一个开关值的更新如何通过 happens-before 被请求线程看到？",
+        "如果配置由多个关联字段组成，逐个 volatile 写会暴露什么中间状态？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-jc-02",
+      "category": "java_concurrency",
+      "topic": "java_synchronized",
+      "question": "本地库存聚合用 synchronized 保护，锁粒度怎样影响正确性和午高峰吞吐？",
+      "followups": [
+        "锁实例、锁 Class 和锁业务 key 各自能隔离到什么范围？",
+        "临界区里包含远程调用时会产生什么问题，你会怎么拆？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "mt-jc-03",
+      "category": "java_concurrency",
+      "topic": "java_aqs_lock",
+      "question": "需要可中断且可超时的锁时为什么考虑 ReentrantLock？结合 AQS 说明实现。",
+      "followups": [
+        "线程竞争失败后如何进入同步队列，又如何被前驱唤醒？",
+        "公平模式能否彻底杜绝插队，它对平均和尾延迟有什么影响？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-jc-04",
+      "category": "java_concurrency",
+      "topic": "java_thread_pool",
+      "question": "订单服务同时调用库存、优惠、配送，下游延迟不同，线程池怎么隔离和定容？",
+      "followups": [
+        "请结合到达率、平均等待时间和目标利用率给出定容思路。",
+        "队列积压后是拒绝、降级还是让调用线程执行，业务后果分别是什么？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-jc-05",
+      "category": "java_concurrency",
+      "topic": "java_concurrent_hashmap",
+      "question": "用 ConcurrentHashMap 聚合门店实时计数，哪些复合操作仍然不是线程安全的？",
+      "followups": [
+        "get 后再 put 为什么会丢更新，compute 和 LongAdder 如何选择？",
+        "JDK 8 扩容时多个线程如何协助搬迁，对请求延迟有什么影响？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-jc-06",
+      "category": "java_concurrency",
+      "topic": "java_cas_aba",
+      "question": "高并发更新剩余名额时使用 CAS，成功条件、重试和 ABA 风险分别是什么？",
+      "followups": [
+        "竞争激烈时自旋会消耗多少 CPU，你如何做退避或分段？",
+        "名额从 10 变 9 又变 10 时，业务上是否允许，如何加版本判断？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-jc-07",
+      "category": "java_concurrency",
+      "topic": "java_completable_future",
+      "question": "聚合商家、优惠和配送信息时，用 CompletableFuture 怎样控制总超时与部分降级？",
+      "followups": [
+        "某个下游超时后，如何返回可用部分并记录准确的失败原因？",
+        "异步阶段默认线程池和自定义隔离池各有什么线上风险？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-jc-08",
+      "category": "java_concurrency",
+      "topic": "java_threadlocal",
+      "question": "网关把用户和 trace 上下文放进 ThreadLocal，在线程池复用时要注意什么？",
+      "followups": [
+        "ThreadLocalMap 的弱 key 为什么不能自动避免 value 泄漏？",
+        "异步线程切换时上下文如何传递，并保证 finally 清理？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-net-01",
+      "category": "networking",
+      "topic": "network_tcp_lifecycle",
+      "question": "移动端频繁建连访问订单服务，TCP 建连和关闭过程会带来哪些延迟与资源成本？",
+      "followups": [
+        "为什么是三次握手，第三次丢失后客户端和服务端分别做什么？",
+        "服务端出现大量 TIME_WAIT 与 CLOSE_WAIT，排查方向有什么不同？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-net-02",
+      "category": "networking",
+      "topic": "network_tcp_flow_congestion",
+      "question": "跨地域调用吞吐下降时，如何区分接收端流量控制和网络拥塞控制的影响？",
+      "followups": [
+        "发送窗口由哪两个窗口共同决定，零窗口时会怎样探测？",
+        "丢包、RTT 和带宽时延积分别如何影响吞吐上限？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-net-03",
+      "category": "networking",
+      "topic": "network_http_versions",
+      "question": "商家页一次请求很多资源，HTTP/1.1、HTTP/2 和 HTTP/3 对首屏延迟有什么不同？",
+      "followups": [
+        "HTTP/2 多路复用为什么仍受 TCP 层队头阻塞影响？",
+        "HTTP/3 使用 QUIC 后，连接迁移对移动网络切换有什么价值？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-net-04",
+      "category": "networking",
+      "topic": "network_https_tls",
+      "question": "支付链路要求 HTTPS，请说明证书验证、密钥协商到加密传输的完整过程。",
+      "followups": [
+        "中间人拿到服务端证书为什么仍不能直接伪造站点？",
+        "TLS 会增加几次往返，连接复用和会话恢复如何降低成本？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-net-05",
+      "category": "networking",
+      "topic": "network_dns",
+      "question": "用户反馈某运营商访问域名慢，你会怎样沿 DNS 解析链路定位？",
+      "followups": [
+        "本地缓存、递归服务器和权威服务器各自可能造成什么问题？",
+        "用 DNS 做机房切流时，TTL、客户端缓存和流量回切如何规划？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "mt-net-06",
+      "category": "networking",
+      "topic": "network_rpc_retry",
+      "question": "创建订单调用库存超时，但下游可能已经成功，调用方下一步该怎么做？",
+      "followups": [
+        "请求幂等键应该由谁生成、保存多久、覆盖哪些状态？",
+        "重试次数、指数退避、总 deadline 和熔断如何协同避免雪崩？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-net-07",
+      "category": "networking",
+      "topic": "network_websocket",
+      "question": "配送位置实时推送使用 WebSocket，服务端如何管理连接、心跳与断线补偿？",
+      "followups": [
+        "连接落在不同机器后，订单事件如何路由到正确连接？",
+        "客户端消费慢导致发送队列增长时，丢弃、合并还是断开，依据是什么？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-net-08",
+      "category": "networking",
+      "topic": "network_load_balancing",
+      "question": "订单服务扩容时，四层和七层负载均衡分别适合放在哪一层？",
+      "followups": [
+        "健康检查刚通过但实例尚未预热，如何避免流量瞬间压垮？",
+        "一致性哈希、最少连接和加权轮询面对长短请求各有什么偏差？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-code-01",
+      "category": "coding_thought",
+      "topic": "coding_lru_cache",
+      "question": "口述实现商家详情的本地 LRU 缓存，要求 get 和 put 平均 O(1)。",
+      "followups": [
+        "请说明哈希表与双向链表在每一步如何保持一致。",
+        "多线程访问和缓存加载同时发生时，如何避免重复回源与锁放大？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "mt-code-02",
+      "category": "coding_thought",
+      "topic": "coding_stream_topk",
+      "question": "实时找出一个城市销量最高的 K 个菜品，请口述数据结构与更新流程。",
+      "followups": [
+        "全量精确统计的时间、空间复杂度分别是多少？",
+        "按门店分片后如何合并局部结果，什么情况下局部 TopK 不够？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-code-03",
+      "category": "coding_thought",
+      "topic": "coding_rate_limiter",
+      "question": "为领券接口设计限流器，请比较固定窗口、滑动窗口和令牌桶后选一种实现。",
+      "followups": [
+        "窗口边界突刺怎样产生，业务能接受的瞬时峰值怎么定义？",
+        "分布式限流依赖 Redis 时，Redis 故障后选择放行还是拒绝？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "mt-code-04",
+      "category": "coding_thought",
+      "topic": "coding_producer_consumer",
+      "question": "口述实现一个有界订单事件队列，支持多个生产者和消费者安全关闭。",
+      "followups": [
+        "入队、出队各等待什么条件，为什么唤醒后必须重新检查？",
+        "消费者处理慢时，阻塞生产、丢弃旧事件和落盘分别适合什么业务？"
+      ],
+      "difficulty": "hard"
+    }
+  ]
+}

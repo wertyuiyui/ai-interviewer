@@ -1,0 +1,403 @@
+{
+  "schema_version": "1.0",
+  "company": "tencent",
+  "role": "backend",
+  "questions": [
+    {
+      "id": "tx-mysql-01",
+      "category": "mysql",
+      "topic": "mysql_bplus_tree_index",
+      "question": "可以从磁盘 IO 和范围查询两个角度，谈谈 InnoDB 选择 B+ 树索引的原因吗？",
+      "followups": [
+        "如果换成 B 树或红黑树，树高和数据访问路径会有什么变化？",
+        "再结合一个你项目里的查询，说明聚簇索引与二级索引如何配合。"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "tx-mysql-02",
+      "category": "mysql",
+      "topic": "mysql_composite_index",
+      "question": "假设表上有联合索引 (user_id, status, created_at)，你会怎样判断一条查询能利用到哪一列？",
+      "followups": [
+        "范围条件出现后，后续列在过滤与排序上还可能发挥什么作用？",
+        "索引列顺序不合适时，你会根据哪些查询统计决定是否调整？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-mysql-03",
+      "category": "mysql",
+      "topic": "mysql_mvcc_isolation",
+      "question": "请沿着 undo log、版本链和 Read View，解释一次一致性读是怎样完成的。",
+      "followups": [
+        "RC 与 RR 的 Read View 生命周期不同，会带来哪些可观察结果？",
+        "如果查询改成 for update，执行路径和锁行为会发生什么变化？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-mysql-04",
+      "category": "mysql",
+      "topic": "mysql_lock_deadlock",
+      "question": "如果线上出现 InnoDB 死锁，你会怎样从现象逐步还原两个事务的加锁顺序？",
+      "followups": [
+        "记录锁、间隙锁和 next-key lock 的范围分别如何判断？",
+        "找到原因后，你会怎样在正确性、吞吐和改造成本之间选择方案？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-mysql-05",
+      "category": "mysql",
+      "topic": "mysql_explain_optimization",
+      "question": "面对一条变慢的 SQL，你通常会收集哪些证据，再决定是否加索引？",
+      "followups": [
+        "能否解释 EXPLAIN 中访问类型、估算行数和额外信息各自的意义？",
+        "如果执行计划看起来合理但尾延迟仍高，你还会排查哪些数据库外因素？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-mysql-06",
+      "category": "mysql",
+      "topic": "mysql_pagination",
+      "question": "数据量较大时，offset 深分页为什么越来越慢？可以给出两种替代思路吗？",
+      "followups": [
+        "游标翻页需要怎样的唯一、稳定排序条件？",
+        "如果用户必须跳到任意页，你会怎样在产品体验和查询成本间取舍？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "tx-mysql-07",
+      "category": "mysql",
+      "topic": "mysql_replication_consistency",
+      "question": "请描述 MySQL 主从复制从提交到从库可见的链路，以及延迟可能出现的位置。",
+      "followups": [
+        "binlog 格式和并行回放会怎样影响复制效率与一致性？",
+        "某些请求要求读到自己刚写的数据，你会提供怎样的机制？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-mysql-08",
+      "category": "mysql",
+      "topic": "mysql_sharding_design",
+      "question": "如果业务表增长到单库难以承载，你会先确认哪些条件，再决定是否分库分表？",
+      "followups": [
+        "分片键同时要兼顾查询、写入均衡和扩容，你如何排序这些约束？",
+        "跨分片查询、全局唯一 ID 与后续迁移分别会增加什么复杂度？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-redis-01",
+      "category": "redis",
+      "topic": "redis_data_structures",
+      "question": "能否选两个你熟悉的 Redis 数据结构，说明它们适合的业务场景和复杂度？",
+      "followups": [
+        "以 ZSET 为例，元素较少和较多时底层编码可能如何变化？",
+        "如果需要排行榜的并列名次与分页，你会怎样定义和实现？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "tx-redis-02",
+      "category": "redis",
+      "topic": "redis_cache_consistency",
+      "question": "缓存与数据库同时保存一份数据时，你怎样理解它们的一致性目标？",
+      "followups": [
+        "先更新数据库再删除缓存，仍可能出现哪些并发窗口？",
+        "如果业务要求更短的不一致时间，可以增加哪些机制，又付出什么代价？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-redis-03",
+      "category": "redis",
+      "topic": "redis_cache_failures",
+      "question": "请分别举例说明缓存穿透、击穿和雪崩，并给出对应的保护思路。",
+      "followups": [
+        "布隆过滤器和缓存空值各自会引入哪些误判或维护问题？",
+        "热点 key 重建期间，你更看重强一致还是服务可用，为什么？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "tx-redis-04",
+      "category": "redis",
+      "topic": "redis_distributed_lock",
+      "question": "如果用 Redis 实现分布式锁，你认为一个基本正确的加锁与解锁流程应包含什么？",
+      "followups": [
+        "为什么 value 要能标识持有者，检查和删除为什么需要原子执行？",
+        "锁续期、主从切换和进程长暂停分别会破坏哪些假设？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-redis-05",
+      "category": "redis",
+      "topic": "redis_persistence",
+      "question": "请比较 RDB 与 AOF 的生成过程、故障丢失窗口和恢复特点。",
+      "followups": [
+        "AOF 重写时，旧文件与重写期间的新命令怎样衔接？",
+        "fork、写时复制和磁盘刷写可能怎样影响线上延迟？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-redis-06",
+      "category": "redis",
+      "topic": "redis_eviction_expiration",
+      "question": "Redis 的 key 过期删除与内存淘汰有什么区别，各自何时触发？",
+      "followups": [
+        "惰性删除和周期性扫描为什么需要同时存在？",
+        "LRU、LFU 和随机淘汰分别适合怎样的访问分布？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "tx-redis-07",
+      "category": "redis",
+      "topic": "redis_cluster",
+      "question": "可以介绍一下 Redis Cluster 如何分配数据槽并处理节点故障吗？",
+      "followups": [
+        "客户端收到 MOVED 或 ASK 时，后续请求处理有什么区别？",
+        "多 key 操作为什么受槽限制，hash tag 的收益与风险是什么？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-redis-08",
+      "category": "redis",
+      "topic": "redis_hot_big_keys",
+      "question": "如果怀疑 Redis 存在热 key 或大 key，你会如何安全确认并逐步治理？",
+      "followups": [
+        "哪些排查命令可能阻塞实例，你会用什么替代方式？",
+        "拆分 key 或增加本地缓存后，怎样处理一致性与失效通知？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-jc-01",
+      "category": "java_concurrency",
+      "topic": "java_jmm_volatile",
+      "question": "请用 Java 内存模型解释 volatile 的可见性与有序性，它为什么不等于线程安全？",
+      "followups": [
+        "volatile 写与后续读之间建立了怎样的 happens-before 关系？",
+        "可以用 i++ 或双重检查单例说明它的能力边界吗？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-jc-02",
+      "category": "java_concurrency",
+      "topic": "java_synchronized",
+      "question": "你怎样理解 synchronized 的互斥、可见性和可重入性？",
+      "followups": [
+        "同步代码块在字节码中通过什么指令表达，异常退出时如何释放？",
+        "锁范围过大或锁住可变对象时，分别可能带来什么问题？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "tx-jc-03",
+      "category": "java_concurrency",
+      "topic": "java_aqs_lock",
+      "question": "可以从 state 和同步队列出发，解释 AQS 怎样支持 ReentrantLock 吗？",
+      "followups": [
+        "竞争失败的线程怎样入队、阻塞并最终获得锁？",
+        "Condition 的等待队列和同步队列如何发生转移？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-jc-04",
+      "category": "java_concurrency",
+      "topic": "java_thread_pool",
+      "question": "设计一个服务线程池时，你会怎样理解核心线程、队列、最大线程和拒绝策略之间的关系？",
+      "followups": [
+        "请沿 ThreadPoolExecutor.execute 的判断顺序说明一个任务会去哪里。",
+        "面对 IO 密集任务，你会如何用运行指标持续修正线程数和队列长度？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-jc-05",
+      "category": "java_concurrency",
+      "topic": "java_concurrent_hashmap",
+      "question": "JDK 8 的 ConcurrentHashMap 如何在并发读写下兼顾安全性与吞吐？",
+      "followups": [
+        "桶为空与桶发生冲突时，写入路径分别如何同步？",
+        "扩容期间 ForwardingNode 与多线程协助迁移起到什么作用？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-jc-06",
+      "category": "java_concurrency",
+      "topic": "java_cas_aba",
+      "question": "请说明 CAS 的比较与交换语义，并谈谈自旋和 ABA 的局限。",
+      "followups": [
+        "高竞争下持续 CAS 失败会带来什么资源消耗？",
+        "带版本号的原子引用如何识别 ABA，它是否适合所有场景？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-jc-07",
+      "category": "java_concurrency",
+      "topic": "java_completable_future",
+      "question": "需要并行请求多个独立服务时，你会怎样组织 CompletableFuture 的组合、超时与异常？",
+      "followups": [
+        "thenApply、thenCompose 与 allOf 分别适合怎样的依赖关系？",
+        "异步回调运行在哪个线程池，如何避免阻塞公共池？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-jc-08",
+      "category": "java_concurrency",
+      "topic": "java_threadlocal",
+      "question": "ThreadLocal 的数据存放在哪里，为什么在线程池环境中需要特别清理？",
+      "followups": [
+        "请描述 Thread、ThreadLocalMap、弱引用 key 和 value 的引用关系。",
+        "如果需要跨异步线程传递上下文，你会怎样设计而不是直接共享？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-net-01",
+      "category": "networking",
+      "topic": "network_tcp_lifecycle",
+      "question": "可以结合状态变化，解释 TCP 建立连接为何需要三次握手、关闭通常需要四次吗？",
+      "followups": [
+        "两次握手为什么不足以确认双方收发能力与旧报文边界？",
+        "TIME_WAIT 保留两个最大报文生存时间主要保护什么？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-net-02",
+      "category": "networking",
+      "topic": "network_tcp_flow_congestion",
+      "question": "请区分 TCP 流量控制和拥塞控制，并说明发送速率如何同时受它们约束。",
+      "followups": [
+        "接收窗口、拥塞窗口与实际发送窗口是什么关系？",
+        "发生超时重传和三个重复确认时，拥塞窗口处理为何不同？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-net-03",
+      "category": "networking",
+      "topic": "network_http_versions",
+      "question": "从连接复用、多路复用和传输层出发，比较 HTTP/1.1、HTTP/2 与 HTTP/3。",
+      "followups": [
+        "HTTP/1.1 与 HTTP/2 的队头阻塞分别在哪里发生？",
+        "QUIC 为什么能支持连接迁移，它又引入了哪些实现成本？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-net-04",
+      "category": "networking",
+      "topic": "network_https_tls",
+      "question": "请从证书校验与密钥协商开始，说明 HTTPS 如何建立一条可信的加密连接。",
+      "followups": [
+        "客户端如何沿证书链验证域名、有效期和签名？",
+        "会话密钥为什么通常由临时密钥交换得到，这与前向安全有什么关系？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-net-05",
+      "category": "networking",
+      "topic": "network_dns",
+      "question": "一次域名解析会经过哪些缓存和服务器？请区分递归与迭代过程。",
+      "followups": [
+        "缓存 TTL 如何影响权威服务器压力与变更生效速度？",
+        "如果解析结果偶发错误，你会在哪几层抓取证据？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "tx-net-06",
+      "category": "networking",
+      "topic": "network_rpc_retry",
+      "question": "远程调用发生超时时，为什么调用方不能简单地无限重试？",
+      "followups": [
+        "连接超时、单次请求超时和端到端 deadline 应如何分配？",
+        "幂等、退避抖动、重试预算和熔断分别防止什么故障扩大？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-net-07",
+      "category": "networking",
+      "topic": "network_websocket",
+      "question": "WebSocket 如何从 HTTP 握手升级为双向通信，帧和连接生命周期怎样管理？",
+      "followups": [
+        "心跳如何帮助识别半开连接，间隔设置要考虑哪些因素？",
+        "大规模长连接服务怎样处理连接路由、背压和重连恢复？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-net-08",
+      "category": "networking",
+      "topic": "network_load_balancing",
+      "question": "四层与七层负载均衡分别能观察和修改哪些信息，适用场景有何不同？",
+      "followups": [
+        "轮询、最少连接和一致性哈希各依赖哪些流量假设？",
+        "实例摘除与扩容时，如何兼顾存量长连接和新请求分配？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-code-01",
+      "category": "coding_thought",
+      "topic": "coding_lru_cache",
+      "question": "请口述一个 get、put 都是 O(1) 的 LRU Cache，并说明关键边界。",
+      "followups": [
+        "哈希表和双向链表各承担什么职责，节点移动有哪些步骤？",
+        "如果支持并发访问，你会选择整体加锁还是分段，理由是什么？"
+      ],
+      "difficulty": "medium"
+    },
+    {
+      "id": "tx-code-02",
+      "category": "coding_thought",
+      "topic": "coding_stream_topk",
+      "question": "数据流持续到来时，怎样维护频率最高的 K 个元素？请先给出精确方案。",
+      "followups": [
+        "计数表与小根堆如何协作，更新一个已有元素需要注意什么？",
+        "内存不足以保存所有元素时，可以接受怎样的近似方法和误差？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-code-03",
+      "category": "coding_thought",
+      "topic": "coding_rate_limiter",
+      "question": "请口述一个令牌桶限流器的状态与请求处理流程，并说明它允许怎样的突发。",
+      "followups": [
+        "令牌补充可以按定时任务还是按请求惰性计算，两者有什么差异？",
+        "多线程更新与时间精度会造成哪些边界问题？"
+      ],
+      "difficulty": "hard"
+    },
+    {
+      "id": "tx-code-04",
+      "category": "coding_thought",
+      "topic": "coding_producer_consumer",
+      "question": "如果不使用现成 BlockingQueue，你会如何设计一个线程安全的有界队列？",
+      "followups": [
+        "生产者与消费者分别等待什么条件，条件变化时应该 signal 还是 signalAll？",
+        "队列关闭后，已有元素、阻塞线程和新请求分别怎样处理？"
+      ],
+      "difficulty": "hard"
+    }
+  ]
+}
