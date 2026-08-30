@@ -70,6 +70,7 @@ class CodingAssessment(BaseModel):
     testing: CodingDimension
     strengths: list[str] = Field(default_factory=list, max_length=8)
     improvements: list[str] = Field(default_factory=list, max_length=8)
+    improved_solution: str = Field(min_length=10, max_length=12000)
     next_drill: str = Field(min_length=1, max_length=500)
     execution_status: Literal["not_executed"] = "not_executed"
 
@@ -202,6 +203,11 @@ class CodingPracticeService:
             ),
             strengths=["完成了从澄清、方案到实现和自测的完整作答链路。"],
             improvements=improvements or ["下一次尝试在建议时限内边写边口述，并主动 dry-run。"],
+            improved_solution=str(challenge.get("reference_pseudocode") or (
+                "function solve(input):\n"
+                "    // 按方案维护核心状态并遍历输入\n"
+                "    // 返回满足题意的结果"
+            )),
             next_drill=f"重做本题时，把目标复杂度“{rubric.get('expected_complexity') or '按题意分析'}”作为提交前检查项。",
         )
 
@@ -217,6 +223,7 @@ class CodingPracticeService:
 你是代码面试复盘官。按 communication、problem_solving、technical_competency、testing 四维评分。
 只依据候选人提交内容和题目私有 rubric，不运行代码，不得声称编译或测试通过。
 检查题意澄清、方案/不变量、实现完整性、复杂度和候选人自拟边界用例。
+improved_solution 必须给出所选语言的完整改进代码；只有题目信息不足以写合法代码时才给完整伪代码。该字段不得只写自然语言思路。
 反馈必须具体引用提交中可观察的信息；execution_status 固定为 not_executed。
 只输出符合 JSON Schema 的对象。
 """.strip()
@@ -242,5 +249,9 @@ class CodingPracticeService:
                 technical_competency=CodingDimension(score=0, feedback="暂未评分"),
                 testing=CodingDimension(score=0, feedback="暂未评分"),
                 improvements=["保留当前草稿，稍后重新提交静态复盘。"],
+                improved_solution=str(challenge.get("reference_pseudocode") or (
+                    "function solve(input):\n"
+                    "    // 评分服务不可用，请按题目不变量补全实现"
+                )),
                 next_drill="稍后重试本题。",
             )

@@ -28,6 +28,8 @@ const elements = {
   progressFill: $('#practiceProgressFill'),
   sessionLabel: $('#practiceSessionLabel'),
   elapsed: $('#practiceElapsed'),
+  previousQuestion: $('#practicePreviousQuestion'),
+  returnCurrent: $('#practiceReturnCurrent'),
   exit: $('#practiceExit'),
   category: $('#questionCategory'),
   questionDifficulty: $('#questionDifficulty'),
@@ -87,6 +89,10 @@ let providerTranscript = '';
 let transcriptManuallyEdited = false;
 let attempts = [];
 let voiceTranscriptionAvailable = true;
+let questionHistory = [];
+let historyIndex = -1;
+let liveHistoryIndex = -1;
+let browsingHistory = false;
 
 function selectedValue(name, fallback) {
   return $(`input[name="${name}"]:checked`)?.value || fallback;
@@ -206,18 +212,37 @@ function safeSourceUrl(value) {
   }
 }
 
-function renderQuestion(question) {
+function renderHistoryControls() {
+  elements.previousQuestion.disabled = historyIndex <= 0;
+  setVisible(elements.returnCurrent, browsingHistory);
+}
+
+function currentHistoryEntry() {
+  return questionHistory[historyIndex] || null;
+}
+
+function renderQuestion(question, { track = true } = {}) {
   if (!question) {
     completePractice();
     return;
   }
+  if (track) {
+    questionHistory.push({ question, draft: '', answer: '', assessment: null, skipped: false });
+    const index = questionHistory.length - 1;
+    historyIndex = index;
+    liveHistoryIndex = Math.max(liveHistoryIndex, index);
+    browsingHistory = false;
+  }
   currentQuestion = question;
-  pendingNextQuestion = null;
+  if (track) pendingNextQuestion = null;
   reattempting = false;
   providerTranscript = '';
   transcriptManuallyEdited = false;
   answerStartedAt = 0;
   elements.answer.value = '';
+  elements.answer.readOnly = false;
+  elements.voiceMode.disabled = !voiceTranscriptionAvailable;
+  elements.textMode.disabled = false;
   elements.question.textContent = String(question.question || question.prompt || '题目暂时不可用');
   elements.category.textContent = String(question.category || question.topic || '综合');
   elements.questionDifficulty.textContent = difficultyLabels[question.difficulty] || String(question.difficulty || '进阶');
@@ -258,8 +283,57 @@ function renderQuestion(question) {
   elements.skip.disabled = false;
   elements.submit.disabled = false;
   elements.record.disabled = false;
+  renderHistoryControls();
   setAnswerMode(answerMode, { focus: false });
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function saveHistoryDraft() {
+  const entry = currentHistoryEntry();
+  if (entry && !entry.assessment && !entry.skipped) entry.draft = elements.answer.value;
+}
+
+function renderHistoryEntry(index) {
+  const entry = questionHistory[index];
+  if (!entry) return;
+  saveHistoryDraft();
+  historyIndex = index;
+  browsingHistory = index !== liveHistoryIndex;
+  renderQuestion(entry.question, { track: false });
+  browsingHistory = index !== liveHistoryIndex;
+  renderHistoryControls();
+  elements.progress.textContent = `第 ${index + 1} 题 · ${browsingHistory ? '历史回看' : '当前题'}`;
+  elements.answer.value = entry.answer || entry.draft || '';
+  if (entry.assessment) {
+    renderAssessment(entry.assessment);
+    setVisible(elements.answerCard, false);
+    setVisible(elements.feedback, true);
+    elements.reattempt.disabled = browsingHistory;
+    $('.button-label', elements.next).textContent = browsingHistory ? '回到当前题' : (pendingNextQuestion ? '下一题' : '查看本组结果');
+  } else if (browsingHistory) {
+    elements.answer.readOnly = true;
+    elements.voiceMode.disabled = true;
+    elements.textMode.disabled = true;
+    setVisible(elements.recorder, false);
+    elements.hint.disabled = true;
+    elements.skip.disabled = true;
+    elements.submit.disabled = true;
+    elements.answerStatus.textContent = entry.skipped ? '这道题已跳过，仅供回看' : '历史题目仅供回看';
+  }
+}
+
+function previousQuestion() {
+  if (historyIndex <= 0) return;
+  if (recording || sealingRecording) {
+    showToast('请先停止当前语音回答，再回看上一题。', 'info');
+    return;
+  }
+  renderHistoryEntry(historyIndex - 1);
+}
+
+function returnToCurrentQuestion() {
+  if (liveHistoryIndex < 0) return;
+  renderHistoryEntry(liveHistoryIndex);
 }
 
 function closeSocket() {
@@ -452,6 +526,12 @@ async function submitAnswer() {
       },
     });
     attempts.push({ ...response, reattempt: reattempting });
+    const historyEntry = currentHistoryEntry();
+    if (historyEntry) {
+      historyEntry.answer = answer;
+      historyEntry.draft = answer;
+      historyEntry.assessment = response.assessment || {};
+    }
     pendingNextQuestion = response.next_question || null;
     practiceSession.answered_questions = reattempting
       ? Number(practiceSession.answered_questions) || 0
@@ -483,6 +563,8 @@ async function skipQuestion() {
     });
     practiceSession.skipped_questions = Number(response.skipped_questions)
       || (Number(practiceSession.skipped_questions) || 0) + 1;
+    const historyEntry = currentHistoryEntry();
+    if (historyEntry) historyEntry.skipped = true;
     if (response.done || !response.next_question) completePractice();
     else renderQuestion(response.next_question);
   } catch (error) {
@@ -569,6 +651,10 @@ async function finishPractice() {
 }
 
 function nextQuestion() {
+  if (browsingHistory) {
+    returnToCurrentQuestion();
+    return;
+  }
   if (!pendingNextQuestion) {
     completePractice();
     return;
@@ -604,6 +690,10 @@ async function createPracticeSession(event = null) {
     if (!response?.id || !response?.current_question) throw new Error('服务端没有返回可练习的题目。');
     practiceSession = response;
     attempts = toArray(response.attempts);
+    questionHistory = [];
+    historyIndex = -1;
+    liveHistoryIndex = -1;
+    browsingHistory = false;
     sessionStartedAt = Date.now();
     clearInterval(elapsedTimer);
     elapsedTimer = setInterval(renderSessionElapsed, 500);
@@ -754,6 +844,8 @@ elements.skip.addEventListener('click', skipQuestion);
 elements.submit.addEventListener('click', submitAnswer);
 elements.reattempt.addEventListener('click', reattemptQuestion);
 elements.next.addEventListener('click', nextQuestion);
+elements.previousQuestion.addEventListener('click', previousQuestion);
+elements.returnCurrent.addEventListener('click', returnToCurrentQuestion);
 elements.exit.addEventListener('click', finishPractice);
 elements.again.addEventListener('click', () => location.assign('/practice'));
 window.addEventListener('pagehide', () => {

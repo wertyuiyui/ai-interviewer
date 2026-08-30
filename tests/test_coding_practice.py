@@ -31,6 +31,8 @@ def test_checked_in_coding_bank_is_curated_traceable_and_reviewable() -> None:
     assert all(question["examples"] and question["signatures"] for question in questions)
     assert all(question["rubric"]["key_points"] for question in questions)
     assert all(question["rubric"]["edge_cases"] for question in questions)
+    assert all(30 <= question["recommended_minutes"] <= 45 for question in questions)
+    assert all(len(question["reference_pseudocode"].splitlines()) >= 4 for question in questions)
     assert "never scrapes" in manifest["policy"]["runtime_rule"]
     assert "not claimed as official" in manifest["policy"]["company_claim_rule"]
 
@@ -44,7 +46,12 @@ async def test_catalog_exposes_workflow_but_keeps_private_rubric_and_hints_priva
     assert catalog["workflow"] == ["clarify", "approach", "code", "test", "review"]
     assert catalog["judge_mode"] == "static_review"
     assert catalog["languages"] == ["python", "java", "go", "javascript"]
-    assert all("rubric" not in question and "hints" not in question for question in catalog["questions"])
+    assert all(
+        "rubric" not in question
+        and "hints" not in question
+        and "reference_pseudocode" not in question
+        for question in catalog["questions"]
+    )
 
 
 @pytest.mark.asyncio
@@ -64,6 +71,8 @@ async def test_stage_hint_and_mock_review_follow_four_dimension_static_rubric() 
     assert hint["stage"] == "clarify" and hint["hint"]
     assessment = result["assessment"]
     assert assessment["execution_status"] == "not_executed"
+    assert "function twoSum" in assessment["improved_solution"]
+    assert len(assessment["improved_solution"].splitlines()) >= 4
     assert 0 <= assessment["overall_score"] <= 10
     for dimension in ("communication", "problem_solving", "technical_competency", "testing"):
         assert 0 <= assessment[dimension]["score"] <= 10

@@ -16,6 +16,8 @@ def test_practice_page_supports_quick_review_voice_text_and_english() -> None:
     assert 'id="textModeButton"' in page
     assert 'id="recordButton"' in page
     assert 'id="practiceAnswer"' in page
+    assert 'id="practicePreviousQuestion"' in page
+    assert 'id="practiceReturnCurrent"' in page
     assert 'id="reattemptButton"' in page
     assert "/api/practice/sessions" in script
     assert "/ws/practice/sessions/" in script
@@ -24,6 +26,9 @@ def test_practice_page_supports_quick_review_voice_text_and_english() -> None:
     assert "review_ordinals" in script
     assert "score.toFixed(1)" in script
     assert "Number.isFinite(score)" in script
+    assert "function previousQuestion()" in script
+    assert "function renderHistoryEntry(index)" in script
+    assert "历史回看" in script
 
 
 def test_practice_page_supports_unlimited_skip_finish_and_mistake_book() -> None:

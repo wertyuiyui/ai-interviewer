@@ -219,3 +219,12 @@
 - 文件：GitHub `main` 至 `5eacadf`；生产目录中的提交快照文件；`process.md`。生产密钥、数据库和依赖目录未改动。
 - 验证：应用服务为 `active`，新主进程 PID `602081`；`http://127.0.0.1:8000/healthz` 返回正常；绕过服务器本机代理、以正式域名 SNI 直连 Caddy 实际网卡后，443 与 HTTPS 3000 均返回 `{"status":"ok"}`；生产 `/coding`、`/practice`、`/report` 已确认三入口导航与报告正文标签，新 `coding.css`、`coding.js` 均返回 `200`。
 - 风险或后续事项：本机代理路径及公网地址自回环仍会提前中断 TLS，实际 Caddy 监听与正式域名证书直连验证正常；回滚代码包如上。进行中的论文解读和手撕后续增强保持未提交、未推送、未部署状态。
+
+### CODING-003 · 2026-08-30 · 手撕改写代码、真实时长与上一题
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：手撕四维复盘新增独立的代码/伪代码改写示范字段与等宽代码块；真实模型被约束为优先输出所选语言的完整代码，信息不足时才使用完整伪代码，离线及失败回退使用题库内审阅伪代码。参考完整代码面试常见 30–45 分钟轮次及方案讨论耗时，将 8 道题从原 15–30 分钟调整为基础 30–35 分钟、进阶 40–45 分钟，并在页面明确这是包含澄清、方案、编码和自测的完整流程时长。手撕工作台切换上一题前保存分语言草稿；八股快刷增加上一题只读回看与回到当前题，保留服务端单向待答游标并支持已提交反馈、草稿和已跳过题状态。
+- 文件：`app/coding_practice.py`、`questions/coding_practice_bank.json`、`public/coding.html`、`public/js/coding.js`、`public/assets/coding.css`、`public/practice.html`、`public/js/practice.js`、`public/assets/practice.css`、`tests/test_coding_practice.py`、`tests/test_frontend_coding_ui.py`、`tests/test_frontend_practice_ui.py`、`references/CODING_PRACTICE_DESIGN.md`、`process.md`。
+- 验证：题库 JSON 解析、`python -m py_compile app/coding_practice.py`、`node --check public/js/coding.js public/js/practice.js`、`git diff --check` 均通过；手撕/快刷专项 `25 passed`。全量回归 `211 passed, 2 failed`，两项失败均来自进行中的 `PAPER-001` 已将缓存 schema 改为 v4、但其旧测试仍断言 v3，与本任务文件无关。
+- 风险或后续事项：上一题是前端会话内导航，刷新页面后仍以服务端当前题为准；快刷历史题只读，避免服务端游标错位。代码仍不在应用进程执行，改写示范也不代表已通过编译或测试。未修改、暂存、推送或部署 `PAPER-001` 文件，本任务仅本地提交，不 push、不部署。

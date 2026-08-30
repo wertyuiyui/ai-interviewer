@@ -19,7 +19,7 @@
       <section class="coding-landing" id="codingLanding">
         <header class="coding-hero">
           <div><span class="eyebrow"><span></span> CODING INTERVIEW WORKBENCH</span><h1>不只写出答案，<br>练完整场代码面试。</h1></div>
-          <p>按真实面试节奏完成澄清、方案、编码和自测。题目来自公开策展清单并经独立改写；系统按沟通、解题、技术实现、测试四维静态复盘，不在服务器运行代码。</p>
+          <p>按真实面试常见的 30–45 分钟轮次完成澄清、方案、编码和自测。题目来自公开策展清单并经独立改写；系统按沟通、解题、技术实现、测试四维静态复盘，不在服务器运行代码。</p>
         </header>
 
         <div class="coding-filters" aria-label="题库筛选">
@@ -33,9 +33,9 @@
 
       <section class="coding-workbench is-hidden" id="codingWorkbench">
         <header class="coding-workbench-head">
-          <button class="coding-back" id="codingBack" type="button">← 返回题库</button>
+          <div class="coding-question-navigation"><button class="coding-back" id="codingBack" type="button">← 返回题库</button><button class="coding-previous-question" id="codingPreviousQuestion" type="button" disabled>上一题</button></div>
           <div><span id="codingMeta">数组 · 基础</span><h1 id="codingTitle">题目</h1></div>
-          <div class="coding-clock"><span>建议 <b id="codingRecommended">20</b> 分钟</span><strong id="codingElapsed">00:00</strong></div>
+          <div class="coding-clock"><span>完整练习建议 <b id="codingRecommended">30</b> 分钟</span><strong id="codingElapsed">00:00</strong></div>
         </header>
 
         <article class="coding-prompt-card">
@@ -76,7 +76,7 @@
         </section>
 
         <div class="coding-workbench-actions">
-          <button class="secondary-button" id="codingPrevious" type="button">上一步</button>
+          <button class="secondary-button" id="codingPrevious" type="button">上一步骤</button>
           <button class="primary-button coding-next" id="codingNext" type="button"><span class="button-label">下一步</span><span aria-hidden="true">→</span></button>
         </div>
       </section>
@@ -85,8 +85,9 @@
         <header><div><span>STATIC INTERVIEW REVIEW</span><h1>这次手撕的复盘</h1><p id="codingReviewSummary"></p></div><strong id="codingOverallScore">—</strong></header>
         <div class="coding-dimension-grid" id="codingDimensions"></div>
         <div class="coding-review-notes"><article><h2>做得好的地方</h2><ul id="codingStrengths"></ul></article><article><h2>下一次要改</h2><ul id="codingImprovements"></ul></article></div>
+        <article class="coding-improved-solution"><header><span>代码 / 伪代码改写示范</span><small>请结合反馈理解，不要只背答案</small></header><pre><code id="codingImprovedSolution"></code></pre></article>
         <p class="coding-execution-note">本次仅做静态代码面试复盘，没有编译或执行提交内容。</p>
-        <div class="coding-review-actions"><button class="secondary-button" id="codingRetry" type="button">带着反馈重做</button><button class="primary-button coding-another" id="codingAnother" type="button">换一道题</button></div>
+        <div class="coding-review-actions"><button class="secondary-button" id="codingReviewPrevious" type="button">上一题</button><button class="secondary-button" id="codingRetry" type="button">带着反馈重做</button><button class="primary-button coding-another" id="codingAnother" type="button">换一道题</button></div>
       </section>
     </main>
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>

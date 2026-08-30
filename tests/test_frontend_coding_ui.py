@@ -29,6 +29,10 @@ def test_coding_page_uses_independent_interview_workflow_and_static_review() -> 
         assert dimension in script
     assert 'id="codingCode"' in page
     assert 'id="codingTests"' in page
+    assert 'id="codingPreviousQuestion"' in page
+    assert 'id="codingReviewPrevious"' in page
+    assert 'id="codingImprovedSolution"' in page
+    assert "代码 / 伪代码改写示范" in page
     assert "不会在服务器执行" in page
     assert "没有编译或执行" in page
     assert "/api/coding/catalog" in script
@@ -36,5 +40,7 @@ def test_coding_page_uses_independent_interview_workflow_and_static_review() -> 
     assert "/api/coding/review" in script
     assert "/api/practice/sessions" not in script
     assert "localStorage" in script
+    assert "function openPreviousQuestion()" in script
+    assert "assessment.improved_solution" in script
     assert ".coding-editor" in style
     assert 'id="codingRun"' not in page

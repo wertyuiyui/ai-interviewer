@@ -4,12 +4,14 @@ const elements = {
   landing: $('#codingLanding'), workbench: $('#codingWorkbench'), review: $('#codingReview'),
   topic: $('#codingTopic'), difficulty: $('#codingDifficulty'), language: $('#codingLanguage'),
   bankStatus: $('#codingBankStatus'), questionList: $('#codingQuestionList'), back: $('#codingBack'),
+  previousQuestion: $('#codingPreviousQuestion'), reviewPrevious: $('#codingReviewPrevious'),
   meta: $('#codingMeta'), title: $('#codingTitle'), recommended: $('#codingRecommended'), elapsed: $('#codingElapsed'),
   prompt: $('#codingPrompt'), signature: $('#codingSignature'), constraints: $('#codingConstraints'), examples: $('#codingExamples'),
   assumptions: $('#codingAssumptions'), approach: $('#codingApproach'), code: $('#codingCode'), complexity: $('#codingComplexity'),
   tests: $('#codingTests'), addTest: $('#codingAddTest'), previous: $('#codingPrevious'), next: $('#codingNext'),
   editorLanguage: $('#codingEditorLanguage'), reviewSummary: $('#codingReviewSummary'), overall: $('#codingOverallScore'),
   dimensions: $('#codingDimensions'), strengths: $('#codingStrengths'), improvements: $('#codingImprovements'),
+  improvedSolution: $('#codingImprovedSolution'),
   retry: $('#codingRetry'), another: $('#codingAnother'),
 };
 
@@ -23,6 +25,8 @@ let stageIndex = 0;
 let startedAt = 0;
 let timer = 0;
 let activeLanguage = 'python';
+let visibleQuestions = [];
+let currentQuestionIndex = -1;
 
 function setVisible(element, visible) { element?.classList.toggle('is-hidden', !visible); }
 function draftKey() { return current ? `coding-draft:${current.id}:${activeLanguage}` : ''; }
@@ -74,6 +78,7 @@ function renderQuestions() {
   const questions = toArray(catalog?.questions).filter((item) => (
     (!topic || item.topic === topic) && (!difficulty || item.difficulty === difficulty)
   ));
+  visibleQuestions = questions;
   elements.questionList.replaceChildren();
   questions.forEach((question) => {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'coding-question';
@@ -81,7 +86,7 @@ function renderQuestions() {
     meta.innerHTML = `<span>${question.topic}</span><span>${difficultyLabels[question.difficulty] || question.difficulty}</span>`;
     const title = document.createElement('h2'); title.textContent = question.title?.zh || question.id;
     const patterns = document.createElement('p'); patterns.textContent = toArray(question.patterns).join(' · ');
-    const footer = document.createElement('footer'); footer.innerHTML = `<span>建议 ${question.recommended_minutes} 分钟</span><span>开始 →</span>`;
+    const footer = document.createElement('footer'); footer.innerHTML = `<span>完整流程建议 ${question.recommended_minutes} 分钟</span><span>开始 →</span>`;
     button.append(meta, title, patterns, footer); button.addEventListener('click', () => openQuestion(question));
     elements.questionList.append(button);
   });
@@ -92,7 +97,7 @@ function renderQuestionDetails() {
   const language = elements.language.value;
   elements.meta.textContent = `${current.topic} · ${difficultyLabels[current.difficulty] || current.difficulty}`;
   elements.title.textContent = current.title?.zh || current.id;
-  elements.recommended.textContent = String(current.recommended_minutes || 20);
+  elements.recommended.textContent = String(current.recommended_minutes || 30);
   elements.prompt.textContent = current.prompt?.zh || current.prompt?.en || '';
   elements.signature.textContent = current.signatures?.[language] || '';
   elements.editorLanguage.textContent = languageLabels[language] || language;
@@ -107,10 +112,13 @@ function renderQuestionDetails() {
   });
 }
 
-function openQuestion(question) {
+function openQuestion(question, questionIndex = visibleQuestions.findIndex((item) => item.id === question.id)) {
   current = question; activeLanguage = elements.language.value; stageIndex = 0; startedAt = Date.now(); clearInterval(timer);
+  currentQuestionIndex = questionIndex;
   timer = setInterval(() => { elements.elapsed.textContent = formatSeconds((Date.now() - startedAt) / 1000); }, 500);
   renderQuestionDetails(); loadDraft(); renderStage();
+  elements.previousQuestion.disabled = currentQuestionIndex <= 0;
+  elements.reviewPrevious.disabled = currentQuestionIndex <= 0;
   setVisible(elements.landing, false); setVisible(elements.review, false); setVisible(elements.workbench, true);
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -161,6 +169,13 @@ function renderReview(assessment) {
   const dimensions = [['communication', '沟通与澄清'], ['problem_solving', '解题与取舍'], ['technical_competency', '技术实现'], ['testing', '主动测试']];
   dimensions.forEach(([key, label]) => { const value = assessment[key] || {}; const card = document.createElement('article'); card.className = 'coding-dimension'; card.innerHTML = `<span>${label}</span><strong>${Number(value.score || 0).toFixed(1)}</strong><p></p>`; $('p', card).textContent = value.feedback || '暂无反馈'; elements.dimensions.append(card); });
   fillList(elements.strengths, assessment.strengths, '本次暂无明确加分点。'); fillList(elements.improvements, assessment.improvements, assessment.next_drill || '按反馈再练一次。');
+  elements.improvedSolution.textContent = assessment.improved_solution || '暂无代码或伪代码改写示范。';
+}
+
+function openPreviousQuestion() {
+  if (!current || currentQuestionIndex <= 0) return;
+  saveDraft();
+  openQuestion(visibleQuestions[currentQuestionIndex - 1], currentQuestionIndex - 1);
 }
 
 async function requestHint(stage, button) {
@@ -186,6 +201,8 @@ elements.language.addEventListener('change', () => {
   loadDraft();
 });
 elements.back.addEventListener('click', () => { saveDraft(); clearInterval(timer); current = null; setVisible(elements.workbench, false); setVisible(elements.landing, true); });
+elements.previousQuestion.addEventListener('click', openPreviousQuestion);
+elements.reviewPrevious.addEventListener('click', openPreviousQuestion);
 document.querySelectorAll('[data-stage]').forEach((button) => button.addEventListener('click', () => { stageIndex = stages.indexOf(button.dataset.stage); renderStage(); }));
 document.querySelectorAll('[data-hint]').forEach((button) => button.addEventListener('click', () => requestHint(button.dataset.hint, button)));
 elements.previous.addEventListener('click', () => { stageIndex = Math.max(0, stageIndex - 1); renderStage(); });

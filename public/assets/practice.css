@@ -144,6 +144,8 @@
   gap: 10px;
 }
 
+.practice-session-actions button:disabled { opacity: .42; cursor: not-allowed; }
+
 @keyframes practice-unlimited-progress {
   from { transform: translateX(-15%); }
   to { transform: translateX(200%); }
