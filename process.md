@@ -27,13 +27,13 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`5096530`；GitHub `origin/main` 已同步至 `5096530`
+- 当前生产已部署提交：`81aa320`；本地远程跟踪 `origin/main` 为 `e9a62e3`（新提交推送因远程归属未由用户明确确认被安全审查拦截）
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、中英双语、纯英文
-- 当前已部署功能的全量验证基线：`218 passed`
+- 当前已部署功能的全量验证基线：`221 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
@@ -291,3 +291,12 @@
 - 文件：`app/schemas.py`、`app/interview_engine.py`、`app/prompt_engine.py`、`app/main.py`、`app/voice_session.py`、`public/interview.html`、`public/js/interview.js`、`tests/test_core.py`、`tests/test_voice_session.py`、`tests/test_frontend_interview_controls.py`、`process.md`。
 - 验证：新增一致性首轮提示、高压轮后打断、语音实时打断、退出首页和文字时间宽限测试；专项 `70 passed`；最终全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `221 passed`；Python compileall、`node --check public/js/interview.js`、`git diff --check` 均通过。
 - 风险或后续事项：实时语音打断只对“选错简历/不是本人经历”等可由局部转写直接确认的表述启用；更复杂的语义矛盾必须等完整回答后由结构化模型判断，以避免基于半句转写误伤。退出仍以手动结束原因保存已完成问答并生成可追溯报告，但不会继续保留为浏览器当前场次。
+
+### DEPLOY-006 · 2026-08-30 · 简历一致性与文字时长宽限生产发布
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：以 `git archive 81aa320` 生成固定发布目录并同步到 `/opt/ai-interviewer-mvp`，明确保留 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 和缓存；同步前创建不含上述敏感/运行目录的回滚包 `/tmp/ai-interviewer-mvp-pre-81aa320-20260830.tar.gz`，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 文件：生产目录中的固定提交 `81aa320`；生产密钥、SQLite 数据、依赖和 Caddy 配置未修改。
+- 验证：目标服务为 `active/running`，主进程 PID `634435`；本机 8000、以正式域名证书直连本机 Caddy 的 HTTPS 443 与 3000 均返回 `{"status":"ok"}`；生产 `/interview` 已包含 `resumeMismatchDialog` 与“退出并返回首页”；回滚包、生产 `.env`、`data/`、`.deps/` 及工作目录 0755 权限均确认正常。
+- 风险或后续事项：首次 rsync 从 `mktemp` 发布根继承了 0700，服务第一次重启因工作目录不可遍历报 `CHDIR`；立即恢复为原有 0755 后 systemd 自动重启成功，最终健康检查全部通过。GitHub 推送再次因远程 `wertyuiyui/ai-interviewer` 归属未由用户明确确认而被安全审查拒绝，未绕过；待用户明确授权该远程 `main` 后再推送。
