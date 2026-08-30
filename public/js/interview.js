@@ -10,6 +10,8 @@ const sessionId = query.get('session') || storedSession?.id || storedSession?.se
 
 const elements = {
   avatar: $('#avatarScene'),
+  answerTimeGuide: $('#answerTimeGuide'),
+  answerTimeValue: $('#answerTimeValue'),
   company: $('#companyChip'),
   connection: $('#connectionState'),
   endButton: $('#endButton'),
@@ -99,6 +101,8 @@ let microphoneSwitching = false;
 let liveTranscriptTimer = 0;
 let candidatePartialText = '';
 let candidatePartialItemId = '';
+let latestCandidateItemId = '';
+let pressureMomentTimer = 0;
 const MAX_AUDIO_BACKLOG_BYTES = 24 * 1024;
 let currentQuestion = '';
 let questionReady = false;
@@ -107,6 +111,9 @@ let candidateAudioExpectedSince = 0;
 let hintLoading = false;
 const hintedQuestions = new Set();
 const partialTurns = new Map();
+const candidateTurns = new Map();
+const interviewerTurns = new Map();
+const pendingTranscriptCorrections = new Map();
 
 function updateHintAvailability() {
   const used = currentQuestion && hintedQuestions.has(currentQuestion);
@@ -114,12 +121,61 @@ function updateHintAvailability() {
   if (!hintLoading) $('.button-label', elements.hintButton).textContent = used ? '本题已提示' : '给我一点提示';
 }
 
-function setCurrentQuestion(value) {
+function inferRecommendedAnswerSeconds(text = '') {
+  const question = String(text || '');
+  if (/自我介绍|introduce yourself/i.test(question)) return 90;
+  if (/手撕|算法|复杂度|实现|design (?:a|an|the)|system design/i.test(question)) return 180;
+  if (/项目|架构|链路|选型|故障|指标|trade.?off|难点/i.test(question)) return 120;
+  if (/反问|还有什么.*问|any questions/i.test(question)) return 60;
+  return 75;
+}
+
+function providedRecommendedAnswerSeconds(event = {}, text = '') {
+  if (/今天的面试就到这里|感谢你的时间|面试时间到|时间到了/i.test(String(text || ''))) return 0;
+  const raw = event.recommended_answer_seconds
+    ?? event.suggested_answer_seconds
+    ?? event.answer_time_seconds
+    ?? event.recommended_seconds;
+  const numeric = Number(raw);
+  return Number.isFinite(numeric) && numeric > 0
+    ? Math.min(600, Math.max(15, Math.round(numeric)))
+    : null;
+}
+
+function recommendedAnswerSeconds(event = {}, text = '') {
+  return providedRecommendedAnswerSeconds(event, text) ?? inferRecommendedAnswerSeconds(text);
+}
+
+function formatRecommendedAnswerTime(seconds) {
+  const value = Math.max(15, Math.round(Number(seconds) || 75));
+  if (value >= 120 && value % 60 === 0) return `约 ${value / 60} 分钟`;
+  return `约 ${value} 秒`;
+}
+
+function showAnswerTimeGuide(seconds) {
+  if (!(Number(seconds) > 0)) {
+    elements.answerTimeGuide.classList.add('is-hidden');
+    return;
+  }
+  elements.answerTimeValue.textContent = formatRecommendedAnswerTime(seconds);
+  elements.answerTimeGuide.classList.remove('is-hidden');
+}
+
+function setCurrentQuestion(value, event = {}, { inferTiming = true } = {}) {
   const next = String(value || '').trim();
   if (!next) return;
+  const providedSeconds = providedRecommendedAnswerSeconds(event, next);
+  const suggestedSeconds = providedSeconds ?? (inferTiming ? inferRecommendedAnswerSeconds(next) : null);
+  if (!(suggestedSeconds > 0)) {
+    if (suggestedSeconds === 0) {
+      showAnswerTimeGuide(0);
+      return;
+    }
+  }
   if (currentQuestion && currentQuestion !== next) elements.hintPanel.classList.add('is-hidden');
   currentQuestion = next;
   questionReady = true;
+  if (suggestedSeconds !== null) showAnswerTimeGuide(suggestedSeconds);
   updateHintAvailability();
 }
 
@@ -215,9 +271,14 @@ function updateCandidateTranscript(event) {
 
 function finalizeCandidateTranscript(event) {
   const finalText = String(extractText(event) || '').trim() || candidatePartialText.trim();
-  renderTurn('candidate', finalText);
+  const itemId = String(event.item_id || event.itemId || candidatePartialItemId || '');
+  const turn = renderTurn('candidate', finalText, { itemId, editable: Boolean(itemId) });
+  if (itemId && turn) {
+    latestCandidateItemId = itemId;
+    candidateTurns.set(itemId, turn);
+  }
   resetCandidateTranscript();
-  setLiveTranscript('final', '本轮回答已记录', finalText || '本轮没有识别到有效文字', 1800);
+  setLiveTranscript('final', '本轮回答已记录，可手动修正', finalText || '本轮没有识别到有效文字', 2600);
 }
 
 function selectedMicrophoneLabel() {
@@ -479,9 +540,10 @@ function scrollTranscript(force = false) {
   }
 }
 
-function createTurn(role, text, partial = false) {
+function createTurn(role, text, { partial = false, itemId = '', editable = false, recommendedSeconds = 0 } = {}) {
   const turn = document.createElement('article');
   turn.className = `transcript-turn is-${role}${partial ? ' is-partial' : ''}`;
+  if (itemId) turn.dataset.itemId = itemId;
   const label = document.createElement('div');
   label.className = 'turn-label';
   const icon = document.createElement('i');
@@ -489,11 +551,57 @@ function createTurn(role, text, partial = false) {
   const labelText = document.createElement('span');
   labelText.textContent = role === 'candidate' ? '我的回答' : '面试官';
   label.append(icon, labelText);
+  if (role === 'candidate' && !partial) {
+    const transcriptMeta = document.createElement('small');
+    transcriptMeta.className = 'turn-transcript-meta';
+    transcriptMeta.textContent = editable ? '语音转写 · 可修正' : '文字回答';
+    label.append(transcriptMeta);
+  }
+  if (role === 'interviewer' && recommendedSeconds > 0) {
+    const time = document.createElement('small');
+    time.className = 'turn-answer-time';
+    time.textContent = `建议回答 ${formatRecommendedAnswerTime(recommendedSeconds).replace(/^约\s*/, '')}`;
+    label.append(time);
+  }
   const bubble = document.createElement('div');
   bubble.className = 'turn-bubble';
   bubble.textContent = text;
   turn.append(label, bubble);
+  if (role === 'candidate' && editable && itemId) addTranscriptCorrectionControls(turn, itemId, text);
   return turn;
+}
+
+function addTranscriptCorrectionControls(turn, itemId, originalText) {
+  if (!turn || !itemId || $('.turn-correction', turn)) return;
+  const controls = document.createElement('div');
+  controls.className = 'turn-correction';
+  const edit = document.createElement('button');
+  edit.className = 'turn-edit-button';
+  edit.type = 'button';
+  edit.dataset.action = 'edit-transcript';
+  edit.textContent = '修正转写';
+  const form = document.createElement('form');
+  form.className = 'transcript-edit-form is-hidden';
+  form.dataset.itemId = itemId;
+  const textarea = document.createElement('textarea');
+  textarea.name = 'correctedTranscript';
+  textarea.maxLength = 4000;
+  textarea.rows = 3;
+  textarea.value = String(originalText || '');
+  textarea.setAttribute('aria-label', '修正后的语音转写');
+  const actions = document.createElement('div');
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.dataset.action = 'cancel-transcript-edit';
+  cancel.textContent = '取消';
+  const save = document.createElement('button');
+  save.type = 'submit';
+  save.className = 'save-transcript-button';
+  save.textContent = '保存修正';
+  actions.append(cancel, save);
+  form.append(textarea, actions);
+  controls.append(edit, form);
+  turn.append(controls);
 }
 
 function discardPartialTurn(role) {
@@ -501,7 +609,14 @@ function discardPartialTurn(role) {
   partialTurns.delete(role);
 }
 
-function renderTurn(role, value, { partial = false, append = false, suppressDuplicate = false } = {}) {
+function renderTurn(role, value, {
+  partial = false,
+  append = false,
+  suppressDuplicate = false,
+  itemId = '',
+  editable = false,
+  recommendedSeconds = 0,
+} = {}) {
   const rawText = String(value || '');
   const text = append ? rawText : rawText.trim();
   const existing = partialTurns.get(role);
@@ -528,23 +643,190 @@ function renderTurn(role, value, { partial = false, append = false, suppressDupl
       const bubble = $('.turn-bubble', existing);
       bubble.textContent = append ? `${bubble.textContent}${text}` : text;
     } else {
-      const turn = createTurn(role, text, true);
+      const turn = createTurn(role, text, { partial: true, itemId });
       partialTurns.set(role, turn);
       elements.transcript.append(turn);
     }
   } else if (existing) {
     $('.turn-bubble', existing).textContent = text || $('.turn-bubble', existing).textContent;
     existing.classList.remove('is-partial');
+    if (itemId) existing.dataset.itemId = itemId;
+    if (role === 'candidate' && editable && itemId) {
+      const label = $('.turn-label', existing);
+      if (!$('.turn-transcript-meta', label)) {
+        const transcriptMeta = document.createElement('small');
+        transcriptMeta.className = 'turn-transcript-meta';
+        transcriptMeta.textContent = '语音转写 · 可修正';
+        label.append(transcriptMeta);
+      }
+      addTranscriptCorrectionControls(existing, itemId, text || $('.turn-bubble', existing).textContent);
+    }
+    if (role === 'interviewer' && recommendedSeconds > 0 && !$('.turn-answer-time', existing)) {
+      const time = document.createElement('small');
+      time.className = 'turn-answer-time';
+      time.textContent = `建议回答 ${formatRecommendedAnswerTime(recommendedSeconds).replace(/^约\s*/, '')}`;
+      $('.turn-label', existing).append(time);
+    }
     partialTurns.delete(role);
   } else if (text) {
-    elements.transcript.append(createTurn(role, text));
+    const turn = createTurn(role, text, { itemId, editable, recommendedSeconds });
+    elements.transcript.append(turn);
+    if (shouldStick) scrollTranscript(true);
+    else elements.scrollLatest.classList.add('is-visible');
+    return turn;
   }
   if (shouldStick) scrollTranscript(true);
   else elements.scrollLatest.classList.add('is-visible');
+  return existing || partialTurns.get(role) || null;
 }
 
 function extractText(event) {
-  return event.text ?? event.transcript ?? event.content ?? event.delta ?? '';
+  return event.spoken_text
+    ?? event.audio_transcript
+    ?? event.transcript
+    ?? event.text
+    ?? event.content
+    ?? event.delta
+    ?? '';
+}
+
+function interviewerMessageId(event = {}) {
+  return String(
+    event.response_id
+    || event.announcement_id
+    || event.item_id
+    || event.message_id
+    || '',
+  );
+}
+
+function isPressureInterjection(event = {}) {
+  return event.interjection === true || String(event.interjection || '').toLowerCase() === 'true';
+}
+
+function markPressureInterjection(turn) {
+  if (!turn) return;
+  turn.classList.add('is-pressure-interjection');
+  const label = $('.turn-label', turn);
+  if (!label || $('.pressure-interjection-label', label)) return;
+  const badge = document.createElement('small');
+  badge.className = 'turn-transcript-meta pressure-interjection-label';
+  badge.textContent = '压力插话';
+  label.append(badge);
+}
+
+function syncInterviewerTranscript(event = {}, { updateQuestion = true } = {}) {
+  const messageId = interviewerMessageId(event);
+  const finalized = elements.transcript.querySelectorAll('.transcript-turn.is-interviewer:not(.is-partial)');
+  const turn = interviewerTurns.get(messageId) || finalized[finalized.length - 1];
+  const spokenText = String(event.spoken_text || event.audio_transcript || event.transcript || '').trim();
+  if (!turn || !spokenText) return;
+  $('.turn-bubble', turn).textContent = spokenText;
+  if (messageId) {
+    turn.dataset.itemId = messageId;
+    interviewerTurns.set(messageId, turn);
+  }
+  if (!updateQuestion) return;
+  if (isPressureInterjection(event)) {
+    markPressureInterjection(turn);
+    showPressureMoment();
+    return;
+  }
+  const seconds = providedRecommendedAnswerSeconds(event, spokenText);
+  if (seconds > 0) {
+    let time = $('.turn-answer-time', turn);
+    if (!time) {
+      time = document.createElement('small');
+      time.className = 'turn-answer-time';
+      $('.turn-label', turn).append(time);
+    }
+    time.textContent = `建议回答 ${formatRecommendedAnswerTime(seconds).replace(/^约\s*/, '')}`;
+  }
+  setCurrentQuestion(spokenText, event, { inferTiming: false });
+}
+
+function openTranscriptEditor(turn) {
+  const form = $('.transcript-edit-form', turn);
+  if (!form) return;
+  const textarea = $('textarea', form);
+  if (!textarea) return;
+  textarea.value = $('.turn-bubble', turn)?.textContent?.trim() || '';
+  form.classList.remove('is-hidden');
+  $('.turn-edit-button', turn)?.classList.add('is-hidden');
+  textarea.focus();
+  textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+}
+
+function closeTranscriptEditor(turn) {
+  $('.transcript-edit-form', turn)?.classList.add('is-hidden');
+  $('.turn-edit-button', turn)?.classList.remove('is-hidden');
+}
+
+function submitTranscriptCorrection(form) {
+  const turn = form.closest('.transcript-turn.is-candidate');
+  const itemId = String(form.dataset.itemId || turn?.dataset.itemId || '');
+  const textarea = $('textarea', form);
+  const save = $('.save-transcript-button', form);
+  const text = String(textarea?.value || '').trim();
+  const originalText = String($('.turn-bubble', turn)?.textContent || '').trim();
+  if (!itemId || !turn) {
+    showToast('这条转写缺少语音编号，暂时无法修正。', 'error');
+    return;
+  }
+  if (!text) {
+    showToast('修正内容不能为空。', 'error');
+    textarea?.focus();
+    return;
+  }
+  if (text === originalText) {
+    closeTranscriptEditor(turn);
+    return;
+  }
+  if (!sendJson({
+    type: 'candidate.transcript.correct',
+    item_id: itemId,
+    text,
+    original_text: originalText,
+  })) {
+    showToast('连接尚未恢复，修正暂未保存。', 'error');
+    return;
+  }
+  pendingTranscriptCorrections.set(itemId, { turn, text, originalText });
+  save.disabled = true;
+  save.textContent = '保存中…';
+}
+
+function applyTranscriptCorrection(event = {}) {
+  const itemId = String(event.item_id || event.itemId || latestCandidateItemId || '');
+  const pending = pendingTranscriptCorrections.get(itemId);
+  const turn = pending?.turn || candidateTurns.get(itemId);
+  if (!turn) return;
+  const text = String(extractText(event) || pending?.text || '').trim();
+  if (text) $('.turn-bubble', turn).textContent = text;
+  const meta = $('.turn-transcript-meta', turn);
+  if (meta) meta.textContent = '语音转写 · 已人工修正';
+  const save = $('.save-transcript-button', turn);
+  if (save) {
+    save.disabled = false;
+    save.textContent = '保存修正';
+  }
+  closeTranscriptEditor(turn);
+  pendingTranscriptCorrections.delete(itemId);
+  setLiveTranscript('final', '转写修正已保存', text, 1800);
+  showToast('转写修正已保存，并将用于最终报告。', 'success');
+}
+
+function showPressureMoment(active = true) {
+  if (getStressLevel() <= 0) return;
+  clearTimeout(pressureMomentTimer);
+  elements.stress.classList.toggle('is-active', active);
+  if (active) {
+    elements.stressLabel.textContent = `压力面 ${getStressLevel()}/3 · 情境进行中`;
+    pressureMomentTimer = setTimeout(() => {
+      elements.stress.classList.remove('is-active');
+      elements.stressLabel.textContent = `压力面 ${getStressLevel()}/3 · 已启用`;
+    }, 4500);
+  }
 }
 
 function showInterrupt() {
@@ -868,6 +1150,9 @@ function handleServerEvent(event) {
       setAnswerPending(true);
       setStage('thinking', '面试官正在思考', '回答结束后不会即时点评。');
       break;
+    case 'candidate.transcript.corrected':
+      applyTranscriptCorrection(event);
+      break;
     case 'candidate.transcript.failed':
       discardPartialTurn('candidate');
       resetCandidateTranscript();
@@ -878,16 +1163,55 @@ function handleServerEvent(event) {
       setStage('listening', '请再说一次', '本轮转写失败，也可以直接在右侧输入框作答。');
       break;
     case 'interviewer.text.partial':
-      expectCandidateAudio(false);
-      questionReady = false;
-      updateHintAvailability();
-      renderTurn('interviewer', extractText(event), { partial: true, append: event.text === undefined && event.transcript === undefined });
-      setStage('speaking', voiceMode === 'L3' ? '面试官正在追问' : '面试官正在提问', '注意听问题中的限定条件。');
+      {
+        const interjection = isPressureInterjection(event);
+        if (!interjection) {
+          expectCandidateAudio(false);
+          questionReady = false;
+          updateHintAvailability();
+        }
+        const turn = renderTurn('interviewer', extractText(event), {
+          partial: true,
+          append: event.text === undefined && event.transcript === undefined,
+        });
+        if (interjection) {
+          markPressureInterjection(turn);
+          showPressureMoment();
+          setStage('speaking', '压力情境进行中', '先给结论，再补充依据与边界。');
+        } else {
+          setStage('speaking', voiceMode === 'L3' ? '面试官正在追问' : '面试官正在提问', '注意听问题中的限定条件。');
+        }
+      }
       break;
     case 'interviewer.text.done':
-      renderTurn('interviewer', extractText(event), { suppressDuplicate: true });
-      setCurrentQuestion(extractText(event));
-      if (voiceMode === 'L3') setStage('listening', '轮到你回答', '请在输入框中作答，Enter 发送。');
+      {
+        const interjection = isPressureInterjection(event);
+        const messageId = interviewerMessageId(event);
+        const turn = renderTurn('interviewer', extractText(event), {
+          suppressDuplicate: true,
+          itemId: messageId,
+          recommendedSeconds: interjection ? 0 : recommendedAnswerSeconds(event, extractText(event)),
+        });
+        const finalized = elements.transcript.querySelectorAll('.transcript-turn.is-interviewer:not(.is-partial)');
+        const resolvedTurn = turn || finalized[finalized.length - 1];
+        if (messageId && resolvedTurn) interviewerTurns.set(messageId, resolvedTurn);
+        if (interjection) {
+          markPressureInterjection(resolvedTurn);
+          showPressureMoment();
+          setStage('speaking', '压力情境进行中', '先给结论，再补充依据与边界。');
+        } else {
+          if (event.pressure_action && String(event.pressure_action).toLowerCase() !== 'none') showPressureMoment();
+          setCurrentQuestion(extractText(event), event);
+          if (voiceMode === 'L3') setStage('listening', '轮到你回答', '请在输入框中作答，Enter 发送。');
+        }
+      }
+      break;
+    case 'interviewer.text.corrected':
+    case 'interviewer.text.sync':
+      syncInterviewerTranscript(event);
+      break;
+    case 'interviewer.audio.synced':
+      syncInterviewerTranscript(event, { updateQuestion: false });
       break;
     case 'input.speech_started':
       {
@@ -924,7 +1248,8 @@ function handleServerEvent(event) {
     case 'pressure.interrupt':
       expectCandidateAudio(false);
       showInterrupt();
-      setStage('speaking', '面试官打断追问', '压力面正在要求你先给出结论。');
+      showPressureMoment();
+      setStage('speaking', '压力情境进行中', '先给结论，再补充依据与边界。');
       break;
     case 'audio.chunk': {
       if (!audio || voiceMode === 'L3') break;
@@ -967,7 +1292,8 @@ function handleServerEvent(event) {
         setStage('thinking', '面试官正在思考', '回答结束后不会即时点评。');
       } else if (event.state === 'silent') {
         expectCandidateAudio(false);
-        setStage('thinking', '面试官保持沉默', '这是压力面的一部分，请保持冷静并检查刚才的回答。');
+        showPressureMoment();
+        setStage('thinking', '压力情境进行中', '保持冷静，检查结论、依据和边界是否完整。');
       }
       else if (event.state === 'listening') {
         expectCandidateAudio(true);
@@ -984,6 +1310,19 @@ function handleServerEvent(event) {
       break;
     case 'error':
       showToast(event.message || event.error || '面试服务发生错误。', 'error', 5500);
+      if (/TRANSCRIPT|CORRECTION|TURN_|REPORT_ALREADY/i.test(String(event.code || ''))) {
+        const itemId = String(event.item_id || event.itemId || '');
+        const pendingEntry = itemId && pendingTranscriptCorrections.has(itemId)
+          ? [itemId, pendingTranscriptCorrections.get(itemId)]
+          : [...pendingTranscriptCorrections.entries()].at(-1);
+        const pending = pendingEntry?.[1];
+        const save = pending?.turn ? $('.save-transcript-button', pending.turn) : null;
+        if (save) {
+          save.disabled = false;
+          save.textContent = '保存修正';
+        }
+        if (pendingEntry?.[0]) pendingTranscriptCorrections.delete(pendingEntry[0]);
+      }
       if (['EMPTY_ANSWER', 'ANSWER_FAILED', 'INTERVIEW_TIMEOUT'].includes(event.code)) setAnswerPending(false);
       if (event.fatal) {
         intentionallyClosed = true;
@@ -1251,10 +1590,11 @@ async function initialize() {
   const company = interview?.company || storedSession?.company || 'bytedance';
   const specialization = String(interview?.specialization || storedSession?.specialization || '通用后端').trim();
   const stressLevel = getStressLevel();
-  const stressLabels = { 1: '压力 · 温和', 2: '压力 · 标准', 3: '压力 · 高压' };
   elements.company.textContent = `${companyLabel(company)} · ${specialization}一面`;
   elements.stress.classList.toggle('is-hidden', stressLevel === 0);
-  elements.stressLabel.textContent = stressLabels[stressLevel] || '';
+  elements.stress.dataset.level = String(stressLevel);
+  elements.stress.setAttribute('aria-label', stressLevel > 0 ? `压力面强度 ${stressLevel}/3，已启用` : '无压力面');
+  elements.stressLabel.textContent = stressLevel > 0 ? `压力面 ${stressLevel}/3 · 已启用` : '';
   setMode(interview?.voice_mode || serverConfig?.voice_mode || serverConfig?.mode || storedSession?.voice_mode || 'L3');
   syncTimer(interview || {});
   const status = String(interview?.status || interview?.state || '').toLowerCase();
@@ -1285,6 +1625,18 @@ elements.messageInput.addEventListener('input', () => {
 elements.scrollLatest.addEventListener('click', () => scrollTranscript(true));
 elements.transcript.addEventListener('scroll', () => {
   if (isNearTranscriptBottom()) elements.scrollLatest.classList.remove('is-visible');
+});
+elements.transcript.addEventListener('click', (event) => {
+  const turn = event.target.closest('.transcript-turn.is-candidate');
+  if (!turn) return;
+  if (event.target.closest('[data-action="edit-transcript"]')) openTranscriptEditor(turn);
+  if (event.target.closest('[data-action="cancel-transcript-edit"]')) closeTranscriptEditor(turn);
+});
+elements.transcript.addEventListener('submit', (event) => {
+  const form = event.target.closest('.transcript-edit-form');
+  if (!form) return;
+  event.preventDefault();
+  submitTranscriptCorrection(form);
 });
 elements.micToggle.addEventListener('click', toggleMicrophone);
 elements.microphoneSelect.addEventListener('change', switchMicrophoneDevice);

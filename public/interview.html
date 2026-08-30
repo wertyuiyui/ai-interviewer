@@ -7,7 +7,7 @@
   <body class="interview-page">
     <header class="interview-header">
       <a class="brand brand-inverse" href="/" aria-label="返回砺面首页"><span class="brand-mark" aria-hidden="true">砺</span><span><strong>砺面</strong><small>AI 技术面试陪练</small></span></a>
-      <div class="interview-meta"><span class="company-chip" id="companyChip">加载中</span><span class="stress-chip is-hidden" id="stressChip"><i></i><span id="stressLabel">标准压力</span></span></div>
+      <div class="interview-meta"><span class="company-chip" id="companyChip">加载中</span><span class="stress-chip is-hidden" id="stressChip" data-level="0"><i></i><span id="stressLabel">压力面已启用</span></span></div>
       <div class="header-session"><span class="connection-state" id="connectionState"><i></i><span>准备中</span></span><time class="timer" id="timer" datetime="PT15M"><small>剩余</small><strong>15:00</strong></time></div>
     </header>
     <main class="interview-shell">
@@ -20,7 +20,7 @@
           </button>
         </div>
         <div class="avatar-scene" id="avatarScene"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="interviewer-avatar"><span>AI</span><i></i></div><div class="interrupt-label" id="interruptLabel">已识别打断</div></div>
-        <div class="stage-status"><span class="status-dot"></span><h1 id="stageTitle">等待开始</h1><p id="stageHint">准备好后，面试官会先请你做自我介绍。</p></div>
+        <div class="stage-status"><span class="status-dot"></span><h1 id="stageTitle">等待开始</h1><p id="stageHint">准备好后，面试官会先请你做自我介绍。</p><div class="answer-time-guide is-hidden" id="answerTimeGuide"><span>建议回答时间</span><strong id="answerTimeValue">约 90 秒</strong></div></div>
         <canvas class="waveform" id="waveform" aria-label="实时语音波形"></canvas>
         <section class="microphone-panel is-hidden" id="microphonePanel" aria-label="麦克风输入设置">
           <label for="microphoneSelect"><span>输入设备</span><select id="microphoneSelect"><option value="">系统默认麦克风</option></select></label>
@@ -37,7 +37,7 @@
       <section class="transcript-panel" aria-labelledby="transcriptTitle">
         <header class="panel-header"><div><span class="panel-eyebrow">LIVE TRANSCRIPT</span><h2 id="transcriptTitle">实时字幕</h2></div><button class="small-text-button" id="scrollLatest" type="button">回到最新 ↓</button></header>
         <section class="live-transcript-bar" id="liveTranscriptBar" data-state="idle" aria-live="polite" aria-atomic="true">
-          <header><span><i aria-hidden="true"></i><strong id="liveTranscriptStatus">等待你开口</strong></span><small>你的实时转写</small></header>
+          <header><span><i aria-hidden="true"></i><strong id="liveTranscriptStatus">等待你开口</strong></span><small>实时转写 · 完成后可修正</small></header>
           <p id="liveTranscriptText">语音识别结果会在这里逐步出现</p>
         </section>
         <div class="transcript-list" id="transcriptList" aria-live="polite" aria-relevant="additions text"><div class="transcript-placeholder" id="transcriptPlaceholder"><span aria-hidden="true">“</span><p>面试开始后，双方的实时转写会出现在这里。</p></div></div>

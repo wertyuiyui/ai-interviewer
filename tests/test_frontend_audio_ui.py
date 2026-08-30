@@ -32,6 +32,47 @@ def test_interview_audio_diagnostics_contract() -> None:
     assert "echoCancellation: raw ? false" in audio_js
 
 
+def test_realtime_transcript_correction_timing_and_pressure_contract() -> None:
+    interview_html = (ROOT / "public" / "interview.html").read_text(encoding="utf-8")
+    interview_js = (ROOT / "public" / "js" / "interview.js").read_text(encoding="utf-8")
+
+    assert 'id="answerTimeGuide"' in interview_html
+    assert "candidate.transcript.correct'" in interview_js
+    assert "case 'candidate.transcript.corrected'" in interview_js
+    assert "case 'interviewer.audio.synced'" in interview_js
+    assert "recommended_answer_seconds" in interview_js
+    assert "event.pressure_action" in interview_js
+    assert "压力面 ${getStressLevel()}/3 · 情境进行中" in interview_js
+
+
+def test_audio_sync_and_pressure_interjection_do_not_replace_question_state() -> None:
+    interview_js = (ROOT / "public" / "js" / "interview.js").read_text(encoding="utf-8")
+
+    audio_sync_case = interview_js.split("case 'interviewer.audio.synced':", 1)[1].split("break;", 1)[0]
+    assert "syncInterviewerTranscript(event, { updateQuestion: false })" in audio_sync_case
+    assert "setCurrentQuestion" not in audio_sync_case
+
+    partial_case = interview_js.split("case 'interviewer.text.partial':", 1)[1].split("break;", 1)[0]
+    assert "const interjection = isPressureInterjection(event)" in partial_case
+    assert "if (!interjection)" in partial_case
+    assert "questionReady = false" in partial_case
+    assert "markPressureInterjection(turn)" in partial_case
+
+    done_case = interview_js.split("case 'interviewer.text.done':", 1)[1].split("break;", 1)[0]
+    assert "recommendedSeconds: interjection ? 0" in done_case
+    assert "markPressureInterjection(resolvedTurn)" in done_case
+    assert "} else {" in done_case
+
+    sync_function = interview_js.split("function syncInterviewerTranscript", 1)[1].split("function openTranscriptEditor", 1)[0]
+    assert "if (!updateQuestion) return" in sync_function
+    assert sync_function.index("if (!updateQuestion) return") < sync_function.index("if (isPressureInterjection(event))")
+    assert "providedRecommendedAnswerSeconds" in sync_function
+    assert "recommendedAnswerSeconds(event, spokenText)" not in sync_function
+
+    partial_guard = partial_case.split("if (!interjection)", 1)[1].split("const turn =", 1)[0]
+    assert "expectCandidateAudio(false)" in partial_guard
+
+
 def test_capture_worklet_uses_audible_channel_without_stereo_cancellation() -> None:
     worklet = ROOT / "public" / "worklets" / "capture-processor.js"
     script = r"""
