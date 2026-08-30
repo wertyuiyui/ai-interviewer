@@ -32,6 +32,39 @@ def test_interview_audio_diagnostics_contract() -> None:
     assert "echoCancellation: raw ? false" in audio_js
 
 
+def test_microphone_close_lifecycle_contract() -> None:
+    interview_html = (ROOT / "public" / "interview.html").read_text(encoding="utf-8")
+    interview_js = (ROOT / "public" / "js" / "interview.js").read_text(encoding="utf-8")
+
+    assert "/js/interview.js?v=20260830-mic-release" in interview_html
+    assert "./audio-session.js?v=20260830-mic-release" in interview_js
+    assert "let microphoneExplicitlyDisabled = false" in interview_js
+    assert "type: 'microphone.state', enabled: nextState" in interview_js
+
+    switch_block = interview_js.split("async function switchMicrophoneDevice()", 1)[1].split("function setMode", 1)[0]
+    assert "if (microphoneExplicitlyDisabled)" in switch_block
+    assert "disableMicrophoneCapture({ notify: true })" in switch_block
+
+    toggle_block = interview_js.split("async function toggleMicrophone()", 1)[1].split("function drawWaveform", 1)[0]
+    assert "disableMicrophoneCapture({ explicit: true, notify: true })" in toggle_block
+    assert "setMuted(!audio.muted)" not in toggle_block
+    assert "麦克风已关闭并释放" in toggle_block
+
+    finish_block = interview_js.split("async function finishInterview", 1)[1].split("function submitText", 1)[0]
+    assert "disableMicrophoneCapture({ explicit: true, notify: true })" in finish_block
+    assert finish_block.index("disableMicrophoneCapture") < finish_block.index("type: 'interview.end'")
+
+    socket_open = interview_js.split("socket.addEventListener('open'", 1)[1].split("socket.addEventListener('message'", 1)[0]
+    assert "const microphoneEnabled = isMicrophoneCaptureEnabled()" in socket_open
+    assert "microphone: microphoneEnabled" in socket_open
+    assert "sendMicrophoneState(microphoneEnabled, { force: true })" in socket_open
+
+    reconnect_block = interview_js.split("function scheduleReconnect", 1)[1].split("function connectSocket", 1)[0]
+    assert "disableMicrophoneCapture({ explicit: true, notify: false })" in reconnect_block
+    fatal_error_block = interview_js.split("if (event.fatal)", 1)[1].split("break;", 1)[0]
+    assert "disableMicrophoneCapture({ explicit: true, notify: true })" in fatal_error_block
+
+
 def test_realtime_transcript_correction_timing_and_pressure_contract() -> None:
     interview_html = (ROOT / "public" / "interview.html").read_text(encoding="utf-8")
     interview_js = (ROOT / "public" / "js" / "interview.js").read_text(encoding="utf-8")
@@ -188,6 +221,81 @@ eval(source);
     throw new Error(`missing capture failure state: ${JSON.stringify(states)}`);
   }
 })().catch((error) => { console.error(error); process.exitCode = 1; });
+"""
+    completed = subprocess.run(
+        ["node", "-e", script, str(audio_session)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr or completed.stdout
+
+
+def test_disable_microphone_stops_capture_but_preserves_playback() -> None:
+    audio_session = ROOT / "public" / "js" / "audio-session.js"
+    script = r"""
+const fs = require('fs');
+let source = fs.readFileSync(process.argv[1], 'utf8');
+source = source.replace('export class AudioSession', 'class AudioSession');
+source += '\nglobalThis.TestAudioSession = AudioSession;';
+global.performance = { now: () => 0 };
+eval(source);
+
+let trackStopped = false;
+let sourceDisconnected = false;
+let captureDisconnected = false;
+let sinkDisconnected = false;
+let capturePortClosed = false;
+let playbackDisconnected = false;
+const track = {
+  readyState: 'live',
+  removeEventListener() {},
+  stop() { trackStopped = true; this.readyState = 'ended'; },
+};
+const stream = { getAudioTracks: () => [track] };
+const mediaSource = { disconnect() { sourceDisconnected = true; } };
+const capturePort = {
+  onmessage: () => {},
+  close() { capturePortClosed = true; },
+  postMessage() {},
+};
+const captureNode = { disconnect() { captureDisconnected = true; }, port: capturePort };
+const captureSink = { disconnect() { sinkDisconnected = true; } };
+const playbackNode = { disconnect() { playbackDisconnected = true; } };
+const context = { state: 'running' };
+const states = [];
+let finalInputLevel = 1;
+
+const session = new globalThis.TestAudioSession({
+  onInputLevel: (value) => { finalInputLevel = value; },
+  onCaptureState: (event) => states.push(event),
+});
+session.context = context;
+session.playbackNode = playbackNode;
+session.stream = stream;
+session.source = mediaSource;
+session.captureNode = captureNode;
+session.captureSink = captureSink;
+session.selectedDeviceId = 'test-device';
+session.captureFrames = 4;
+
+if (!session.disableMicrophone()) throw new Error('active capture was not reported');
+if (!trackStopped || !sourceDisconnected || !captureDisconnected || !sinkDisconnected || !capturePortClosed) {
+  throw new Error('capture resources were not fully released');
+}
+if (capturePort.onmessage !== null) throw new Error('capture port handler was retained');
+if (session.stream || session.source || session.captureNode || session.captureSink || session.hasMicrophone) {
+  throw new Error('capture references survived disableMicrophone');
+}
+if (session.context !== context || session.playbackNode !== playbackNode || playbackDisconnected || session.closed) {
+  throw new Error('playback resources were incorrectly closed with the microphone');
+}
+if (finalInputLevel !== 0 || session.captureFrames !== 0 || session.selectedDeviceId !== '') {
+  throw new Error('capture state was not reset');
+}
+if (!states.some((event) => event.type === 'microphone-disabled' && event.state === 'disabled')) {
+  throw new Error(`missing microphone-disabled event: ${JSON.stringify(states)}`);
+}
 """
     completed = subprocess.run(
         ["node", "-e", script, str(audio_session)],

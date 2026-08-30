@@ -200,6 +200,7 @@ export class AudioSession {
     this.source?.disconnect();
     this.captureNode?.disconnect();
     this.captureSink?.disconnect();
+    if (this.captureNode?.port) this.captureNode.port.onmessage = null;
     this.captureNode?.port.close();
     this.stream = null;
     this.source = null;
@@ -213,6 +214,17 @@ export class AudioSession {
     this.rawCapture = false;
     this.captureFrames = 0;
     this.lastCaptureFrameAt = 0;
+  }
+
+  disableMicrophone() {
+    const hadCapture = Boolean(this.stream || this.source || this.captureNode || this.captureSink);
+    this._closeCapture();
+    // `muted` describes a live capture track. A disabled microphone has no
+    // track at all, so leave the session ready for a later enableMicrophone().
+    this.muted = false;
+    this.onInputLevel(0);
+    if (hadCapture) this.onCaptureState({ type: 'microphone-disabled', state: 'disabled' });
+    return hadCapture;
   }
 
   async resume() {
