@@ -39,6 +39,15 @@
 
 ## 变更日志
 
+### INTERVIEW-013 · 2026-08-30 · 面试页显示整场已用时间
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：面试页主计时器改为整场已用时间，有限场次显示“已用 / 总时长”，不限时场次只显示已用时间；从正式开面起持续计入思考、沉默、输入与回答时间，只有左下角“暂停面试”会冻结整场计时。服务端持久化累计暂停秒数并在刷新、断线重连、暂停恢复和面试结束时提供权威已用时间；“开始识别”仍只控制收音，页面不再显示本题数字计时，但报告继续使用服务端本题用时。
+- 实际文件：`app/db.py`、`app/main.py`、`public/assets/app.css`、`public/interview.html`、`public/js/interview.js`、`tests/test_frontend_audio_ui.py`、`tests/test_frontend_interview_controls.py`、`tests/test_interview_timing.py`、`process.md`。
+- 验证：最新远端隔离快照全量 `265 passed`；`node --check public/js/interview.js`、`python -m py_compile app/db.py app/main.py` 与 `git diff --check` 通过。假时钟回归覆盖有限与不限时场次的持续计时、暂停冻结、恢复续计、结束冻结及本题思考时间保留；旧版极简数据库迁移回归通过。
+- 风险或后续事项：有限历史场次可由既有截止时间回填累计暂停；不限时历史场次无法反推出过去暂停总量，但生产旧场次已在 `INTERVIEW-012 / DEPLOY-023` 清空，因此线上不存在迁移偏差。本任务未引入前端依赖或额外模型调用。
+
 ### INTERVIEW-014 · 2026-08-30 · 正式面试语言收敛为中文与 English
 
 - Agent：`/root`。

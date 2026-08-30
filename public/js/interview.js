@@ -85,6 +85,9 @@ let heartbeatTimer = 0;
 let timerInterval = 0;
 let deadline = 0;
 let pausedRemainingSeconds = null;
+let sessionElapsedSeconds = 0;
+let sessionElapsedSyncedAt = Date.now();
+let sessionTimerStarted = Boolean(storedSession?.started_at);
 let interviewPaused = false;
 let pausePending = false;
 let unlimitedDuration = Boolean(
@@ -337,8 +340,8 @@ function setAnswerState(nextState, {
   const live = phase === 'live';
   const labels = {
     idle: '等待面试官提问',
-    ready: voiceMode === 'L3' ? '本题计时中 · 直接输入提交' : '本题计时中 · 开始识别仅用于收音',
-    answering: '本题计时中 · 正在识别回答',
+    ready: voiceMode === 'L3' ? '直接输入并提交' : '开始识别仅用于收音',
+    answering: '正在识别回答',
     sealing: '正在封口并整理转写',
   };
   elements.answerControl.dataset.state = next;
@@ -754,6 +757,28 @@ function updateDurationMode(payload = {}) {
   }
 }
 
+function configuredDurationSeconds() {
+  if (unlimitedDuration) return null;
+  const minutes = Number(interview?.duration_minutes ?? storedSession?.duration_minutes ?? 15);
+  return (Number.isFinite(minutes) && minutes > 0 ? minutes : 15) * 60;
+}
+
+function currentSessionElapsedSeconds() {
+  const runningDelta = sessionTimerStarted && !interviewPaused
+    ? (Date.now() - sessionElapsedSyncedAt) / 1000
+    : 0;
+  const elapsed = Math.max(0, sessionElapsedSeconds + runningDelta);
+  const total = configuredDurationSeconds();
+  return total === null ? elapsed : Math.min(total, elapsed);
+}
+
+function freezeSessionTimer() {
+  sessionElapsedSeconds = currentSessionElapsedSeconds();
+  sessionElapsedSyncedAt = Date.now();
+  sessionTimerStarted = false;
+  renderTimer();
+}
+
 function getStressLevel() {
   const raw = interview?.stress_level ?? storedSession?.stress_level;
   if (raw !== undefined && raw !== null && raw !== '') {
@@ -796,6 +821,28 @@ function syncTimer(payload = {}) {
     ?? interview?.question_elapsed_seconds;
   const remainingValue = source?.remaining_seconds ?? source?.remaining ?? interview?.remaining_seconds;
   const remaining = remainingValue === null || remainingValue === '' || remainingValue === undefined ? Number.NaN : Number(remainingValue);
+  const startedValue = source?.started_at ?? interview?.started_at;
+  const status = String(source?.status ?? interview?.status ?? '').toLowerCase();
+  if (startedValue !== undefined) sessionTimerStarted = Boolean(startedValue);
+  if (['ended', 'reporting', 'reported', 'completed', 'finished', 'report_ready'].includes(status)) {
+    sessionTimerStarted = false;
+  }
+  const elapsedValue = source?.elapsed_seconds ?? interview?.elapsed_seconds;
+  const elapsed = Number(elapsedValue);
+  const total = configuredDurationSeconds();
+  if (Number.isFinite(elapsed) && elapsed >= 0) {
+    sessionElapsedSeconds = elapsed;
+  } else if (total !== null && Number.isFinite(remaining)) {
+    sessionElapsedSeconds = Math.max(0, total - remaining);
+  } else if (startedValue) {
+    const numericStart = Number(startedValue);
+    const startedAt = Number.isFinite(numericStart)
+      ? (numericStart < 10_000_000_000 ? numericStart * 1000 : numericStart)
+      : new Date(startedValue).getTime();
+    if (Number.isFinite(startedAt)) sessionElapsedSeconds = Math.max(0, (Date.now() - startedAt) / 1000);
+  }
+  sessionElapsedSyncedAt = Date.now();
+  if (interview) interview.elapsed_seconds = sessionElapsedSeconds;
   if (paused && Number.isFinite(remaining)) pausedRemainingSeconds = Math.max(0, remaining);
   else if (!paused) pausedRemainingSeconds = null;
   applyInterviewPause(paused, { questionElapsedSeconds });
@@ -815,48 +862,44 @@ function syncTimer(payload = {}) {
     }
   }
   if (!Number.isFinite(deadline) || deadline <= 0) {
-    const rawDuration = interview?.duration_minutes ?? storedSession?.duration_minutes ?? 15;
-    const duration = Number(rawDuration);
-    const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 15;
     if (phase !== 'live') {
       deadline = 0;
-      $('small', elements.timer).textContent = '时长';
-      $('strong', elements.timer).textContent = `${safeDuration} 分钟`;
-      elements.timer.classList.remove('is-low', 'is-unlimited');
-      elements.timer.removeAttribute('datetime');
+      renderTimer();
       return;
     }
-    deadline = Date.now() + safeDuration * 60_000;
+    deadline = Date.now() + (configuredDurationSeconds() ?? 15 * 60) * 1000;
   }
   renderTimer();
 }
 
 function renderTimer() {
   elements.timer.classList.toggle('is-paused', interviewPaused);
+  const elapsed = Math.floor(currentSessionElapsedSeconds());
+  const total = configuredDurationSeconds();
+  $('small', elements.timer).textContent = interviewPaused ? '整场·已暂停' : '整场已用';
+  $('strong', elements.timer).textContent = total === null
+    ? formatSeconds(elapsed)
+    : `${formatSeconds(elapsed)} / ${formatSeconds(total)}`;
+  elements.timer.dateTime = `PT${elapsed}S`;
   if (unlimitedDuration) {
-    $('small', elements.timer).textContent = interviewPaused ? '已暂停' : '时长';
-    $('strong', elements.timer).textContent = interviewPaused ? '无限·已暂停' : '无限·手动结束';
     elements.endButton.textContent = '手动结束面试';
     elements.endDialogTitle.textContent = '确定手动结束吗？';
     elements.endDialogMessage.textContent = '结束后将基于当前已完成的问答生成报告，本场面试不能继续。';
     elements.timer.classList.remove('is-low');
     elements.timer.classList.add('is-unlimited');
-    elements.timer.removeAttribute('datetime');
     return;
   }
-  if (!deadline && !Number.isFinite(pausedRemainingSeconds)) return;
   const remaining = interviewPaused && Number.isFinite(pausedRemainingSeconds)
     ? pausedRemainingSeconds
-    : Math.max(0, (deadline - Date.now()) / 1000);
-  $('small', elements.timer).textContent = interviewPaused ? '已暂停' : '剩余';
-  $('strong', elements.timer).textContent = formatSeconds(remaining);
+    : deadline
+      ? Math.max(0, (deadline - Date.now()) / 1000)
+      : Math.max(0, Number(total) - elapsed);
   elements.endButton.textContent = '提前结束面试';
   elements.endDialogTitle.textContent = '确定提前结束吗？';
   elements.endDialogMessage.textContent = '结束后将基于当前已完成的问答生成报告，本场面试不能继续。';
   elements.timer.classList.remove('is-unlimited');
   elements.timer.classList.toggle('is-low', remaining <= 60);
-  elements.timer.dateTime = `PT${Math.ceil(remaining)}S`;
-  if (!interviewPaused && remaining <= 0 && phase === 'live' && !localFinishSent) finishInterview('time');
+  if (sessionTimerStarted && !interviewPaused && remaining <= 0 && phase === 'live' && !localFinishSent) finishInterview('time');
 }
 
 function isNearTranscriptBottom() {
@@ -1509,6 +1552,7 @@ async function handleAudioFile(event, epoch) {
 
 function handleEnded(event = {}) {
   if (phase === 'ended') return;
+  freezeSessionTimer();
   phase = 'ended';
   expectCandidateAudio(false);
   intentionallyClosed = true;
@@ -1960,6 +2004,7 @@ async function finishInterview(reason = 'manual') {
     if (!sealed) return;
   }
   localFinishSent = true;
+  freezeSessionTimer();
   phase = 'ending';
   elements.messageInput.disabled = true;
   elements.send.disabled = true;

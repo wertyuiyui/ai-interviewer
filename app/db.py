@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS interviews (
     started_at REAL,
     question_started_at REAL,
     paused_at REAL,
+    paused_total_seconds REAL NOT NULL DEFAULT 0,
     deadline_at REAL,
     ended_at REAL,
     end_reason TEXT
@@ -289,6 +290,24 @@ class Database:
                 connection.execute(
                     "ALTER TABLE interviews ADD COLUMN paused_at REAL"
                 )
+            if "paused_total_seconds" not in columns:
+                connection.execute(
+                    "ALTER TABLE interviews ADD COLUMN paused_total_seconds REAL "
+                    "NOT NULL DEFAULT 0"
+                )
+                if {"deadline_at", "started_at", "duration_minutes"} <= columns:
+                    connection.execute(
+                        """
+                        UPDATE interviews
+                        SET paused_total_seconds = MAX(
+                            0,
+                            deadline_at - started_at - (duration_minutes * 60)
+                        )
+                        WHERE deadline_at IS NOT NULL
+                          AND started_at IS NOT NULL
+                          AND duration_minutes > 0
+                        """
+                    )
             turn_columns = {
                 str(row["name"])
                 for row in connection.execute(
@@ -405,7 +424,8 @@ class Database:
                     """
                     UPDATE interviews
                     SET status = 'active', started_at = ?,
-                        question_started_at = ?, deadline_at = ?
+                        question_started_at = ?, paused_total_seconds = 0,
+                        deadline_at = ?
                     WHERE id = ?
                     """,
                     (started, started, deadline, interview_id),
@@ -446,6 +466,7 @@ class Database:
                     """
                     UPDATE interviews
                     SET paused_at = NULL,
+                        paused_total_seconds = COALESCE(paused_total_seconds, 0) + ?,
                         deadline_at = CASE
                             WHEN deadline_at IS NULL THEN NULL
                             ELSE deadline_at + ?
@@ -458,6 +479,7 @@ class Database:
                     WHERE id = ?
                     """,
                     (
+                        resumed_after,
                         resumed_after,
                         paused_at,
                         resumed_after,
@@ -1142,7 +1164,24 @@ class Database:
         data["hint_count"] = len(data["hint_events"])
         paused_at = data.get("paused_at")
         data["paused"] = paused_at is not None
-        clock_now = float(paused_at) if paused_at is not None else time.time()
+        ended_at = data.get("ended_at")
+        clock_now = (
+            float(paused_at)
+            if paused_at is not None
+            else float(ended_at)
+            if ended_at is not None
+            else time.time()
+        )
+        paused_total_seconds = max(
+            0.0, float(data.get("paused_total_seconds") or 0)
+        )
+        data["paused_total_seconds"] = paused_total_seconds
+        started_at = data.get("started_at")
+        data["elapsed_seconds"] = (
+            max(0.0, clock_now - float(started_at) - paused_total_seconds)
+            if started_at is not None
+            else 0.0
+        )
         question_started_at = data.get("question_started_at")
         data["question_elapsed_seconds"] = (
             max(0.0, clock_now - float(question_started_at))

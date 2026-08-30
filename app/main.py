@@ -961,6 +961,7 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
             await send(
                 "timer.sync",
                 remaining_seconds=remaining,
+                elapsed_seconds=interview.get("elapsed_seconds"),
                 ends_at=interview.get("deadline_at"),
                 paused=bool(interview.get("paused")),
                 question_elapsed_seconds=interview.get("question_elapsed_seconds"),
@@ -1092,6 +1093,7 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                     "interview.pause.changed",
                     paused=bool(interview.get("paused")),
                     remaining_seconds=interview.get("remaining_seconds"),
+                    elapsed_seconds=interview.get("elapsed_seconds"),
                     ends_at=interview.get("deadline_at"),
                     question_elapsed_seconds=interview.get(
                         "question_elapsed_seconds"
@@ -1633,6 +1635,7 @@ def _public_interview(interview: dict[str, Any]) -> dict[str, Any]:
             "hint_events",
             "created_at",
             "started_at",
+            "elapsed_seconds",
             "question_started_at",
             "question_elapsed_seconds",
             "paused",
