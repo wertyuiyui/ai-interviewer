@@ -4,6 +4,7 @@ import asyncio
 import base64
 import logging
 import math
+import os
 import sys
 import time
 from array import array
@@ -31,6 +32,18 @@ EndCallback = Callable[[str], Awaitable[None]]
 
 
 logger = logging.getLogger(__name__)
+logger.setLevel(
+    {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }.get(
+        os.getenv("VOICE_DIAGNOSTICS_LOG_LEVEL", "INFO").strip().upper(),
+        logging.INFO,
+    )
+)
 
 
 def _spoken_control_prompt(

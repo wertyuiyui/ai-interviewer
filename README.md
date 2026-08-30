@@ -150,6 +150,7 @@ L0 保留 Omni 的服务端 VAD、ASR、TTS 与 `interrupt_response`，但关闭
 | `QWEN_REALTIME_MODEL` | `qwen3.5-omni-flash-realtime` | L0 模型 |
 | `OMNI_TRANSCRIPTION_MODEL` | `qwen3-asr-flash-realtime` | L0 输入转写模型 |
 | `OMNI_VAD_THRESHOLD` | `0.35` | L0 服务端 VAD 灵敏度；噪声大时可调高 |
+| `VOICE_DIAGNOSTICS_LOG_LEVEL` | `INFO` | 无对话正文的语音帧/VAD/ASR/TTS 诊断日志级别 |
 | `PARAFORMER_MODEL` | `paraformer-realtime-v2` | L1/L2 ASR |
 | `COSYVOICE_MODEL` | `cosyvoice-v3-flash` | L1 TTS |
 | `DB_PATH` | `./data/interviews.db` | SQLite 路径 |
