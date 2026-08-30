@@ -480,25 +480,37 @@ async function loadProfile() {
 }
 
 async function uploadResumes(files) {
-  const valid = [...files].filter((file) => (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) && file.size <= 8 * 1024 * 1024);
-  if (!valid.length) return showToast('请选择不超过 8 MB 的 PDF 简历。', 'error');
+  const selected = [...files];
+  const valid = selected.filter((file) => (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) && file.size <= 8 * 1024 * 1024);
+  if (valid.length !== selected.length) showToast('已跳过非 PDF 或超过 8 MB 的简历。', 'error', 5200);
+  if (!valid.length) {
+    $('#profileResumeFiles').value = '';
+    return;
+  }
   $('#profileResumeFiles').disabled = true;
   $('#resumeStatus').textContent = `正在解析并保存 ${valid.length} 份简历…`;
   let latestId = '';
+  let saved = 0;
+  const failed = [];
   try {
     for (const file of valid) {
       const data = new FormData();
       data.append('client_id', getClientId());
       data.append('name', file.name.replace(/\.pdf$/i, ''));
       data.append('file', file, file.name);
-      const response = await apiFetch('/api/profile/resumes', { method: 'POST', body: data, timeout: 65_000 });
-      latestId = itemId(response?.resume || response);
+      try {
+        const response = await apiFetch('/api/profile/resumes', { method: 'POST', body: data, timeout: 65_000 });
+        latestId = itemId(response?.resume || response);
+        saved += 1;
+      } catch (error) {
+        failed.push(file.name);
+        showToast(`${file.name}：${error?.message || '识别失败'}`, 'error', 5200);
+      }
     }
     if (latestId) saveResumeSelection(latestId);
     await loadProfile();
-    showToast(`已保存 ${valid.length} 份简历。`, 'success');
-  } catch (error) {
-    showToast(error?.message || '简历保存失败，请稍后重试。', 'error', 5200);
+    if (saved) showToast(`已识别并保存 ${saved} 份简历${failed.length ? `，${failed.length} 份失败` : ''}。`, 'success', 5200);
+    if (!saved) $('#resumeStatus').textContent = `${failed.length} 份简历识别失败，请按文件名查看提示`;
   } finally {
     $('#profileResumeFiles').disabled = false;
     $('#profileResumeFiles').value = '';

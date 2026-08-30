@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from .config import Settings, get_settings
 from .errors import AppError, LLMError
 from .llm import BailianChatClient
-from .schemas import Education, Experience, Project, ResumeData
+from .schemas import Education, Project, ResumeData
 
 
 RESUME_SYSTEM_PROMPT = """你是中文技术岗简历信息抽取器。只抽取输入中明确出现的事实，不补写、不评价。
@@ -121,6 +121,30 @@ class ResumeParser:
     @staticmethod
     def _normalize(raw: dict[str, Any], source_text: str = "") -> dict[str, Any]:
         data = dict(raw)
+        ResumeParser._fill_alias(data, "教育", ("教育经历", "教育背景", "education"))
+        ResumeParser._fill_alias(
+            data,
+            "实习经历",
+            (
+                "实习经验", "internships", "internship_experience",
+            ),
+        )
+        if data.get("实习经历") in (None, "", []):
+            for work_alias in ("工作经历", "工作经验", "work_experience", "experiences"):
+                work_items = data.get(work_alias)
+                if work_items in (None, "", []):
+                    continue
+                candidates = work_items if isinstance(work_items, list) else [work_items]
+                internships = [
+                    item
+                    for item in candidates
+                    if re.search(r"实习|intern", str(item), flags=re.I)
+                ]
+                if internships:
+                    data["实习经历"] = internships
+                    break
+        ResumeParser._fill_alias(data, "项目", ("项目经历", "项目经验", "projects"))
+        ResumeParser._fill_alias(data, "技能", ("专业技能", "skills"))
         # Identity is accepted only when the deterministic header reader can
         # reproduce it from the original resume. This prevents a model from
         # promoting a school, company, repository owner or section title.
@@ -146,6 +170,21 @@ class ResumeParser:
             if not isinstance(internship, dict):
                 continue
             internship = dict(internship)
+            ResumeParser._fill_alias(
+                internship, "company", ("公司", "公司名称", "单位", "organization", "employer")
+            )
+            ResumeParser._fill_alias(
+                internship, "role", ("岗位", "职位", "职务", "title", "position")
+            )
+            ResumeParser._fill_alias(
+                internship, "period", ("时间", "日期", "起止时间", "duration")
+            )
+            ResumeParser._fill_alias(
+                internship, "highlights", ("工作内容", "职责", "描述", "亮点", "details")
+            )
+            ResumeParser._fill_alias(internship, "metrics", ("指标", "成果", "achievements"))
+            internship["highlights"] = ResumeParser._string_list(internship.get("highlights"))
+            internship["metrics"] = ResumeParser._string_list(internship.get("metrics"))
             for field in ("company", "role"):
                 if ResumeParser._is_generic_internship_heading(internship.get(field, "")):
                     internship[field] = ""
@@ -154,23 +193,277 @@ class ResumeParser:
                 for field in ("company", "role", "period", "highlights", "metrics")
             ):
                 normalized_internships.append(internship)
-        data["实习经历"] = normalized_internships
+        data["实习经历"] = ResumeParser._merge_internships(
+            normalized_internships,
+            ResumeParser._extract_source_internships(source_text),
+        )
         normalized_projects: list[dict[str, Any]] = []
         for item in data.get("项目", []):
             project = {"name": item} if isinstance(item, str) else item
             if not isinstance(project, dict):
                 continue
+            project = dict(project)
+            ResumeParser._fill_alias(project, "name", ("项目名称", "项目名", "title"))
+            ResumeParser._fill_alias(project, "role", ("角色", "职责", "role_name"))
+            ResumeParser._fill_alias(
+                project, "technologies", ("技术栈", "技术", "技术关键词", "tech_stack")
+            )
+            ResumeParser._fill_alias(
+                project, "highlights", ("描述", "项目描述", "工作内容", "亮点", "details")
+            )
+            ResumeParser._fill_alias(project, "metrics", ("指标", "成果", "achievements"))
+            ResumeParser._fill_alias(project, "links", ("链接", "项目链接", "urls"))
             name = " ".join(str(project.get("name") or "").split())
             if not name or ResumeParser._is_generic_project_heading(name):
                 continue
             normalized_projects.append({**project, "name": name[:200]})
-        data["项目"] = normalized_projects
+        data["项目"] = ResumeParser._deduplicate_projects(normalized_projects)
         data["技能"] = [
             str(item)
             for item in data.get("技能", [])
             if isinstance(item, (str, int, float))
         ]
         return data
+
+    @staticmethod
+    def _fill_alias(target: dict[str, Any], canonical: str, aliases: tuple[str, ...]) -> None:
+        if target.get(canonical) not in (None, "", []):
+            return
+        for alias in aliases:
+            value = target.get(alias)
+            if value not in (None, "", []):
+                target[canonical] = value
+                return
+
+    @staticmethod
+    def _string_list(value: Any) -> list[str]:
+        items = value if isinstance(value, list) else ([value] if value else [])
+        result: list[str] = []
+        seen: set[str] = set()
+        for item in items:
+            text = " ".join(str(item or "").split())
+            key = ResumeParser._text_key(text)
+            if text and key and key not in seen:
+                seen.add(key)
+                result.append(text)
+        return result
+
+    @staticmethod
+    def _text_key(value: Any) -> str:
+        return re.sub(r"[^A-Za-z0-9\u3400-\u9fff]", "", str(value or "")).casefold()
+
+    @staticmethod
+    def _project_key(value: Any) -> str:
+        name = " ".join(str(value or "").split())
+        name = re.sub(
+            r"^(?:项目(?:介绍|经历|经验)?|projects?|project experience)\s*[:：|｜\-—]+\s*",
+            "",
+            name,
+            flags=re.I,
+        )
+        key = ResumeParser._text_key(name)
+        for suffix in ("项目", "project"):
+            if key.endswith(suffix) and len(key) > len(suffix) + 1:
+                key = key[: -len(suffix)]
+        return key
+
+    @staticmethod
+    def _deduplicate_projects(projects: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        merged: list[dict[str, Any]] = []
+        indexes: dict[str, int] = {}
+        list_fields = ("technologies", "highlights", "metrics", "links")
+        for project in projects:
+            current = dict(project)
+            key = ResumeParser._project_key(current.get("name"))
+            if not key:
+                continue
+            for field in list_fields:
+                current[field] = ResumeParser._string_list(current.get(field))
+            if key not in indexes:
+                indexes[key] = len(merged)
+                merged.append(current)
+                continue
+            target = merged[indexes[key]]
+            # Preserve the cleaner/shorter spelling while combining evidence
+            # from repeated model rows for the same named project.
+            candidate_name = str(current.get("name") or "")
+            if candidate_name and len(candidate_name) < len(str(target.get("name") or "")):
+                target["name"] = candidate_name
+            if not target.get("role") and current.get("role"):
+                target["role"] = current["role"]
+            for field in list_fields:
+                target[field] = ResumeParser._string_list(
+                    [*ResumeParser._string_list(target.get(field)), *current[field]]
+                )
+        return merged
+
+    @staticmethod
+    def _section_heading(value: str) -> str:
+        normalized = ResumeParser._text_key(value)
+        if normalized in {
+            "实习", "实习经历", "实习经验", "internship", "internships",
+            "internshipexperience",
+        }:
+            return "internship"
+        if normalized in {
+            "工作经历", "工作经验", "workexperience", "professionalexperience",
+        }:
+            return "work"
+        if normalized in {
+            "教育", "教育经历", "教育背景", "项目", "项目经历", "项目经验",
+            "个人项目", "技能", "专业技能", "技能特长", "获奖经历", "荣誉奖项",
+            "校园经历", "社团经历", "证书", "自我评价", "个人总结", "education",
+            "projects", "projectexperience", "skills", "awards", "certificates",
+        }:
+            return "other"
+        return ""
+
+    @staticmethod
+    def _looks_like_period(value: str) -> bool:
+        return bool(
+            re.search(
+                r"(?:19|20)\d{2}\s*(?:[./年-]\s*\d{1,2}\s*月?)?\s*"
+                r"(?:[-—~～至到]|\s{2,})\s*(?:(?:19|20)\d{2}|至今|现在|present)",
+                value,
+                flags=re.I,
+            )
+        )
+
+    @staticmethod
+    def _experience_from_lines(
+        lines: list[str], *, explicit_internship_section: bool = False
+    ) -> dict[str, Any] | None:
+        cleaned = [line.strip(" \t-•·") for line in lines if line.strip(" \t-•·")]
+        if not cleaned:
+            return None
+        evidence = " ".join(cleaned)
+        if not explicit_internship_section and not re.search(r"实习|intern", evidence, flags=re.I):
+            return None
+        period_match = re.search(
+            r"(?:19|20)\d{2}\s*(?:[./年-]\s*\d{1,2}\s*月?)?\s*"
+            r"(?:[-—~～至到]|\s{2,})\s*(?:(?:19|20)\d{2}\s*(?:[./年-]\s*\d{1,2}\s*月?)?|至今|现在|present)",
+            evidence,
+            flags=re.I,
+        )
+        period = period_match.group(0).strip() if period_match else ""
+        role_match = re.search(
+            r"(?:(?:后端|前端|全栈|软件|算法|测试|数据|产品|研发|开发|运维|客户端|服务端|机器学习|大模型)"
+            r"[^|｜,，;；]{0,8}(?:实习生|实习岗位|实习)|intern(?:ship)?)",
+            evidence,
+            flags=re.I,
+        )
+        if role_match is None and explicit_internship_section:
+            role_match = re.search(
+                r"(?:后端|前端|全栈|软件|算法|测试|数据|产品|研发|开发|运维|客户端|服务端|机器学习|大模型)"
+                r"[^|｜,，;；]{0,8}(?:工程师|助理|开发|研发)?",
+                " ".join(cleaned[:2]),
+                flags=re.I,
+            )
+        role = " ".join(role_match.group(0).split()) if role_match else "实习生"
+        header = " ".join(cleaned[:2])
+        company = header
+        if period:
+            company = company.replace(period, " ")
+        if role_match:
+            company = re.sub(re.escape(role_match.group(0)), " ", company, count=1, flags=re.I)
+        company = re.sub(r"\s*[|｜,，·•/]+\s*", " ", company)
+        company = " ".join(company.split()).strip(" -—")
+        if not company or ResumeParser._is_generic_internship_heading(company):
+            company = cleaned[0] if len(cleaned) > 1 else ""
+        return {
+            "company": company[:200],
+            "role": role[:100],
+            "period": period[:100],
+            "highlights": cleaned,
+            "metrics": [],
+        }
+
+    @staticmethod
+    def _extract_source_internships(source_text: str) -> list[dict[str, Any]]:
+        if not source_text.strip():
+            return []
+        raw_lines = [line.strip() for line in source_text.splitlines() if line.strip()]
+        blocks: list[tuple[list[str], bool]] = []
+        current: list[str] = []
+        in_section = False
+        explicit_internship_section = False
+        saw_relevant_section = False
+        for line in raw_lines:
+            heading = ResumeParser._section_heading(line)
+            if heading:
+                if current:
+                    blocks.append((current, explicit_internship_section))
+                    current = []
+                in_section = heading in {"internship", "work"}
+                explicit_internship_section = heading == "internship"
+                saw_relevant_section = saw_relevant_section or in_section
+                continue
+            if not in_section:
+                continue
+            starts_entry = ResumeParser._looks_like_period(line)
+            current_has_entry = any(ResumeParser._looks_like_period(item) for item in current)
+            if current and starts_entry and current_has_entry:
+                blocks.append((current, explicit_internship_section))
+                current = []
+            current.append(line)
+        if current:
+            blocks.append((current, explicit_internship_section))
+
+        # Some compact resumes have no section heading. Only accept an inline
+        # row when it explicitly says this is an internship.
+        if not saw_relevant_section:
+            blocks.extend(
+                ([line], False)
+                for line in raw_lines
+                if re.search(r"实习生|实习岗位|intern(?:ship)?", line, flags=re.I)
+                and not ResumeParser._is_generic_internship_heading(line)
+            )
+        result: list[dict[str, Any]] = []
+        for block, explicit in blocks:
+            experience = ResumeParser._experience_from_lines(
+                block, explicit_internship_section=explicit
+            )
+            if experience:
+                result.append(experience)
+        return result
+
+    @staticmethod
+    def _merge_internships(
+        model_items: list[dict[str, Any]], source_items: list[dict[str, Any]]
+    ) -> list[dict[str, Any]]:
+        # The source reader is a recovery path, not a second extractor. When
+        # the model returned usable internships, trust and only deduplicate
+        # those rows so the same experience is never rendered twice.
+        candidates = model_items if model_items else source_items
+        merged: list[dict[str, Any]] = []
+        indexes: dict[str, int] = {}
+        for candidate in candidates:
+            item = dict(candidate)
+            key = "|".join(
+                ResumeParser._text_key(item.get(field))
+                for field in ("company", "role", "period")
+            ).strip("|")
+            if not key:
+                key = ResumeParser._text_key(
+                    " ".join(ResumeParser._string_list(item.get("highlights")))
+                )
+            if not key or key not in indexes:
+                if key:
+                    indexes[key] = len(merged)
+                merged.append(item)
+                continue
+            target = merged[indexes[key]]
+            for field in ("company", "role", "period"):
+                if not target.get(field) and item.get(field):
+                    target[field] = item[field]
+            for field in ("highlights", "metrics"):
+                target[field] = ResumeParser._string_list(
+                    [
+                        *ResumeParser._string_list(target.get(field)),
+                        *ResumeParser._string_list(item.get(field)),
+                    ]
+                )
+        return merged
 
     @staticmethod
     def _mock_parse(text: str) -> ResumeData:
@@ -226,20 +519,15 @@ class ResumeParser:
             )
             for line in project_lines
         ]
-        internship_lines = [
-            line for line in lines
-            if re.search(r"实习|公司", line)
-            and not ResumeParser._is_generic_internship_heading(line)
-        ][:2]
-        return ResumeData(
+        draft = ResumeData(
             姓名=ResumeParser._extract_candidate_name(text),
             教育=[Education(school=school_line, details=[school_line] if school_line else [])],
-            实习经历=[
-                Experience(company=line[:60], highlights=[line])
-                for line in internship_lines
-            ],
+            实习经历=[],
             项目=projects,
             技能=skill_candidates,
+        )
+        return ResumeData.model_validate(
+            ResumeParser._normalize(draft.model_dump(by_alias=True), source_text=text)
         )
 
     @staticmethod

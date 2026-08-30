@@ -19,6 +19,8 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
+| `INTERVIEW-005` | `/root`（只读协作：`real_flow_research`、`adaptive_engine_audit`、`phase_ui_audit`） | `in_progress` | 将面试改为可见、可跳过且按回答自适应的显式阶段流程；修复“不知道”继续追同项目；技术/技术综合/纯综合采用不同阶段计划 | `interview_skills/interviewer_core.json`, `app/db.py`, `app/interview_engine.py`, `app/main.py`, `app/prompt_engine.py`, `app/voice_session.py`, `public/interview.html`, `public/js/interview.js`, `public/assets/app.css`, `tests/test_interview_stage_flow.py`, `tests/test_interviewer_skill.py`, `tests/test_frontend_interview_controls.py`, `tests/test_frontend_audio_ui.py`, `tests/test_voice_session.py`, `references/REAL_INTERVIEW_STAGE_DESIGN.md`, `process.md` | 当前无业务文件冲突；子 Agent 只读。显式阶段状态不得用假回答污染报告，纯综合面不得包含八股或手撕 |
+| `HOME-002` | `/root` | `in_progress` | 美化首页“选择/上传简历”输入方式与已保存/上传入口，提升字号、图标、选中态和空间利用率 | `public/index.html`, `public/assets/home-profile.css`, `tests/test_frontend_home_ui.py`, `process.md` | 避开 `INTERVIEW-005` 占用的共享 `app.css`；不修改 PROFILE-004 文件 |
 
 登记模板：
 
@@ -38,6 +40,15 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### PROFILE-004 · 2026-08-30 · 多简历逐份容错、项目归并与实习恢复
+
+- Agent：`/root`；只读协作审计：`reference_review`、`architecture_review`。
+- 状态：`completed`。
+- 摘要：简历归一化新增模型返回别名兼容，吸收 `工作经历/项目经历` 顶层字段和 `公司/岗位/时间/工作内容/项目名称/技术栈` 等中文嵌套字段，并统一标量与数组；同一项目名称忽略空格、标点及可选“项目”后缀后保序合并，技术栈、亮点、指标和链接去重汇总。模型完全漏掉实习时，服务端从明确的实习/工作经历章节、日期范围和实习岗位原文做保守恢复；模型已有有效结果时不再叠加正则结果。独立档案页批量上传改为每份文件独立处理，某份失败会显示文件名但不阻断后续文件，最终始终刷新已成功保存的简历；无有效文件也会重置输入。
+- 实际文件：`app/resume.py`、`public/js/profile.js`、`public/profile.html`、`tests/test_core.py`、`tests/test_frontend_profile_project_ui.py`、`process.md`。
+- 验证：解析/PDF 专项 `11 passed`，档案前端专项 `8 passed`，Python compileall、`node --check public/js/profile.js`、`git diff --check` 均通过；基于稳定 `HEAD` 仅叠加本任务差异的隔离全量回归 `248 passed`。共享工作区的 Profile/API 联合回归为 `89 passed, 3 failed`，失败均来自仍在进行的 `INTERVIEW-005` 阶段流程已改变旧面试断言，不涉及本任务解析或档案页文件。
+- 风险或后续事项：已有保存记录不会在读取时静默改写项目下标；需点击“重新识别”应用新归并和实习恢复规则，随后按现有提示重新确认项目关联。原文恢复只接受明确经历章节或含“实习/intern”的行，不把项目描述中普通出现的“实习生”平台误当成任职经历。
 
 ### DEPLOY-013 · 2026-08-30 · 首页简历选择与上传合并发布
 

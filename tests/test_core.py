@@ -822,6 +822,208 @@ def test_resume_normalization_rejects_hallucinated_name_and_section_projects() -
     assert [item["name"] for item in normalized["项目"]] == ["订单平台"]
 
 
+def test_resume_normalization_merges_repeated_project_rows_and_evidence() -> None:
+    normalized = ResumeParser._normalize(
+        {
+            "姓名": "",
+            "教育": [],
+            "实习经历": [],
+            "项目": [
+                {
+                    "name": "智能问答系统项目",
+                    "technologies": ["Python", "Redis"],
+                    "highlights": ["实现检索链路"],
+                },
+                {
+                    "name": "智能问答系统",
+                    "technologies": ["Redis", "Milvus"],
+                    "highlights": ["将延迟降低 30%"],
+                },
+            ],
+            "技能": [],
+        },
+        source_text="智能问答系统项目\n使用 Python、Redis 与 Milvus，实现检索链路并将延迟降低 30%。",
+    )
+
+    assert len(normalized["项目"]) == 1
+    assert normalized["项目"][0]["name"] == "智能问答系统"
+    assert normalized["项目"][0]["technologies"] == ["Python", "Redis", "Milvus"]
+    assert normalized["项目"][0]["highlights"] == ["实现检索链路", "将延迟降低 30%"]
+
+
+def test_resume_normalization_recovers_internship_omitted_by_model() -> None:
+    source_text = (
+        "李明\n"
+        "liming@example.com | 13800000000\n"
+        "实习经历\n"
+        "北京星云科技有限公司 | 2024.06 - 2024.09\n"
+        "后端开发实习生\n"
+        "负责订单接口与 Redis 缓存治理，接口延迟降低 25%。\n"
+        "项目经历\n"
+        "校园交易平台\n"
+        "技能：Java、Redis、MySQL"
+    )
+    normalized = ResumeParser._normalize(
+        {
+            "姓名": "李明",
+            "教育": [],
+            "实习经历": [],
+            "项目": [{"name": "校园交易平台"}],
+            "技能": ["Java", "Redis", "MySQL"],
+        },
+        source_text=source_text,
+    )
+
+    assert len(normalized["实习经历"]) == 1
+    internship = normalized["实习经历"][0]
+    assert internship["company"] == "北京星云科技有限公司"
+    assert internship["role"] == "后端开发实习生"
+    assert internship["period"] == "2024.06 - 2024.09"
+    assert "负责订单接口" in " ".join(internship["highlights"])
+
+
+def test_resume_normalization_accepts_model_internship_aliases_and_scalar_lists() -> None:
+    normalized = ResumeParser._normalize(
+        {
+            "姓名": "",
+            "教育": [],
+            "工作经历": [
+                {
+                    "公司": "星河科技",
+                    "岗位": "后端开发实习生",
+                    "时间": "2025年7月—2025年10月",
+                    "工作内容": "负责订单服务与失败补偿",
+                    "成果": "故障恢复时间降低 20%",
+                }
+            ],
+            "项目经历": [
+                {"项目名称": "订单平台", "技术栈": "Java", "描述": "实现幂等写入"},
+                {"项目名": "订单 平台", "技术": ["Redis"], "亮点": "实现缓存治理"},
+            ],
+            "专业技能": "Java",
+        },
+        source_text="星河科技 后端开发实习生 2025年7月—2025年10月",
+    )
+
+    assert normalized["实习经历"] == [
+        {
+            "公司": "星河科技",
+            "岗位": "后端开发实习生",
+            "时间": "2025年7月—2025年10月",
+            "工作内容": "负责订单服务与失败补偿",
+            "成果": "故障恢复时间降低 20%",
+            "company": "星河科技",
+            "role": "后端开发实习生",
+            "period": "2025年7月—2025年10月",
+            "highlights": ["负责订单服务与失败补偿"],
+            "metrics": ["故障恢复时间降低 20%"],
+        }
+    ]
+    assert len(normalized["项目"]) == 1
+    assert normalized["项目"][0]["technologies"] == ["Java", "Redis"]
+    assert normalized["技能"] == ["Java"]
+
+
+def test_resume_normalization_does_not_duplicate_model_and_source_internship() -> None:
+    source_text = (
+        "实习经历\n"
+        "海川网络科技有限公司 2023.07—2023.10\n"
+        "软件开发实习生\n"
+        "负责服务监控和故障排查\n"
+        "专业技能\nPython"
+    )
+    normalized = ResumeParser._normalize(
+        {
+            "姓名": "",
+            "教育": [],
+            "实习经历": [
+                {
+                    "company": "海川网络科技有限公司",
+                    "role": "软件开发实习生",
+                    "period": "2023.07—2023.10",
+                    "highlights": ["负责服务监控和故障排查"],
+                }
+            ],
+            "项目": [],
+            "技能": ["Python"],
+        },
+        source_text=source_text,
+    )
+
+    assert len(normalized["实习经历"]) == 1
+
+
+def test_resume_normalization_finds_internship_inside_work_experience_section() -> None:
+    normalized = ResumeParser._normalize(
+        {"姓名": "", "教育": [], "实习经历": [], "项目": [], "技能": []},
+        source_text=(
+            "工作经历\n"
+            "远山信息技术有限公司｜2025年7月—2025年10月\n"
+            "后端研发实习生\n"
+            "负责消息重试和监控告警\n"
+            "项目经历\n"
+            "为实习生提供的培训平台｜2025年1月—2025年3月"
+        ),
+    )
+
+    assert len(normalized["实习经历"]) == 1
+    assert normalized["实习经历"][0]["company"] == "远山信息技术有限公司"
+    assert normalized["实习经历"][0]["role"] == "后端研发实习生"
+
+
+@pytest.mark.asyncio
+async def test_real_resume_parser_normalizes_each_resume_response_independently(tmp_path) -> None:
+    class SequentialResumeClient:
+        def __init__(self) -> None:
+            self.responses = [
+                {
+                    "姓名": "张三",
+                    "教育": [],
+                    "实习经历": [],
+                    "项目": [{"name": "检索平台"}, {"name": "检索 平台"}],
+                    "技能": ["Python"],
+                },
+                {
+                    "姓名": "李四",
+                    "教育": [],
+                    "工作经历": [
+                        {
+                            "公司": "云帆科技",
+                            "岗位": "后端研发实习生",
+                            "时间": "2024.06 - 2024.09",
+                            "工作内容": "负责支付回调链路",
+                        }
+                    ],
+                    "项目经历": [
+                        {"项目名称": "支付网关", "技术栈": "Java"},
+                        {"项目名称": "支付 网关", "技术栈": "Redis"},
+                    ],
+                    "专业技能": ["Java", "Redis"],
+                },
+            ]
+
+        async def chat_json(self, *_args, **_kwargs):
+            return self.responses.pop(0)
+
+    settings = replace(mock_settings(tmp_path), mock_llm=False)
+    parser = ResumeParser(settings, SequentialResumeClient())
+    first = await parser.parse(
+        "姓名：张三\nzhangsan@example.com\n项目经历\n检索平台\n使用 Python 实现检索服务。"
+    )
+    second = await parser.parse(
+        "姓名：李四\nlisi@example.com\n实习经历\n云帆科技｜后端研发实习生｜2024.06 - 2024.09\n"
+        "负责支付回调链路。\n项目经历\n支付网关\n使用 Java 和 Redis。"
+    )
+
+    assert first.candidate_name == "张三"
+    assert [project.name for project in first.projects] == ["检索平台"]
+    assert second.candidate_name == "李四"
+    assert len(second.internships) == 1
+    assert second.internships[0].company == "云帆科技"
+    assert [project.name for project in second.projects] == ["支付网关"]
+    assert second.projects[0].technologies == ["Java", "Redis"]
+
+
 @pytest.mark.asyncio
 async def test_zero_turn_report_is_unscored_without_llm_or_memory_pollution(
     tmp_path,

@@ -133,7 +133,12 @@ def test_standalone_profile_integrates_assets_mistakes_and_history() -> None:
     assert "Promise.allSettled" in script
     assert "profile-scope-toggle-card" in page
     assert 'input[type="checkbox"]' in style
-    assert "/js/profile.js?v=20260830-resume-structure-v2" in page
+    assert "/js/profile.js?v=20260830-resume-batch-v3" in page
+    assert "const failed = []" in script
+    assert "failed.push(file.name)" in script
+    assert "`${file.name}：${error?.message || '识别失败'}`" in script
+    assert "await loadProfile();" in script
+    assert "if (!valid.length)" in script and "$('#profileResumeFiles').value = '';" in script
     assert "@media (max-width: 720px)" in style
     assert ".profile-edit-dialog" in style
     assert "font-family: var(--font-serif)" in style
