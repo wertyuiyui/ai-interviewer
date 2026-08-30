@@ -27,17 +27,25 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`af4dbaa`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`4005e3f`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、中英双语、纯英文
-- 当前已部署功能的全量验证基线：`256 passed`
+- 当前已部署功能的全量验证基线：`259 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-019 · 2026-08-30 · 简历完整条目识别生产发布
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：将固定功能提交 `4005e3f` 推送到已授权的 GitHub `origin/main`，以 `git archive 4005e3f` 生成隔离快照同步至 `/opt/ai-interviewer-mvp`；未带入共享工作区中尚未提交的报告页改动。同步保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/`，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 验证：隔离提交全量 `259 passed`；部署后本机 8000、正式域名 HTTPS 443 和 3000 的 `/healthz` 均返回 `{"status":"ok"}`，服务为 `active`，生产根目录、`.env`、`data/` 权限分别保持 0755、0640 `root:interview`、0750 `interview:interview`。移除当前 shell 无效 SOCKS 代理后，以生产 `qwen3.8-flash` 真实解析两份仓库内完全虚构简历：电商样例为教育 1、实习 1（2 条完整职责）、项目 1（4 条完整职责）；云原生样例将“实验室微服务可观测平台｜基础架构开发”保持为一个项目并识别 role，两个项目分别保留 4/2 条完整职责，未把求职目标误建为实习。
+- 回滚与风险：发布前代码包为 `/tmp/ai-interviewer-mvp-pre-4005e3f-20260830.tar.gz`，不含密钥、数据库、虚拟环境和依赖。已有保存简历不会后台付费重写，用户需点击“重新识别”；真实探测首次受当前 shell 的 SOCKS 代理依赖缺失影响，未触达模型，移除代理后复测成功，线上服务自身未受影响。
 
 ### PROFILE-006 · 2026-08-30 · 简历条目完整识别与学段结构化
 
