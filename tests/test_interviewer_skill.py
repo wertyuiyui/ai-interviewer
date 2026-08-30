@@ -23,6 +23,9 @@ def test_core_interviewer_skill_has_auditable_runtime_contract() -> None:
     assert core["termination_policy"]["server_authority"] is True
     assert "accent" in core["fairness_policy"]["do_not_infer_from"]
     assert "same question" in core["modality_policy"]["semantic_parity"]
+    assert "do not reuse any phrase from the denial" in core["adaptive_policy"][
+        "experience_ownership_correction"
+    ]
 
 
 def test_every_company_skill_compiles_with_the_same_core_contract() -> None:

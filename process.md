@@ -19,7 +19,6 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
-| `INTERVIEW-004` | `/root` | `in_progress` | 修复面试官忽略候选人项目归属否认、把否认文本当追问锚点的问题；优先听取回答并切换到简历内经历 | `interview_skills/interviewer_core.json`, `app/interview_engine.py`, `app/prompt_engine.py`, `tests/test_interviewer_skill.py`, `tests/test_project_ownership_correction.py`, `process.md` | 与 `PROFILE-003` 仅共享 `process.md`；不修改或暂存其 Profile、resume 与 `tests/test_core.py` 文件 |
 
 登记模板：
 
@@ -38,6 +37,15 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### INTERVIEW-004 · 2026-08-30 · 项目归属纠正与回答优先的自适应追问
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：核心面试官 skill 新增经历归属纠正优先规则：Profile 项目只是待确认材料，自动生成的职责/架构摘要不得表述成“候选人填写”。候选人明确说没做过、未参与或项目不在简历中时，服务端不依赖模型自由判断，强制把该轮记为不可评分的归属澄清，不扣分、不施压、不触发整份简历选错提示，并清空否认文本锚点；被否认项目从后续深挖上下文移除，面试官改从简历内项目或实习重新开启业务背景、个人职责和链路追问，后续深度也从新经历重新计算。
+- 实际文件：`interview_skills/interviewer_core.json`、`app/interview_engine.py`、`app/prompt_engine.py`、`tests/test_interviewer_skill.py`、`tests/test_project_ownership_correction.py`、`process.md`。
+- 验证：项目归属、核心 skill、题库阶段、英文流程、提示记忆、面试控件和语音生命周期专项 `73 passed`；最终全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `242 passed`；Python compileall、skill JSON 解析与 `git diff --check` 均通过。
+- 风险或后续事项：当前使用明确中英文归属否认表达做确定性纠错，含糊表达仍交由面试官先澄清，避免误把“我没做过这类优化”理解成“整个项目不是我的”。本任务不修改 Profile 数据，也不会自动删除用户档案里的项目；只改变本场面试的选题与评分上下文。
 
 ### PROFILE-003 · 2026-08-30 · 简历重命名、可靠重识别与实习信息栏
 

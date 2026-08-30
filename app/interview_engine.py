@@ -448,14 +448,31 @@ class InterviewEngine:
         decision = await self._decide(decision_interview, resume, turns, answer)
         vague_answer = is_vague_answer(answer)
         explicit_unknown = self._explicit_unknown(answer)
+        project_ownership_correction = self._explicit_project_ownership_correction(
+            answer
+        )
+        prior_project_corrections = [
+            turn
+            for turn in turns
+            if self._explicit_project_ownership_correction(turn.answer)
+        ]
+        rejected_questions = [turn.question for turn in prior_project_corrections]
+        if project_ownership_correction:
+            rejected_questions.append(str(interview.get("last_question") or ""))
+        drill_resume = self._resume_without_rejected_projects(
+            resume, rejected_questions
+        )
         anchor = decision.anchor_keyword.strip()
         if not anchor or anchor.lower() not in answer.lower():
-            anchor = extract_anchor_keyword(answer, resume)
+            anchor = extract_anchor_keyword(answer, drill_resume)
         # Bank follow-ups must stay tied to this answer. Project drilling may
         # deliberately reuse a previous project anchor for a vague response,
         # so retain the direct response anchor before that substitution.
         response_anchor = anchor
-        if vague_answer and not explicit_unknown:
+        if project_ownership_correction:
+            anchor = ""
+            response_anchor = ""
+        elif vague_answer and not explicit_unknown:
             previous_anchor = next(
                 (turn.anchor_keyword for turn in reversed(turns) if turn.anchor_keyword),
                 "",
@@ -472,15 +489,30 @@ class InterviewEngine:
             )
 
         completed_turns = len(turns) + 1
+        last_project_correction_ordinal = (
+            completed_turns
+            if project_ownership_correction
+            else prior_project_corrections[-1].ordinal
+            if prior_project_corrections
+            else 0
+        )
+        project_drill_completed_turns = (
+            completed_turns - last_project_correction_ordinal + 1
+            if last_project_correction_ordinal
+            else completed_turns
+        )
         explicit_resume_mismatch = self._explicit_resume_mismatch(answer)
         resume_mismatch_reason = " ".join(
             str(decision.resume_mismatch_reason or "").replace("\x00", "").split()
         )[:600]
         if is_internal_interview_instruction(resume_mismatch_reason):
             resume_mismatch_reason = ""
-        resume_mismatch = explicit_resume_mismatch or (
-            decision.resume_consistency == "mismatch" and bool(resume_mismatch_reason)
+        resume_mismatch = not project_ownership_correction and (
+            explicit_resume_mismatch
+            or (decision.resume_consistency == "mismatch" and bool(resume_mismatch_reason))
         )
+        if project_ownership_correction:
+            resume_mismatch_reason = ""
         if explicit_resume_mismatch and not resume_mismatch_reason:
             resume_mismatch_reason = "候选人明确表示当前简历并非本人材料或选择有误。"
         resume_selection_warning = completed_turns == 1 and resume_mismatch and (
@@ -492,10 +524,14 @@ class InterviewEngine:
         )
         question, forced_dimension, forced_depth = enforce_project_drill(
             decision.next_question,
-            completed_turns=completed_turns,
+            completed_turns=project_drill_completed_turns,
             anchor=anchor,
-            resume=resume,
-            vague=vague_answer and not explicit_unknown,
+            resume=drill_resume,
+            vague=(
+                vague_answer
+                and not explicit_unknown
+                and not project_ownership_correction
+            ),
             max_depth=drill_target,
             language_mode=str(interview.get("language_mode") or "bilingual"),
         )
@@ -516,7 +552,7 @@ class InterviewEngine:
         ]
         phase = self._bank_phase(
             interview_type,
-            completed_turns=completed_turns,
+            completed_turns=project_drill_completed_turns,
             drill_target=drill_target,
             combined_hr_stages=min(3, len(hr_questions)),
             skipped_followups_before=sum(
@@ -552,6 +588,13 @@ class InterviewEngine:
             interview["company"],
             language_mode=str(interview.get("language_mode") or "bilingual"),
         )
+        if project_ownership_correction:
+            question = (
+                "Understood. We will not treat that project as your experience. "
+                + question
+                if interview.get("language_mode") == "en"
+                else "明白，这个项目不作为你的经历继续追问。" + question
+            )
 
         # A row represents the question that was just answered, not the next
         # question generated above. Normalize server-forced phases accordingly
@@ -561,13 +604,18 @@ class InterviewEngine:
         current_drill_dimension = decision.drill_dimension
         current_drill_depth = decision.drill_depth
         answered_bank_item: dict[str, Any] | None = None
-        if completed_turns == 1:
+        if project_ownership_correction:
+            current_dimension = "communication"
+            current_topic = "项目归属澄清"
+            current_drill_dimension = ""
+            current_drill_depth = 0
+        elif completed_turns == 1:
             current_dimension = "communication"
             current_topic = "自我介绍·整体与学习情况"
             current_drill_dimension = ""
             current_drill_depth = 0
-        elif 2 <= completed_turns <= drill_target + 1:
-            current_drill_depth = completed_turns - 1
+        elif 2 <= project_drill_completed_turns <= drill_target + 1:
+            current_drill_depth = project_drill_completed_turns - 1
             current_drill_dimension = SEVEN_DRILL_DIMENSIONS[
                 min(current_drill_depth - 1, len(SEVEN_DRILL_DIMENSIONS) - 1)
             ]
@@ -608,6 +656,8 @@ class InterviewEngine:
                 if interview.get("language_mode") == "en"
                 else "你的自我介绍与当前简历中的基础经历明显不一致。请确认是否选错了简历？你可以澄清后继续，也可以点击“退出”返回首页重新选择。"
             )
+        elif project_ownership_correction:
+            pressure_action = "none"
         elif explicit_unknown:
             pressure_action = (
                 "challenge" if int(interview.get("stress_level") or 0) >= 1 else "none"
@@ -672,18 +722,39 @@ class InterviewEngine:
             answer=answer,
             category=current_dimension,
             topic=current_topic or "综合基础",
-            score=decision.assessment.score,
-            scorable=decision.assessment.scorable and decision.assessment.score is not None,
-            score_source=decision.assessment.score_source,
+            score=None if project_ownership_correction else decision.assessment.score,
+            scorable=(
+                False
+                if project_ownership_correction
+                else decision.assessment.scorable and decision.assessment.score is not None
+            ),
+            score_source=(
+                "unavailable"
+                if project_ownership_correction
+                else decision.assessment.score_source
+            ),
             deductions=(
-                [*decision.assessment.deductions, f"简历一致性待澄清：{resume_mismatch_reason}"]
+                []
+                if project_ownership_correction
+                else [
+                    *decision.assessment.deductions,
+                    f"简历一致性待澄清：{resume_mismatch_reason}",
+                ]
                 if resume_mismatch and resume_mismatch_reason
                 else decision.assessment.deductions
             )
-            or (["回答缺少可验证的关键细节"] if decision.assessment.failed else []),
+            or (
+                ["回答缺少可验证的关键细节"]
+                if decision.assessment.failed and not project_ownership_correction
+                else []
+            ),
             # A candid skip remains a low-scoring knowledge gap, but does not
             # count toward the consecutive-breakdown auto-end threshold.
-            failed=decision.assessment.failed and not explicit_unknown,
+            failed=(
+                decision.assessment.failed
+                and not explicit_unknown
+                and not project_ownership_correction
+            ),
             drill_dimension=current_drill_dimension,
             drill_depth=current_drill_depth,
             anchor_keyword=anchor,
@@ -714,7 +785,13 @@ class InterviewEngine:
             silence_seconds=10 if pressure_action == "silence" and not ended else 0,
             breakdown_streak=streak,
             recommended_answer_seconds=0 if ended else recommended_seconds,
-            resume_consistency="mismatch" if resume_mismatch else decision.resume_consistency,
+            resume_consistency=(
+                "uncertain"
+                if project_ownership_correction
+                else "mismatch"
+                if resume_mismatch
+                else decision.resume_consistency
+            ),
             resume_mismatch_reason=resume_mismatch_reason,
             resume_selection_warning=resume_selection_warning,
             turn=turn,
@@ -1349,6 +1426,51 @@ class InterviewEngine:
                 re.compile(r"I (?:selected|chose|uploaded) the wrong resume\b", re.I),
             )
         )
+
+    @staticmethod
+    def _explicit_project_ownership_correction(answer: str) -> bool:
+        normalized = " ".join(str(answer or "").casefold().split())
+        return any(
+            pattern.search(normalized)
+            for pattern in (
+                re.compile(r"我(?:没|没有|未)(?:做过|参与过|负责过)(?:这|这个|该)?项目"),
+                re.compile(r"(?:这|这个|该)项目(?:并)?不是我(?:做|参与|负责)的"),
+                re.compile(r"(?:这|这个|该)项目(?:并)?不(?:在|属于)我(?:的)?简历(?:里|上|中)?"),
+                re.compile(r"(?:这|这个|该)项目不是我简历(?:里|上|中)?的项目"),
+                re.compile(
+                    r"I (?:did not|didn't|never) work on (?:this|that) project\b",
+                    re.I,
+                ),
+                re.compile(
+                    r"(?:this|that) project (?:is not|isn't) (?:mine|on my resume)\b",
+                    re.I,
+                ),
+            )
+        )
+
+    @staticmethod
+    def _resume_without_rejected_projects(
+        resume: ResumeData, rejected_questions: list[str]
+    ) -> ResumeData:
+        if not rejected_questions:
+            return resume
+        normalized_questions = " ".join(rejected_questions).casefold()
+        remaining = []
+        matched = False
+        for project in resume.projects:
+            raw_name = str(project.name or "").strip()
+            display_name = raw_name.removeprefix("[匿名 Profile 项目]").strip()
+            if display_name and display_name.casefold() in normalized_questions:
+                matched = True
+                continue
+            remaining.append(project)
+        if not matched:
+            remaining = [
+                project
+                for project in remaining
+                if not str(project.name or "").strip().startswith("[匿名 Profile 项目]")
+            ]
+        return resume.model_copy(update={"projects": remaining})
 
     @staticmethod
     def _explicit_unknown(answer: str) -> bool:

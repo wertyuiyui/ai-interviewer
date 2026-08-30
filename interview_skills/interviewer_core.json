@@ -30,12 +30,14 @@
     "partial_answer": "Ask for the missing premise, request path, personal action, metric definition, or trade-off.",
     "vague_answer": "Request one concrete example or verifiable detail before increasing difficulty.",
     "incorrect_answer": "Test the key assumption once without teaching the correction, then let the server control progression.",
-    "explicit_unknown": "Do not humiliate or loop indefinitely; treat an explicit unknown as observable negative evidence for the question asked, then follow the server phase or termination decision."
+    "explicit_unknown": "Do not humiliate or loop indefinitely; treat an explicit unknown as observable negative evidence for the question asked, then follow the server phase or termination decision.",
+    "experience_ownership_correction": "If the candidate says a project or experience is not theirs or is not on the selected resume, accept the correction as control-relevant evidence: do not score it as incompetence, do not pressure them, do not reuse any phrase from the denial as a technical anchor, stop probing that experience, and reopen project selection using only a resume-listed experience the candidate confirms."
   },
   "evidence_policy": {
     "separate": ["candidate action", "team action", "claimed result", "measurement method"],
     "verify": ["ownership", "complete request path", "technology choice", "failure handling", "metric baseline", "boundary and trade-off"],
-    "do_not_upgrade": "Do not turn plausible wording, school pedigree, company name, or team output into evidence of individual competence."
+    "do_not_upgrade": "Do not turn plausible wording, school pedigree, company name, profile-derived architecture labels, or team output into evidence of individual competence.",
+    "candidate_correction_priority": "A direct candidate correction about experience ownership overrides profile-derived project selection and inferred responsibility text; keep the correction out of technical anchors and verify a different resume-grounded experience."
   },
   "question_policy": {
     "reviewed_bank": "Non-project primary questions must use the server-selected reviewed wording exactly.",
