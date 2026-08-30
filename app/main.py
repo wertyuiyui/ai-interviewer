@@ -29,6 +29,7 @@ from .config import ROOT_DIR, Settings, get_settings
 from .content import (
     COMPANIES,
     SPECIALIZATIONS,
+    load_interview_skill,
     load_source_catalog,
     load_style_card,
 )
@@ -36,6 +37,12 @@ from .db import Database
 from .errors import AppError
 from .hardware_test import HARDWARE_TEST_MAX_SECONDS, HardwareTranscriptionSession
 from .interview_engine import InterviewEngine
+from .practice import (
+    PracticeAnswerCreate,
+    PracticeHintCreate,
+    PracticeService,
+    PracticeSessionCreate,
+)
 from .report_engine import ReportEngine
 from .resume import ResumeParser, extract_pdf_text
 from .schemas import (
@@ -52,6 +59,7 @@ db = Database(settings)
 resume_parser = ResumeParser(settings)
 interview_engine = InterviewEngine(db, settings)
 report_engine = ReportEngine(db, settings)
+practice_service = PracticeService(db, settings)
 background_tasks: set[asyncio.Task[Any]] = set()
 session_locks: dict[str, asyncio.Lock] = {}
 VOICE_END_DRAIN_TIMEOUT_SECONDS = 5.0
@@ -79,11 +87,14 @@ class SlidingWindowLimiter:
 
 resume_limiter = SlidingWindowLimiter()
 hardware_test_limiter = SlidingWindowLimiter()
+practice_voice_limiter = SlidingWindowLimiter()
+practice_answer_limiter = SlidingWindowLimiter()
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     await db.initialize()
+    await practice_service.initialize()
     yield
     pending = list(background_tasks)
     for task in pending:
@@ -187,6 +198,7 @@ async def config() -> dict[str, Any]:
     companies = []
     for key, label in COMPANIES.items():
         card = load_style_card(key)
+        skill = load_interview_skill(key)
         companies.append(
             {
                 "id": key,
@@ -194,6 +206,8 @@ async def config() -> dict[str, Any]:
                 "role": "后端开发实习生",
                 "stress_default": bool(card.get("stress_default", False)),
                 "preferences": card.get("followup_preferences", []),
+                "tone": skill.get("tone", ""),
+                "evidence_level": skill.get("evidence_level", "compatibility"),
             }
         )
     return {
@@ -215,6 +229,7 @@ async def config() -> dict[str, Any]:
         "language_modes": [
             {"id": "zh", "name": "全程中文"},
             {"id": "bilingual", "name": "中英双语"},
+            {"id": "en", "name": "Pure English"},
         ],
         "interview_types": [
             {"id": "technical", "name": "技术面"},
@@ -356,6 +371,211 @@ async def hardware_test_socket(websocket: WebSocket) -> None:
         if session:
             with suppress(asyncio.TimeoutError, Exception):
                 await asyncio.wait_for(session.close(), timeout=7)
+        with suppress(Exception):
+            await websocket.close()
+
+
+@app.get("/api/practice/catalog")
+async def practice_catalog() -> dict[str, Any]:
+    return await practice_service.catalog()
+
+
+@app.post("/api/practice/sessions", status_code=201)
+async def create_practice_session(
+    request: PracticeSessionCreate,
+) -> dict[str, Any]:
+    return await practice_service.create_session(request)
+
+
+@app.get("/api/practice/sessions/{session_id}")
+async def get_practice_session(
+    session_id: str,
+    client_id: str = Query(min_length=8, max_length=128),
+) -> dict[str, Any]:
+    return await practice_service.get_session(session_id, client_id)
+
+
+@app.post("/api/practice/sessions/{session_id}/answers")
+async def submit_practice_answer(
+    session_id: str,
+    request: PracticeAnswerCreate,
+    http_request: Request,
+) -> dict[str, Any]:
+    client_host = http_request.client.host if http_request.client else "unknown"
+    host_allowed = await practice_answer_limiter.allow(
+        f"practice-answer-host:{client_host}", 120, 3600
+    )
+    client_allowed = await practice_answer_limiter.allow(
+        f"practice-answer-client:{request.client_id}", 40, 3600
+    )
+    if not host_allowed or not client_allowed:
+        raise AppError(
+            "PRACTICE_ANSWER_RATE_LIMIT",
+            "单题评分过于频繁，请稍后再试。你的回答仍可保留在输入框中。",
+            status_code=429,
+        )
+    return await practice_service.submit_answer(session_id, request)
+
+
+@app.post("/api/practice/sessions/{session_id}/hint")
+async def get_practice_hint(
+    session_id: str,
+    request: PracticeHintCreate,
+) -> dict[str, Any]:
+    return await practice_service.hint(session_id, request)
+
+
+@app.get("/api/practice/history")
+async def practice_history(
+    client_id: str = Query(min_length=8, max_length=128),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> dict[str, Any]:
+    return {"items": await practice_service.history(client_id, limit)}
+
+
+@app.websocket("/ws/practice/sessions/{session_id}")
+async def practice_transcription_socket(
+    websocket: WebSocket, session_id: str
+) -> None:
+    """ASR-only transport for a single quick-drill answer.
+
+    Scoring still goes through the same REST answer endpoint as typed input;
+    this socket only turns 16 kHz PCM into an editable transcript.
+    """
+
+    await websocket.accept()
+    send_lock = asyncio.Lock()
+    transcription: HardwareTranscriptionSession | None = None
+    final_segments: list[str] = []
+
+    async def send(event_type: str, **payload: Any) -> None:
+        async with send_lock:
+            await websocket.send_json({"type": event_type, **payload})
+
+    async def forward_hardware(event_type: str, **payload: Any) -> None:
+        mapped = (
+            f"practice.{event_type.removeprefix('hardware.')}"
+            if event_type.startswith("hardware.")
+            else event_type
+        )
+        if event_type in {
+            "hardware.transcript.partial",
+            "hardware.transcript.done",
+        }:
+            segment = str(payload.get("text") or "").strip()
+            if event_type.endswith(".done") and segment:
+                if not final_segments or final_segments[-1] != segment:
+                    final_segments.append(segment)
+                payload["text"] = " ".join(final_segments)
+            elif segment:
+                payload["text"] = " ".join([*final_segments, segment])
+        await send(mapped, **payload)
+
+    try:
+        first = await asyncio.wait_for(websocket.receive(), timeout=10)
+        raw = first.get("text")
+        if first.get("type") == "websocket.disconnect":
+            return
+        try:
+            event = json.loads(raw or "{}")
+        except json.JSONDecodeError:
+            event = {}
+        client_id = str(event.get("client_id") or "").strip()
+        if event.get("type") != "client.ready" or not await practice_service.owns_session(
+            session_id, client_id
+        ):
+            await send(
+                "practice.error",
+                code="PRACTICE_FORBIDDEN",
+                message="刷题语音会话校验失败",
+                recoverable=False,
+            )
+            await websocket.close(code=4403)
+            return
+        client_host = websocket.client.host if websocket.client else "unknown"
+        host_allowed = await practice_voice_limiter.allow(
+            f"practice-host:{client_host}", 60, 3600
+        )
+        client_allowed = await practice_voice_limiter.allow(
+            f"practice-client:{client_id}", 30, 3600
+        )
+        if not host_allowed or not client_allowed:
+            await send(
+                "practice.error",
+                code="PRACTICE_VOICE_RATE_LIMIT",
+                message="语音刷题过于频繁，请稍后再试或切换文字输入",
+                recoverable=False,
+            )
+            await websocket.close(code=4408)
+            return
+
+        max_seconds = 180
+        transcription = HardwareTranscriptionSession(
+            settings,
+            forward_hardware,
+            max_seconds=max_seconds,
+        )
+        await transcription.start()
+        deadline = time.monotonic() + max_seconds
+        while not transcription.stopped:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                await transcription.stop(reason="limit")
+                break
+            try:
+                message = await asyncio.wait_for(
+                    websocket.receive(), timeout=remaining
+                )
+            except asyncio.TimeoutError:
+                await transcription.stop(reason="limit")
+                break
+            if message.get("type") == "websocket.disconnect":
+                break
+            pcm = message.get("bytes")
+            if pcm is not None:
+                await transcription.handle_audio(pcm)
+                continue
+            text = message.get("text")
+            if not text:
+                continue
+            try:
+                control = json.loads(text)
+            except json.JSONDecodeError:
+                await send(
+                    "practice.error",
+                    code="INVALID_EVENT",
+                    message="刷题语音消息格式错误",
+                    recoverable=True,
+                )
+                continue
+            if control.get("type") == "practice.stop":
+                await transcription.stop(reason="manual")
+                break
+            if control.get("type") == "ping":
+                await send("pong", timestamp=time.time())
+                continue
+            await send(
+                "practice.error",
+                code="UNKNOWN_EVENT",
+                message="不支持的刷题语音消息",
+                recoverable=True,
+            )
+    except WebSocketDisconnect:
+        pass
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        with suppress(Exception):
+            await send(
+                "practice.error",
+                code="PRACTICE_TRANSCRIPTION_FAILED",
+                message="实时转写暂时不可用，可以切换文字作答",
+                recoverable=False,
+            )
+    finally:
+        if transcription:
+            with suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(transcription.close(), timeout=7)
         with suppress(Exception):
             await websocket.close()
 
@@ -603,11 +823,19 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
             await drain_answers(timeout=VOICE_END_DRAIN_TIMEOUT_SECONDS)
         if not await commit_terminal(requested_end_reason):
             return
-        closing = (
-            "时间到了，今天的面试就到这里，感谢你的时间。"
-            if requested_end_reason == "time"
-            else "好的，今天的面试就到这里，感谢你的时间。"
-        )
+        closing_interview = await db.get_interview(interview_id)
+        if closing_interview and closing_interview.get("language_mode") == "en":
+            closing = (
+                "We have reached the end of the scheduled time. That concludes today's interview. Thank you for your time."
+                if requested_end_reason == "time"
+                else "That concludes today's interview. Thank you for your time."
+            )
+        else:
+            closing = (
+                "时间到了，今天的面试就到这里，感谢你的时间。"
+                if requested_end_reason == "time"
+                else "好的，今天的面试就到这里，感谢你的时间。"
+            )
         with suppress(Exception):
             await send("interviewer.text.done", text=closing)
         if voice_session:
@@ -1218,3 +1446,8 @@ async def interview_page() -> FileResponse:
 @app.get("/report", include_in_schema=False)
 async def report_page() -> FileResponse:
     return FileResponse(PUBLIC_DIR / "report.html")
+
+
+@app.get("/practice", include_in_schema=False)
+async def practice_page() -> FileResponse:
+    return FileResponse(PUBLIC_DIR / "practice.html")

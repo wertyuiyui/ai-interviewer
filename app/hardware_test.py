@@ -34,9 +34,16 @@ class HardwareTranscriptionSession:
     interview. No resume, interview prompt, score or history row is created.
     """
 
-    def __init__(self, settings: Settings, send: SendEvent) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        send: SendEvent,
+        *,
+        max_seconds: int | None = None,
+    ) -> None:
         self.settings = settings
         self.send = send
+        self.max_seconds = max_seconds
         self.omni: OmniRealtimeClient | None = None
         self.asr: ParaformerClient | None = None
         self.provider_task: asyncio.Task[None] | None = None
@@ -50,6 +57,13 @@ class HardwareTranscriptionSession:
     @property
     def transcription_available(self) -> bool:
         return self.actual_mode != "L3"
+
+    @property
+    def audio_limit_bytes(self) -> int:
+        if self.max_seconds is None:
+            # Keep the module constant patchable for the focused unit tests.
+            return HARDWARE_TEST_MAX_PCM_BYTES
+        return 16000 * 2 * self.max_seconds
 
     async def start(self) -> bool:
         errors: list[str] = []
@@ -85,7 +99,7 @@ class HardwareTranscriptionSession:
                 await self.send(
                     "hardware.ready",
                     transcription_available=True,
-                    max_seconds=HARDWARE_TEST_MAX_SECONDS,
+                    max_seconds=self.max_seconds or HARDWARE_TEST_MAX_SECONDS,
                 )
                 return True
             except asyncio.CancelledError:
@@ -103,7 +117,7 @@ class HardwareTranscriptionSession:
         await self.send(
             "hardware.ready",
             transcription_available=False,
-            max_seconds=HARDWARE_TEST_MAX_SECONDS,
+            max_seconds=self.max_seconds or HARDWARE_TEST_MAX_SECONDS,
         )
         return False
 
@@ -118,7 +132,7 @@ class HardwareTranscriptionSession:
                 recoverable=True,
             )
             return
-        remaining = HARDWARE_TEST_MAX_PCM_BYTES - self.audio_bytes
+        remaining = self.audio_limit_bytes - self.audio_bytes
         if remaining <= 0:
             await self.stop(reason="limit")
             return
