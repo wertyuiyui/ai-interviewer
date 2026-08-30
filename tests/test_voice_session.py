@@ -14,7 +14,7 @@ from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.voice import OmniRealtimeClient  # noqa: E402
-from app.voice_session import BrowserVoiceSession  # noqa: E402
+from app.voice_session import BrowserVoiceSession, logger as voice_logger  # noqa: E402
 from app.errors import AppError  # noqa: E402
 
 
@@ -344,7 +344,7 @@ def test_typed_l0_answer_does_not_cancel_and_waits_for_matching_response_done() 
 def test_l0_browser_session_mixed_language_audio_to_next_spoken_question(
     caplog: Any,
 ) -> None:
-    caplog.set_level("INFO", logger="app.voice_session")
+    caplog.set_level("INFO", logger=voice_logger.name)
 
     async def scenario() -> None:
         recorder = EventRecorder()
@@ -423,6 +423,8 @@ def test_l0_browser_session_mixed_language_audio_to_next_spoken_question(
         await session.close()
 
     asyncio.run(scenario())
+    assert "voice.transcript.done" in caplog.text
+    assert "voice.tts.done" in caplog.text
     assert "我会先检查 Redis" not in caplog.text
     assert "请解释 MySQL InnoDB" not in caplog.text
 

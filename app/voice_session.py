@@ -31,7 +31,10 @@ SendEvent = Callable[..., Awaitable[None]]
 EndCallback = Callable[[str], Awaitable[None]]
 
 
-logger = logging.getLogger(__name__)
+# A child of uvicorn.error inherits the server's configured journal handler.
+# A standalone ``app.*`` logger has no handler under Uvicorn's default logging
+# config, which would make successful audio diagnostics invisible in systemd.
+logger = logging.getLogger("uvicorn.error.voice")
 logger.setLevel(
     {
         "DEBUG": logging.DEBUG,
