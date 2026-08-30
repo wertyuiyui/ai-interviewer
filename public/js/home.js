@@ -3,6 +3,7 @@ import {
   normalizeHistoryPayload, normalizeMode, saveSetup, setButtonBusy,
   setCurrentSession, showToast, firstValue, toArray,
 } from './common.js?v=20260830-hide-internals';
+import { createHardwareTest } from './hardware-test.js?v=20260830-interview-flow';
 
 const form = $('#setupForm');
 const fileInput = $('#resumeFile');
@@ -18,6 +19,7 @@ const memoryEnabled = $('#memoryEnabled');
 const resumeAlert = $('#resumeAlert');
 const settingsAlert = $('#settingsAlert');
 const modePill = $('#modePill');
+const hardwareTest = createHardwareTest();
 
 let resumeMode = 'pdf';
 let selectedFile = null;
@@ -28,8 +30,12 @@ const stressDefaults = { bytedance: 2, meituan: 0, tencent: 0 };
 const stressHints = {
   0: '关闭施压手法，仍会保留连续深挖',
   1: '温和施压：适度质疑，并给你整理思路的空间',
-  2: '标准施压：质疑、打断、沉默与连续追问',
-  3: '高压模式：更频繁打断、否定与追问到底',
+  2: '标准施压：针对模糊、矛盾和技术漏洞连续下钻',
+  3: '高压模式：提高问题深度，仅在明显跑题或表述失控时打断',
+};
+const interviewTypeHints = {
+  technical: '聚焦项目、实习、技术基础与口述解题思路',
+  technical_hr: '技术考察后继续聊价值观、职业选择、规划与薪酬期待',
 };
 
 function setResumeMode(nextMode, focus = false) {
@@ -125,6 +131,19 @@ function setLanguageMode(mode) {
   if (target) target.checked = true;
 }
 
+function getInterviewType() {
+  return $('input[name="interview_type"]:checked')?.value === 'technical_hr'
+    ? 'technical_hr'
+    : 'technical';
+}
+
+function setInterviewType(type) {
+  const normalized = type === 'technical_hr' ? 'technical_hr' : 'technical';
+  const target = $(`input[name="interview_type"][value="${normalized}"]`);
+  if (target) target.checked = true;
+  $('#interviewTypeHint').textContent = interviewTypeHints[normalized];
+}
+
 function syncSpecializationControl({ focus = false } = {}) {
   const custom = specializationPreset.value === 'custom';
   specializationCustom.classList.toggle('is-hidden', !custom);
@@ -196,6 +215,7 @@ function restoreSetup() {
   if (Object.hasOwn(saved, 'duration_minutes')) setDuration(saved.duration_minutes);
   if (saved.specialization) setSpecialization(saved.specialization);
   if (saved.language_mode) setLanguageMode(saved.language_mode);
+  if (saved.interview_type) setInterviewType(saved.interview_type);
   if (saved.stress_level !== undefined || typeof saved.stress === 'boolean') {
     setStressLevel(saved.stress_level ?? (saved.stress ? 2 : 0));
     stressTouched = true;
@@ -304,9 +324,11 @@ async function startInterview(event) {
   const stress = stressLevel > 0;
   const memory = memoryEnabled.checked;
   const languageMode = getLanguageMode();
+  const interviewType = getInterviewType();
   const clientId = getClientId();
 
   try {
+    await hardwareTest?.stop({ immediate: true, quiet: true });
     setButtonBusy(startButton, true, '正在读懂你的简历…');
     const resume = await parseResume();
     if (!resume || typeof resume !== 'object') throw new Error('简历解析结果为空，请换用文字版简历重试。');
@@ -321,6 +343,7 @@ async function startInterview(event) {
         company,
         role: 'backend',
         specialization,
+        interview_type: interviewType,
         language_mode: languageMode,
         stress_level: stressLevel,
         stress,
@@ -337,6 +360,7 @@ async function startInterview(event) {
       company,
       role: 'backend',
       specialization,
+      interview_type: interviewType,
       language_mode: languageMode,
       stress_level: stressLevel,
       stress,
@@ -349,6 +373,7 @@ async function startInterview(event) {
     saveSetup({
       company,
       specialization,
+      interview_type: interviewType,
       language_mode: languageMode,
       stress_level: stressLevel,
       stress,
@@ -403,6 +428,10 @@ $$('input[name="stress_level"]').forEach((input) => input.addEventListener('chan
   hideSettingsAlert();
 }));
 $$('input[name="language_mode"]').forEach((input) => input.addEventListener('change', hideSettingsAlert));
+$$('input[name="interview_type"]').forEach((input) => input.addEventListener('change', () => {
+  setInterviewType(getInterviewType());
+  hideSettingsAlert();
+}));
 specializationPreset.addEventListener('change', () => syncSpecializationControl({ focus: true }));
 specializationCustom.addEventListener('input', hideSettingsAlert);
 durationPreset.addEventListener('change', () => syncDurationControl({ focus: true }));
@@ -412,8 +441,10 @@ memoryEnabled.addEventListener('change', () => {
   if (memoryEnabled.checked) loadWeakness();
 });
 form.addEventListener('submit', startInterview);
+window.addEventListener('pagehide', () => hardwareTest?.dispose());
 
 restoreSetup();
+setInterviewType(getInterviewType());
 syncMemoryControl();
 syncSpecializationControl();
 syncDurationControl();

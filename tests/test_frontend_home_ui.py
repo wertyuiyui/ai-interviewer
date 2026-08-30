@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_home_interview_type_is_saved_and_sent() -> None:
+    html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "public" / "js" / "home.js").read_text(encoding="utf-8")
+
+    assert 'name="interview_type" value="technical"' in html
+    assert 'name="interview_type" value="technical_hr"' in html
+    assert "function getInterviewType()" in script
+    assert "saved.interview_type" in script
+    # The same value must be present in the create payload, current-session
+    # handoff, and saved setup rather than being a display-only control.
+    assert script.count("interview_type: interviewType") == 3
+
+
+def test_optional_home_hardware_test_contract() -> None:
+    html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "public" / "js" / "hardware-test.js").read_text(encoding="utf-8")
+    home = (ROOT / "public" / "js" / "home.js").read_text(encoding="utf-8")
+
+    for element_id in (
+        "hardwareTestCard",
+        "hardwareTestButton",
+        "hardwareTestStatus",
+        "hardwareTestDevice",
+        "hardwareInputMeter",
+        "hardwareTestCountdown",
+        "hardwareTranscript",
+    ):
+        assert f'id="{element_id}"' in html
+
+    assert "new AudioSession" in script
+    assert "/ws/hardware-test" in script
+    assert "type: 'client.ready', client_id: getClientId()" in script
+    assert "this.socket.send(buffer)" in script
+    assert "hardware.speech.started" in script
+    assert "hardware.speech.ended" in script
+    assert "hardware.transcript.partial" in script
+    assert "hardware.transcript.done" in script
+    assert "type: 'hardware.stop'" in script
+    assert "type === 'hardware.stopped'" in script
+    assert "TEST_SECONDS = 30" in script
+    assert "await audio.close()" in script
+    assert "SpeechRecognition" not in script
+    assert "webkitSpeechRecognition" not in script
+
+    # Starting the interview must close a running preflight test, and leaving
+    # the page must release capture even if navigation interrupts async work.
+    start_block = home.split("async function startInterview", 1)[1].split("$$('[data-resume-tab]')", 1)[0]
+    assert "await hardwareTest?.stop({ immediate: true, quiet: true })" in start_block
+    assert "pagehide" in home and "hardwareTest?.dispose()" in home
+
+    stop_block = script.split("async _stop(", 1)[1].split("async _fail(", 1)[0]
+    assert "this.audio?.disableMicrophone()" in stop_block
+    assert stop_block.index("disableMicrophone()") < stop_block.index("type: 'hardware.stop'")
+    assert "event.transcription_available === false" in script
+    assert "event.recoverable === true" in script
+
+
+def test_home_pressure_copy_describes_conditional_interruptions() -> None:
+    html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "public" / "js" / "home.js").read_text(encoding="utf-8")
+
+    assert "针对模糊、矛盾和技术漏洞连续下钻" in html
+    assert "仅在明显跑题或表述失控时打断" in script
+    assert "更频繁打断" not in script

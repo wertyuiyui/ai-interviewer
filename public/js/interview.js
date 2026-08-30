@@ -9,6 +9,9 @@ const storedSession = getCurrentSession();
 const sessionId = query.get('session') || storedSession?.id || storedSession?.session_id || '';
 
 const elements = {
+  answerControl: $('#answerControl'),
+  answerElapsed: $('#answerElapsed'),
+  answerStateLabel: $('#answerStateLabel'),
   avatar: $('#avatarScene'),
   answerTimeGuide: $('#answerTimeGuide'),
   answerTimeValue: $('#answerTimeValue'),
@@ -27,6 +30,7 @@ const elements = {
   hintText: $('#hintText'),
   inputMeter: $('#inputMeter'),
   inputMeterFill: $('#inputMeterFill'),
+  interviewerVoiceToggle: $('#interviewerVoiceToggle'),
   interrupt: $('#interruptLabel'),
   join: $('#joinButton'),
   liveTranscriptBar: $('#liveTranscriptBar'),
@@ -46,6 +50,7 @@ const elements = {
   rawCaptureToggle: $('#rawCaptureToggle'),
   scrollLatest: $('#scrollLatest'),
   send: $('#sendButton'),
+  startAnswer: $('#startAnswerButton'),
   stageHint: $('#stageHint'),
   stageTitle: $('#stageTitle'),
   stress: $('#stressChip'),
@@ -54,6 +59,7 @@ const elements = {
   transcript: $('#transcriptList'),
   transcriptPlaceholder: $('#transcriptPlaceholder'),
   waveform: $('#waveform'),
+  endAnswer: $('#endAnswerButton'),
 };
 
 let interview = null;
@@ -110,6 +116,16 @@ let currentQuestion = '';
 let questionReady = false;
 let candidateAudioExpected = false;
 let candidateAudioExpectedSince = 0;
+let answerState = 'idle';
+let answerStartedAt = 0;
+let answerElapsedMs = 0;
+let answerClockTimer = 0;
+let answerAudioFrames = 0;
+let answerStartAwaitingAck = false;
+const INTERVIEWER_VOICE_KEY = 'mock_interview.interviewer_voice_enabled.v1';
+let interviewerVoiceEnabled = readInterviewerVoicePreference();
+let interviewerAudioStreamActive = false;
+let interviewerAudioSuppressedUntilStreamEnd = false;
 let hintLoading = false;
 const hintedQuestions = new Set();
 const partialTurns = new Map();
@@ -117,9 +133,18 @@ const candidateTurns = new Map();
 const interviewerTurns = new Map();
 const pendingTranscriptCorrections = new Map();
 
+function readInterviewerVoicePreference() {
+  try {
+    return localStorage.getItem(INTERVIEWER_VOICE_KEY) !== 'false';
+  } catch {
+    return true;
+  }
+}
+
 function updateHintAvailability() {
   const used = currentQuestion && hintedQuestions.has(currentQuestion);
-  elements.hintButton.disabled = phase !== 'live' || answerPending || !questionReady || !currentQuestion || hintLoading || used;
+  const answerOpen = ['ready', 'answering'].includes(answerState);
+  elements.hintButton.disabled = phase !== 'live' || !answerOpen || answerPending || !questionReady || !currentQuestion || hintLoading || used;
   if (!hintLoading) $('.button-label', elements.hintButton).textContent = used ? '本题已提示' : '给我一点提示';
 }
 
@@ -165,20 +190,159 @@ function showAnswerTimeGuide(seconds) {
 
 function setCurrentQuestion(value, event = {}, { inferTiming = true } = {}) {
   const next = String(value || '').trim();
-  if (!next) return;
+  if (!next) return false;
+  const questionChanged = currentQuestion !== next;
   const providedSeconds = providedRecommendedAnswerSeconds(event, next);
   const suggestedSeconds = providedSeconds ?? (inferTiming ? inferRecommendedAnswerSeconds(next) : null);
   if (!(suggestedSeconds > 0)) {
     if (suggestedSeconds === 0) {
       showAnswerTimeGuide(0);
-      return;
+      return false;
     }
   }
   if (currentQuestion && currentQuestion !== next) elements.hintPanel.classList.add('is-hidden');
   currentQuestion = next;
   questionReady = true;
   if (suggestedSeconds !== null) showAnswerTimeGuide(suggestedSeconds);
+  if (phase === 'live' && !['answering', 'sealing'].includes(answerState)
+      && (questionChanged || answerState === 'idle')) {
+    setAnswerState('ready', { resetElapsed: true });
+  }
   updateHintAvailability();
+  return true;
+}
+
+function renderAnswerElapsed() {
+  const elapsed = answerState === 'answering' && answerStartedAt
+    ? Math.max(0, Date.now() - answerStartedAt)
+    : Math.max(0, answerElapsedMs);
+  const seconds = Math.floor(elapsed / 1000);
+  elements.answerElapsed.textContent = formatSeconds(seconds);
+  elements.answerElapsed.dateTime = `PT${seconds}S`;
+}
+
+function setAnswerState(nextState, {
+  elapsedMs = null,
+  resetElapsed = false,
+  startedAt = 0,
+} = {}) {
+  const allowed = new Set(['idle', 'ready', 'answering', 'sealing']);
+  const next = allowed.has(nextState) ? nextState : 'idle';
+  const wasAnswering = answerState === 'answering';
+  if (wasAnswering && answerStartedAt) {
+    answerElapsedMs = Math.max(answerElapsedMs, Date.now() - answerStartedAt);
+  }
+  clearInterval(answerClockTimer);
+  answerClockTimer = 0;
+  if (resetElapsed) {
+    answerElapsedMs = 0;
+    answerAudioFrames = 0;
+  }
+  const suppliedElapsed = Number(elapsedMs);
+  if (elapsedMs !== null && elapsedMs !== undefined
+      && Number.isFinite(suppliedElapsed) && suppliedElapsed >= 0) {
+    answerElapsedMs = suppliedElapsed;
+  }
+  answerState = next;
+  if (next === 'answering') {
+    const suppliedStart = Number(startedAt);
+    answerStartedAt = Number.isFinite(suppliedStart) && suppliedStart > 0
+      ? suppliedStart
+      : Date.now() - answerElapsedMs;
+    answerClockTimer = setInterval(renderAnswerElapsed, 250);
+  } else {
+    answerStartedAt = 0;
+  }
+
+  const live = phase === 'live';
+  const labels = {
+    idle: '等待面试官提问',
+    ready: '准备好后再开始计时',
+    answering: '本题回答计时中',
+    sealing: '正在封口并整理转写',
+  };
+  elements.answerControl.dataset.state = next;
+  elements.answerStateLabel.textContent = labels[next];
+  elements.answerControl.classList.toggle('is-hidden', !live);
+  elements.startAnswer.classList.toggle('is-hidden', ['answering', 'sealing'].includes(next));
+  elements.endAnswer.classList.toggle('is-hidden', next !== 'answering');
+  elements.startAnswer.disabled = !live || next !== 'ready' || answerPending;
+  elements.endAnswer.disabled = !live || next !== 'answering';
+  const textEnabled = live && next === 'answering' && !answerPending;
+  elements.messageInput.disabled = !textEnabled;
+  elements.send.disabled = !textEnabled;
+  elements.messageInput.placeholder = next === 'answering'
+    ? (voiceMode === 'L3' ? '输入本题回答…' : '也可以在这里打字回答…')
+    : '点击“开始回答”后可在这里打字…';
+  if (next === 'answering') {
+    expectCandidateAudio(voiceMode !== 'L3');
+  } else {
+    expectCandidateAudio(false);
+  }
+  renderAnswerElapsed();
+  syncAudioUplink();
+  updateHintAvailability();
+  if (textEnabled && voiceMode === 'L3') elements.messageInput.focus();
+}
+
+function currentAnswerElapsedMs() {
+  if (answerState === 'answering' && answerStartedAt) return Math.max(0, Date.now() - answerStartedAt);
+  return Math.max(0, answerElapsedMs);
+}
+
+function startCurrentAnswer() {
+  if (phase !== 'live' || answerState !== 'ready' || answerPending) return;
+  if (!sendJson({ type: 'answer.start' })) {
+    showToast('连接尚未恢复，暂时无法开始本题。', 'error');
+    return;
+  }
+  answerStartAwaitingAck = true;
+  if (interviewerAudioStreamActive) interviewerAudioSuppressedUntilStreamEnd = true;
+  invalidateAudioPlayback();
+  answerPending = false;
+  setAnswerState('answering', { resetElapsed: true });
+  setLiveTranscript(
+    'idle',
+    voiceMode === 'L3' ? '正在填写本题回答' : '回答已开始，等待你开口',
+    voiceMode === 'L3' ? '写完后点击“结束回答”提交' : '点击“结束回答”后才会封口并进入下一题',
+  );
+  setStage('listening', '正在听你回答', '回答计时已开始；讲完后请点击“结束回答”。');
+}
+
+function finishCurrentAnswer({ allowEmpty = false } = {}) {
+  if (phase !== 'live' || answerState !== 'answering' || answerPending) return;
+  const text = elements.messageInput.value.trim();
+  if (!allowEmpty && !text && voiceMode === 'L3') {
+    showToast('请先输入本题回答，再点击“结束回答”。', 'error');
+    elements.messageInput.focus();
+    return;
+  }
+  if (!allowEmpty && !text && voiceMode !== 'L3' && answerAudioFrames === 0) {
+    showToast('还没有收到语音；请先回答，或在右侧输入文字。', 'error');
+    return;
+  }
+  const elapsedMs = Math.round(currentAnswerElapsedMs());
+  setAnswerState('sealing', { elapsedMs });
+  const payload = { type: 'answer.end', elapsed_ms: elapsedMs };
+  if (text) payload.text = text;
+  if (!sendJson(payload)) {
+    setAnswerState('answering', { elapsedMs });
+    showToast('连接尚未恢复，本题尚未结束。', 'error');
+    return false;
+  }
+  answerStartAwaitingAck = false;
+  answerPending = true;
+  questionReady = false;
+  elements.messageInput.value = '';
+  elements.messageInput.rows = 1;
+  setLiveTranscript(
+    text ? 'final' : 'partial',
+    text ? '文字回答已提交' : '正在完成本轮转写',
+    text || '请稍候，系统正在封口并整理完整回答…',
+  );
+  setStage('thinking', '面试官正在思考', '本题回答已结束，计时已停止。');
+  updateHintAvailability();
+  return true;
 }
 
 async function requestHint() {
@@ -370,6 +534,7 @@ function syncAudioUplink() {
   audioUplinkReady = Boolean(
     providerAudioReady
     && phase === 'live'
+    && answerState === 'answering'
     && isMicrophoneCaptureEnabled()
   );
   if (audioUplinkReady && !wasReady) {
@@ -462,6 +627,7 @@ function setMode(mode, notify = false) {
   $('span', elements.mode).textContent = modeLabel(voiceMode);
   const textOnly = voiceMode === 'L3';
   elements.micToggle.classList.toggle('is-hidden', textOnly || phase === 'preparing');
+  renderInterviewerVoicePreference();
   elements.microphonePanel.classList.toggle('is-hidden', textOnly);
   elements.permissionNote.textContent = textOnly
     ? '本场为纯文字模式，不会请求麦克风权限。'
@@ -485,6 +651,7 @@ function setMode(mode, notify = false) {
     previousAudio.close();
   }
   updateMicrophoneHealth();
+  if (phase === 'live') setAnswerState(answerState);
   if (notify && previous !== voiceMode) showToast(`服务已切换为 ${modeLabel(voiceMode)}`, 'info', 4500);
 }
 
@@ -1026,6 +1193,7 @@ function createAudio() {
   return new AudioSession({
     onAudioFrame: (buffer) => {
       lastAudioFrameAt = Date.now();
+      if (audioUplinkReady && answerState === 'answering') answerAudioFrames += 1;
       sendRealtimeAudioFrame(buffer);
     },
     onInputLevel: (value) => {
@@ -1041,6 +1209,7 @@ function createAudio() {
       }
     },
     onOutputLevel: (value) => {
+      if (!canPlayInterviewerAudio()) return;
       outputLevel = Math.min(1, value * 3.4);
       if (outputLevel > .035 && phase === 'live') {
         expectCandidateAudio(false);
@@ -1057,8 +1226,13 @@ function createAudio() {
       if (announcementId) sendJson({ type: 'audio.playback.done', announcement_id: announcementId });
       outputLevel = 0;
       if (phase === 'live' && !answerPending) {
-        expectCandidateAudio(true);
-        setStage('listening', '轮到你回答', '请尽量给出具体链路、数据口径和技术取舍。');
+        if (answerState === 'answering') {
+          expectCandidateAudio(true);
+          setStage('listening', '正在听你回答', '讲完后请点击“结束回答”。');
+        } else if (answerState === 'ready') {
+          expectCandidateAudio(false);
+          setStage('listening', '可以开始回答', '准备好后点击“开始回答”，计时会从点击时开始。');
+        }
       }
     },
     onCaptureState: handleCaptureState,
@@ -1105,15 +1279,19 @@ function setLive() {
   phase = 'live';
   elements.readyPanel.classList.add('is-hidden');
   elements.endButton.disabled = false;
-  elements.messageInput.disabled = answerPending;
-  elements.send.disabled = answerPending;
+  elements.messageInput.disabled = true;
+  elements.send.disabled = true;
   elements.micToggle.classList.toggle('is-hidden', voiceMode === 'L3');
+  elements.interviewerVoiceToggle.classList.toggle('is-hidden', voiceMode === 'L3');
   updateHintAvailability();
   setConnection('live', '面试进行中');
   expectCandidateAudio(false);
-  setStage(voiceMode === 'L3' ? 'thinking' : 'listening', '面试进行中', voiceMode === 'L3' ? '请在右侧输入框作答。' : '面试官说话时，你也可以直接开口打断。');
+  setStage(voiceMode === 'L3' ? 'thinking' : 'listening', '面试进行中', '请先听完题目，再点击“开始回答”。');
   syncAudioUplink();
-  if (voiceMode === 'L3') elements.messageInput.focus();
+  const restoredLocalState = ['answering', 'sealing'].includes(answerState)
+    ? answerState
+    : (questionReady && currentQuestion ? 'ready' : 'idle');
+  setAnswerState(restoredLocalState);
 }
 
 function invalidateAudioPlayback() {
@@ -1123,18 +1301,60 @@ function invalidateAudioPlayback() {
   outputLevel = 0;
 }
 
+function renderInterviewerVoicePreference() {
+  const enabled = interviewerVoiceEnabled && voiceMode !== 'L3';
+  elements.interviewerVoiceToggle.classList.toggle('is-off', !interviewerVoiceEnabled);
+  elements.interviewerVoiceToggle.classList.toggle('is-hidden', voiceMode === 'L3' || phase === 'preparing');
+  elements.interviewerVoiceToggle.setAttribute('aria-pressed', String(interviewerVoiceEnabled));
+  elements.interviewerVoiceToggle.setAttribute('aria-label', enabled ? '关闭面试官语音' : '开启面试官语音');
+  elements.interviewerVoiceToggle.title = enabled ? '关闭面试官语音' : '开启面试官语音';
+}
+
+function canPlayInterviewerAudio() {
+  return interviewerVoiceEnabled
+    && !interviewerAudioSuppressedUntilStreamEnd
+    && voiceMode !== 'L3';
+}
+
+function noteInterviewerAudioStream() {
+  interviewerAudioStreamActive = true;
+  if (!interviewerVoiceEnabled) interviewerAudioSuppressedUntilStreamEnd = true;
+}
+
+function toggleInterviewerVoice() {
+  if (voiceMode === 'L3') return;
+  interviewerVoiceEnabled = !interviewerVoiceEnabled;
+  try {
+    localStorage.setItem(INTERVIEWER_VOICE_KEY, String(interviewerVoiceEnabled));
+  } catch {
+    // Storage can be unavailable in a private browsing context; the page-level choice still works.
+  }
+  if (!interviewerVoiceEnabled) {
+    if (interviewerAudioStreamActive) interviewerAudioSuppressedUntilStreamEnd = true;
+    invalidateAudioPlayback();
+  }
+  renderInterviewerVoicePreference();
+  showToast(
+    interviewerVoiceEnabled ? '面试官语音已开启，将从后续内容恢复播放。' : '面试官语音已关闭，题目文字和麦克风不受影响。',
+    'info',
+    3600,
+  );
+}
+
 function setAnswerPending(pending) {
   answerPending = Boolean(pending);
   if (answerPending) expectCandidateAudio(false);
-  const disabled = answerPending || phase !== 'live';
+  const disabled = answerPending || phase !== 'live' || answerState !== 'answering';
   elements.messageInput.disabled = disabled;
   elements.send.disabled = disabled;
+  elements.startAnswer.disabled = answerPending || phase !== 'live' || answerState !== 'ready';
+  elements.endAnswer.disabled = answerPending || phase !== 'live' || answerState !== 'answering';
   updateHintAvailability();
   if (!disabled && voiceMode === 'L3') elements.messageInput.focus();
 }
 
 async function handleAudioFile(event, epoch) {
-  if (epoch !== audioEpoch || !audio || voiceMode === 'L3') return;
+  if (epoch !== audioEpoch || !audio || !canPlayInterviewerAudio()) return;
   try {
     const encoded = base64ToArrayBuffer(event.audio || event.data || '');
     if (encoded.byteLength && epoch === audioEpoch) await audio.enqueueEncoded(encoded);
@@ -1154,6 +1374,9 @@ function handleEnded(event = {}) {
   elements.send.disabled = true;
   elements.endButton.disabled = true;
   elements.hintButton.disabled = true;
+  clearInterval(answerClockTimer);
+  answerClockTimer = 0;
+  elements.answerControl.classList.add('is-hidden');
   providerAudioReady = false;
   disableMicrophoneCapture({ explicit: true, notify: true });
   audio?.clearPlayback();
@@ -1191,20 +1414,30 @@ function handleServerEvent(event) {
       if (event.session && typeof event.session === 'object') interview = { ...interview, ...event.session };
       syncTimer(event.session || event);
       setLive();
+      {
+        const restoredAnswerState = String(event.answer_state || event.session?.answer_state || '').toLowerCase();
+        if (['answering', 'sealing'].includes(restoredAnswerState)) {
+          setAnswerState(restoredAnswerState, { elapsedMs: event.elapsed_ms ?? event.session?.answer_elapsed_ms });
+        }
+      }
       break;
     case 'candidate.transcript.partial':
-      expectCandidateAudio(true);
-      questionReady = false;
+      if (!['answering', 'sealing'].includes(answerState)) break;
+      expectCandidateAudio(answerState === 'answering');
       updateHintAvailability();
       updateCandidateTranscript(event);
       setStage('listening', '正在听你回答', '把关键链路、指标口径和取舍说具体。');
       break;
     case 'candidate.transcript.done':
-      questionReady = false;
+      if (!['answering', 'sealing'].includes(answerState)) break;
       finalizeCandidateTranscript(event);
       lastTyped = null;
-      setAnswerPending(true);
-      setStage('thinking', '面试官正在思考', '回答结束后不会即时点评。');
+      if (answerState === 'sealing') {
+        setAnswerPending(true);
+        setStage('thinking', '面试官正在思考', '回答结束后不会即时点评。');
+      } else {
+        setStage('listening', '正在听你回答', '讲完后请点击“结束回答”。');
+      }
       break;
     case 'candidate.transcript.corrected':
       applyTranscriptCorrection(event);
@@ -1215,15 +1448,19 @@ function handleServerEvent(event) {
       setLiveTranscript('error', '这次没有识别清楚', '请再说一次，或改用右侧文字输入', 3200);
       setAnswerPending(false);
       questionReady = Boolean(currentQuestion);
+      setAnswerState(questionReady ? 'ready' : 'idle');
       updateHintAvailability();
-      setStage('listening', '请再说一次', '本轮转写失败，也可以直接在右侧输入框作答。');
+      setStage('listening', '请重新开始回答', '本轮转写失败；点击“开始回答”重试，也可以改用文字。');
       break;
     case 'interviewer.text.partial':
       {
         const interjection = isPressureInterjection(event);
         if (!interjection) {
+          if (voiceMode !== 'L3') noteInterviewerAudioStream();
           expectCandidateAudio(false);
           questionReady = false;
+          answerPending = true;
+          setAnswerState('idle', { resetElapsed: true });
           updateHintAvailability();
         }
         const turn = renderTurn('interviewer', extractText(event), {
@@ -1256,9 +1493,15 @@ function handleServerEvent(event) {
           showPressureMoment();
           setStage('speaking', '压力情境进行中', '先给结论，再补充依据与边界。');
         } else {
+          if (voiceMode !== 'L3') noteInterviewerAudioStream();
           if (event.pressure_action && String(event.pressure_action).toLowerCase() !== 'none') showPressureMoment();
-          setCurrentQuestion(extractText(event), event);
-          if (voiceMode === 'L3') setStage('listening', '轮到你回答', '请在输入框中作答，Enter 发送。');
+          const hasQuestion = setCurrentQuestion(extractText(event), event);
+          answerPending = false;
+          if (!hasQuestion) questionReady = false;
+          setAnswerState(hasQuestion ? 'ready' : 'idle', { resetElapsed: true });
+          if (hasQuestion && (voiceMode === 'L3' || !interviewerVoiceEnabled)) {
+            setStage('listening', '可以开始回答', '准备好后点击“开始回答”，计时会从点击时开始。');
+          }
         }
       }
       break;
@@ -1271,6 +1514,7 @@ function handleServerEvent(event) {
       break;
     case 'input.speech_started':
       {
+        if (answerState !== 'answering') break;
         expectCandidateAudio(true);
         const interruptedPlayback = outputLevel > .02;
         invalidateAudioPlayback();
@@ -1308,7 +1552,8 @@ function handleServerEvent(event) {
       setStage('speaking', '压力情境进行中', '先给结论，再补充依据与边界。');
       break;
     case 'audio.chunk': {
-      if (!audio || voiceMode === 'L3') break;
+      noteInterviewerAudioStream();
+      if (!audio || !canPlayInterviewerAudio()) break;
       const format = String(event.format || 'pcm_s16le').toLowerCase();
       if (!['pcm_s16le', 'pcm16', 'pcm'].includes(format)) {
         showToast(`暂不支持音频格式 ${format}`, 'error');
@@ -1319,19 +1564,26 @@ function handleServerEvent(event) {
       break;
     }
     case 'audio.file': {
+      noteInterviewerAudioStream();
       const epoch = audioEpoch;
       audioFileQueue = audioFileQueue.then(() => handleAudioFile(event, epoch));
       break;
     }
     case 'audio.clear':
       invalidateAudioPlayback();
+      interviewerAudioStreamActive = false;
+      interviewerAudioSuppressedUntilStreamEnd = false;
       break;
-    case 'audio.stream.done':
+    case 'audio.stream.done': {
+      const shouldPlayMarker = Boolean(audio && canPlayInterviewerAudio());
+      interviewerAudioStreamActive = false;
+      interviewerAudioSuppressedUntilStreamEnd = false;
       audioFileQueue.finally(() => {
-        if (audio && voiceMode !== 'L3') audio.markPlaybackEnd(event.announcement_id);
+        if (shouldPlayMarker && audio) audio.markPlaybackEnd(event.announcement_id);
         else sendJson({ type: 'audio.playback.done', announcement_id: event.announcement_id });
       });
       break;
+    }
     case 'timer.sync':
       syncTimer(event);
       break;
@@ -1352,11 +1604,36 @@ function handleServerEvent(event) {
         setStage('thinking', '压力情境进行中', '保持冷静，检查结论、依据和边界是否完整。');
       }
       else if (event.state === 'listening') {
-        expectCandidateAudio(true);
         setAnswerPending(false);
-        setStage('listening', '轮到你回答', '请给出具体链路、数据口径和技术取舍。');
+        if (currentQuestion && questionReady && answerState === 'idle') setAnswerState('ready');
+        if (answerState === 'answering') {
+          setStage('listening', '正在听你回答', '讲完后请点击“结束回答”。');
+        } else if (answerState === 'ready') {
+          setStage('listening', '可以开始回答', '准备好后点击“开始回答”，计时会从点击时开始。');
+        }
       }
       break;
+    case 'answer.state.changed': {
+      const state = String(event.state || '').toLowerCase();
+      if (state === 'answering') {
+        answerStartAwaitingAck = false;
+        answerPending = false;
+        if (answerState !== 'sealing') {
+          setAnswerState('answering', { elapsedMs: event.elapsed_ms });
+        }
+      } else if (state === 'sealing') {
+        answerStartAwaitingAck = false;
+        answerPending = true;
+        setAnswerState('sealing', { elapsedMs: event.elapsed_ms });
+      } else if (state === 'idle') {
+        answerPending = false;
+        setAnswerState(
+          questionReady && currentQuestion ? 'ready' : 'idle',
+          { elapsedMs: event.elapsed_ms },
+        );
+      }
+      break;
+    }
     case 'interview.ended':
       handleEnded(event);
       break;
@@ -1366,6 +1643,13 @@ function handleServerEvent(event) {
       break;
     case 'error':
       showToast(event.message || event.error || '面试服务发生错误。', 'error', 5500);
+      if (answerStartAwaitingAck && event.recoverable !== false) {
+        answerStartAwaitingAck = false;
+        answerPending = false;
+        questionReady = Boolean(currentQuestion);
+        setAnswerState(questionReady ? 'ready' : 'idle', { resetElapsed: true });
+        setStage('listening', '可以重新开始回答', '服务端没有接受刚才的开始操作，请再试一次。');
+      }
       if (/TRANSCRIPT|CORRECTION|TURN_|REPORT_ALREADY/i.test(String(event.code || ''))) {
         const itemId = String(event.item_id || event.itemId || '');
         const pendingEntry = itemId && pendingTranscriptCorrections.has(itemId)
@@ -1379,7 +1663,10 @@ function handleServerEvent(event) {
         }
         if (pendingEntry?.[0]) pendingTranscriptCorrections.delete(pendingEntry[0]);
       }
-      if (['EMPTY_ANSWER', 'ANSWER_FAILED', 'INTERVIEW_TIMEOUT'].includes(event.code)) setAnswerPending(false);
+      if (['EMPTY_ANSWER', 'ANSWER_FAILED', 'ANSWER_NOT_STARTED', 'ANSWER_TRANSCRIPT_EMPTY', 'INTERVIEW_TIMEOUT'].includes(event.code)) {
+        setAnswerPending(false);
+        if (phase === 'live' && currentQuestion) setAnswerState('ready');
+      }
       if (event.fatal) {
         intentionallyClosed = true;
         phase = 'error';
@@ -1447,9 +1734,11 @@ function connectSocket() {
         showToast('收到无法解析的服务端消息。', 'error');
       }
     } else if (data instanceof ArrayBuffer && audio && voiceMode !== 'L3') {
-      audio.enqueuePCM(data, 16000);
+      noteInterviewerAudioStream();
+      if (canPlayInterviewerAudio()) audio.enqueuePCM(data, 16000);
     } else if (data instanceof Blob && audio && voiceMode !== 'L3') {
-      audio.enqueuePCM(await data.arrayBuffer(), 16000);
+      noteInterviewerAudioStream();
+      if (canPlayInterviewerAudio()) audio.enqueuePCM(await data.arrayBuffer(), 16000);
     }
   });
   socket.addEventListener('error', () => setConnection('warning', '连接波动'));
@@ -1499,12 +1788,23 @@ async function joinInterview() {
 
 async function finishInterview(reason = 'manual') {
   if (localFinishSent || ['ending', 'ended'].includes(phase)) return;
+  if (answerState === 'ready' && elements.messageInput.value.trim()) {
+    startCurrentAnswer();
+    if (answerState !== 'answering') return;
+  }
+  if (answerState === 'answering') {
+    const sealed = finishCurrentAnswer({ allowEmpty: true });
+    if (!sealed) return;
+  }
   localFinishSent = true;
   phase = 'ending';
   elements.messageInput.disabled = true;
   elements.send.disabled = true;
   elements.endButton.disabled = true;
   elements.hintButton.disabled = true;
+  clearInterval(answerClockTimer);
+  answerClockTimer = 0;
+  elements.answerControl.classList.add('is-hidden');
   disableMicrophoneCapture({ explicit: true, notify: true });
   invalidateAudioPlayback();
   setConnection('warning', '正在结束');
@@ -1544,21 +1844,10 @@ async function finishInterview(reason = 'manual') {
 
 function submitText(event) {
   event.preventDefault();
-  if (phase !== 'live' || answerPending) return;
+  if (phase !== 'live' || answerPending || answerState !== 'answering') return;
   const text = elements.messageInput.value.trim();
-  if (!text) return;
-  if (!sendJson({ type: 'user.text', text })) {
-    showToast('连接尚未恢复，回答暂未发送。', 'error');
-    return;
-  }
-  setAnswerPending(true);
-  questionReady = false;
-  updateHintAvailability();
-  lastTyped = { text, at: Date.now() };
-  setLiveTranscript('final', '文字回答已提交', text, 1600);
-  elements.messageInput.value = '';
-  elements.messageInput.rows = 1;
-  setStage('thinking', '面试官正在思考', '回答结束后不会即时点评。');
+  if (text) lastTyped = { text, at: Date.now() };
+  finishCurrentAnswer();
 }
 
 async function toggleMicrophone() {
@@ -1658,8 +1947,11 @@ async function initialize() {
 
   const company = interview?.company || storedSession?.company || 'bytedance';
   const specialization = String(interview?.specialization || storedSession?.specialization || '通用后端').trim();
+  const interviewType = (interview?.interview_type || storedSession?.interview_type) === 'technical_hr'
+    ? '技术 / 综合面'
+    : '技术面';
   const stressLevel = getStressLevel();
-  elements.company.textContent = `${companyLabel(company)} · ${specialization}一面`;
+  elements.company.textContent = `${companyLabel(company)} · ${specialization} · ${interviewType}`;
   elements.stress.classList.toggle('is-hidden', stressLevel === 0);
   elements.stress.dataset.level = String(stressLevel);
   elements.stress.setAttribute('aria-label', stressLevel > 0 ? `压力面强度 ${stressLevel}/3，已启用` : '无压力面');
@@ -1673,6 +1965,7 @@ async function initialize() {
   }
   phase = 'ready';
   if (voiceMode !== 'L3') await refreshMicrophoneDevices();
+  renderInterviewerVoicePreference();
   $('span', elements.join).textContent = ['active', 'live', 'running'].includes(status) ? '重新加入面试' : (voiceMode === 'L3' ? '开始文字面试' : '开启麦克风并开始');
   elements.readyDescription.textContent = ['active', 'live', 'running'].includes(status) ? '这场面试仍在进行，可以继续加入。' : '点击后将建立面试连接。';
   elements.join.disabled = false;
@@ -1680,6 +1973,8 @@ async function initialize() {
 }
 
 elements.join.addEventListener('click', joinInterview);
+elements.startAnswer.addEventListener('click', startCurrentAnswer);
+elements.endAnswer.addEventListener('click', () => finishCurrentAnswer());
 elements.messageForm.addEventListener('submit', submitText);
 elements.messageInput.addEventListener('keydown', (event) => {
   if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
@@ -1708,6 +2003,7 @@ elements.transcript.addEventListener('submit', (event) => {
   submitTranscriptCorrection(form);
 });
 elements.micToggle.addEventListener('click', toggleMicrophone);
+elements.interviewerVoiceToggle.addEventListener('click', toggleInterviewerVoice);
 elements.microphoneSelect.addEventListener('change', switchMicrophoneDevice);
 elements.rawCaptureToggle.addEventListener('change', switchMicrophoneDevice);
 elements.hintButton.addEventListener('click', requestHint);
@@ -1732,6 +2028,7 @@ window.addEventListener('pagehide', () => {
   clearInterval(heartbeatTimer);
   clearInterval(timerInterval);
   clearInterval(captureWatchdogTimer);
+  clearInterval(answerClockTimer);
   clearTimeout(liveTranscriptTimer);
   disableMicrophoneCapture({ explicit: true, notify: true });
   socket?.close();

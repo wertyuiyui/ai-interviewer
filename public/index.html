@@ -7,6 +7,7 @@
     <meta name="description" content="面向中国本科生的大厂后端实习一面 AI 陪练。">
     <title>砺面 · AI 技术面试陪练</title>
     <link rel="stylesheet" href="/assets/app.css">
+    <link rel="stylesheet" href="/assets/home-hardware.css?v=20260830-interview-flow">
   </head>
   <body class="home-page">
     <header class="site-header">
@@ -22,7 +23,7 @@
 
     <main class="home-shell">
       <section class="hero" aria-labelledby="heroTitle">
-        <div class="eyebrow"><span></span> 后端实习 · 技术一面</div>
+        <div class="eyebrow"><span></span> 后端实习 · 模拟一面</div>
         <h1 id="heroTitle">把每次答不上来，<br><em>练成下一次的底气。</em></h1>
         <p class="hero-copy">上传简历，选一家公司。AI 面试官会沿着你的项目连续下钻，结束后告诉你每一分具体扣在哪里。</p>
 
@@ -78,6 +79,13 @@
 
           <fieldset class="form-section compact-section">
             <legend><span>3</span> 面试设置</legend>
+            <div class="setting-row interview-type-row">
+              <div class="setting-copy"><strong>面试类型</strong><small id="interviewTypeHint">聚焦项目、实习、技术基础与口述解题思路</small></div>
+              <div class="segmented interview-type-segmented" role="radiogroup" aria-label="面试类型">
+                <label><input type="radio" name="interview_type" value="technical" checked><span>技术面</span></label>
+                <label><input type="radio" name="interview_type" value="technical_hr"><span>技术 + 综合（HR）</span></label>
+              </div>
+            </div>
             <div class="setting-row setting-row-stacked">
               <div class="setting-copy"><strong>岗位细分方向</strong><small>岗位固定为后端开发，可按目标技术栈定制追问</small></div>
               <div class="setting-control specialization-control">
@@ -108,7 +116,7 @@
               </div>
             </div>
             <div class="setting-row setting-row-stacked">
-              <div class="setting-copy"><strong>压力程度</strong><small id="stressHint">标准施压：质疑、打断、沉默与连续追问</small></div>
+              <div class="setting-copy"><strong>压力程度</strong><small id="stressHint">标准施压：针对模糊、矛盾和技术漏洞连续下钻</small></div>
               <div class="segmented level-segmented" role="radiogroup" aria-label="压力面程度">
                 <label><input type="radio" name="stress_level" value="0"><span>关闭</span></label>
                 <label><input type="radio" name="stress_level" value="1"><span>温和</span></label>
@@ -141,12 +149,37 @@
             <div class="inline-alert is-hidden" id="settingsAlert" role="alert"></div>
           </fieldset>
 
+          <fieldset class="form-section hardware-test-section">
+            <legend><span>4</span> 入场前检查 <small>可选</small></legend>
+            <div class="hardware-test-card" id="hardwareTestCard" data-state="idle">
+              <div class="hardware-test-header">
+                <div class="hardware-test-status">
+                  <i aria-hidden="true"></i>
+                  <span><strong id="hardwareTestStatus" role="status" aria-live="polite">麦克风尚未测试</strong><small id="hardwareTestDevice">点击测试后才会请求麦克风权限</small></span>
+                </div>
+                <button class="hardware-test-button" id="hardwareTestButton" type="button" aria-pressed="false">
+                  <span>测试麦克风与转写</span>
+                </button>
+              </div>
+              <div class="hardware-input-row">
+                <span>输入电平</span>
+                <div class="hardware-input-meter" id="hardwareInputMeter" role="progressbar" aria-label="麦克风输入电平" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+                <small id="hardwareTestCountdown">最长 30 秒</small>
+              </div>
+              <div class="hardware-transcript" id="hardwareTranscript" data-empty="true">
+                <small>实时转写</small>
+                <p aria-live="polite">开启测试后说一句话，例如：“我负责过一个高并发秒杀项目。”</p>
+              </div>
+            </div>
+            <p class="hardware-privacy-note">测试语音只用于即时检查，不计入面试或报告；关闭测试后会释放麦克风。</p>
+          </fieldset>
+
           <button class="primary-button start-button" id="startButton" type="submit"><span class="button-label">开始模拟面试</span><span class="button-arrow" aria-hidden="true">→</span></button>
           <p class="submit-note">无论是否开启记忆，本场都会生成可查看的报告；记忆开关只影响后续弱项加权。</p>
         </form>
       </section>
     </main>
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-    <script type="module" src="/js/home.js?v=20260830-hide-internals"></script>
+    <script type="module" src="/js/home.js?v=20260830-interview-flow"></script>
   </body>
 </html>

@@ -377,6 +377,9 @@ function normalizeReport(raw, metadata = {}) {
     id,
     company: firstValue(report, ['company'], firstValue(metadata, ['company'], '')),
     role: firstValue(report, ['role'], firstValue(metadata, ['role'], 'backend')),
+    interviewType: firstValue(report, ['interview_type'], firstValue(metadata, ['interview_type'], 'technical')) === 'technical_hr'
+      ? 'technical_hr'
+      : 'technical',
     specialization: String(firstValue(report, ['specialization'], firstValue(metadata, ['specialization'], '通用后端')) || '通用后端'),
     languageMode: firstValue(report, ['language_mode'], firstValue(metadata, ['language_mode'], 'bilingual')) === 'zh' ? 'zh' : 'bilingual',
     stress: stressLevel > 0,
@@ -731,14 +734,15 @@ function renderCompanyInsights(report) {
 
 function renderCurrent(report) {
   currentReport = report;
-  $('#reportTitle').textContent = `${companyLabel(report.company)} · ${report.specialization}一面报告`;
+  const interviewTypeLabel = report.interviewType === 'technical_hr' ? '技术 / 综合面' : '技术面';
+  $('#reportTitle').textContent = `${companyLabel(report.company)} · ${report.specialization} · ${interviewTypeLabel}报告`;
   const pressureLabels = ['无压力', '温和压力', '标准压力', '高压'];
   const durationLabel = report.unlimited ? '不限时 · 手动结束' : (report.duration ? `${report.duration} 分钟` : '');
   const memoryLabel = report.scored
     ? (report.memoryEnabled ? '参与弱项记忆' : '未参与弱项记忆')
     : '数据不足 · 不写入弱项记忆';
   const languageLabel = report.languageMode === 'zh' ? '全程中文' : '中英双语';
-  const tags = [formatDate(report.endedAt), durationLabel, pressureLabels[report.stressLevel], languageLabel, memoryLabel].filter(Boolean);
+  const tags = [formatDate(report.endedAt), interviewTypeLabel, durationLabel, pressureLabels[report.stressLevel], languageLabel, memoryLabel].filter(Boolean);
   $('#reportMeta').textContent = tags.join(' · ');
   $('#reportSummary').textContent = report.summary;
   const hasOverallScore = report.scored && report.scoreCoverage > 0 && Number.isFinite(report.overall);
@@ -951,7 +955,7 @@ function renderHistoryList() {
     const copy = createElement('div', 'history-copy');
     const durationLabel = report.unlimited ? '不限时' : (report.duration ? `${report.duration} 分钟` : '');
     copy.append(
-      createElement('strong', '', `${companyLabel(report.company)} · ${report.specialization}一面`),
+      createElement('strong', '', `${companyLabel(report.company)} · ${report.specialization} · ${report.interviewType === 'technical_hr' ? '技术 / 综合面' : '技术面'}`),
       createElement('small', '', `${formatDate(report.endedAt)}${durationLabel ? ` · ${durationLabel}` : ''}${hasScore ? '' : ' · 数据不足'}`),
     );
     const tags = createElement('div', 'history-tags');
@@ -1039,6 +1043,7 @@ async function loadCurrentReport() {
         cacheReport({
           ...enriched,
           company: currentReport.company,
+          interview_type: currentReport.interviewType,
           specialization: currentReport.specialization,
           language_mode: currentReport.languageMode,
           stress: currentReport.stress,
@@ -1127,6 +1132,7 @@ async function retryWeaknesses() {
       client_id: getClientId(),
       company: session?.company || currentReport.company,
       role: session?.role || currentReport.role || 'backend',
+      interview_type: session?.interview_type || currentReport.interviewType || 'technical',
       specialization: session?.specialization || currentReport.specialization,
       memory_enabled: true,
       created_at: session?.created_at || new Date().toISOString(),
