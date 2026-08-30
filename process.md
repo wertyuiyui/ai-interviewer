@@ -47,6 +47,14 @@
 - 验证：隔离提交全量 `259 passed`；部署后本机 8000、正式域名 HTTPS 443 和 3000 的 `/healthz` 均返回 `{"status":"ok"}`，服务为 `active`，生产根目录、`.env`、`data/` 权限分别保持 0755、0640 `root:interview`、0750 `interview:interview`。移除当前 shell 无效 SOCKS 代理后，以生产 `qwen3.8-flash` 真实解析两份仓库内完全虚构简历：电商样例为教育 1、实习 1（2 条完整职责）、项目 1（4 条完整职责）；云原生样例将“实验室微服务可观测平台｜基础架构开发”保持为一个项目并识别 role，两个项目分别保留 4/2 条完整职责，未把求职目标误建为实习。
 - 回滚与风险：发布前代码包为 `/tmp/ai-interviewer-mvp-pre-4005e3f-20260830.tar.gz`，不含密钥、数据库、虚拟环境和依赖。已有保存简历不会后台付费重写，用户需点击“重新识别”；真实探测首次受当前 shell 的 SOCKS 代理依赖缺失影响，未触达模型，移除代理后复测成功，线上服务自身未受影响。
 
+### DEPLOY-020 · 2026-08-30 · 取消每日练习次数限制生产发布
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：将独立功能提交 `7e4a5f6` 推送至已授权的 GitHub `origin/main`，再用该固定提交的 `git archive` 隔离快照同步至 `/opt/ai-interviewer-mvp`。本次发布没有带入当时共享工作区中的简历识别、报告页或其测试改动；保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/`，只重启 `ai-interviewer-3000.service`。随后发布的 `4005e3f` 以该提交为祖先，继续包含本功能。
+- 验证：发布前全量 `259 passed`；服务最终为 `active`，主进程 PID `759647`；本机 8000、正式域名 HTTPS 443 和 3000 的 `/healthz` 均返回 `{"status":"ok"}`；线上 `/api/config` 已无每日上限字段，生产创建链路已无 `ensure_budget_available`、`DAILY_BUDGET_LIMIT` 或 `CLIENT_DAILY_LIMIT`。生产根目录、`.env`、`data/` 权限分别保持 0755、0640、0750。
+- 回滚与风险：回滚包为 `/tmp/ai-interviewer-mvp-pre-7e4a5f6-20260830.tar.gz`，不含密钥、数据库和依赖。练习次数不再承担费用保险丝，需继续使用百炼控制台用量告警；本轮未重启 Caddy 或其它服务。
+
 ### PROFILE-006 · 2026-08-30 · 简历条目完整识别与学段结构化
 
 - Agent：`/root`。
