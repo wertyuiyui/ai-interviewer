@@ -27,17 +27,24 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`455d855`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`e0e09d6`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、English
-- 当前已部署功能的全量验证基线：`274 passed`
+- 当前已部署功能的全量验证基线：`275 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-037 · 2026-08-30 · 面试错题与对应单项优先练习生产发布
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：固定提交 `e0e09d6` 已推送至 GitHub `origin/main`，并以 `git archive` 生成隔离发布快照同步到 `/opt/ai-interviewer-mvp`。同步前创建不含密钥、数据库、虚拟环境和依赖的回滚包 `/tmp/ai-interviewer-mvp-pre-e0e09d6-20260830.tar.gz`；部署保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 与缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 验证：GitHub `refs/heads/main` 为完整 SHA `e0e09d6fd41e210d301fa76f569a4675eb96ea24`；生产 `app/db.py`、`public/js/coding.js` 与固定快照 SHA-256 一致，根目录保持 `0755`，`.env`、SQLite 数据和依赖目录均保留。服务为 `active/running`，主进程 PID `914373`；本机 8000、正式域名 SNI 直连 Caddy 的 HTTPS 443 与 3000 均返回 `{"status":"ok"}`。生产 SQLite 已存在 `interview_mistakes_v1` 迁移标记，错题表可读；以无历史数据的合法测试 client 调用 `/api/coding/catalog` 返回 8 道策展题、0 道测试错题，确认新匿名错题参数兼容且未写生产数据。
+- 回滚与风险：回滚代码包如上，发布前生产健康基线正常。历史回填只读既有报告/turn 并幂等插入错题；损坏报告不会阻断服务。手撕原题缺失函数契约时使用明确的通用澄清/实现流程，不伪造样例；项目名无法精确归属时只保留在错题本，不猜测性插入项目页。
 
 ### PRACTICE-106 · 2026-08-30 · 面试错题自动入本与对应单项优先练习
 
