@@ -133,6 +133,32 @@ async def test_unknown_in_fundamentals_skips_followup_not_whole_interview(tmp_pa
 
 
 @pytest.mark.asyncio
+async def test_unknown_in_hr_stage_moves_to_next_question(tmp_path) -> None:
+    settings = replace(get_settings(), mock_llm=True, db_path=tmp_path / "unknown-hr.db")
+    database = Database(settings)
+    await database.initialize()
+    engine = InterviewEngine(database, settings)
+    created = await engine.create(
+        InterviewCreate(
+            client_id="unknown-hr-client-001",
+            company="tencent",
+            interview_type="hr",
+            language_mode="zh",
+            resume=ResumeData(),
+        )
+    )
+    await database.start_interview(created["id"])
+    fit = await engine.answer(created["id"], "我是计算机专业学生，希望提升工程能力。")
+
+    skipped = await engine.answer(
+        created["id"], "我不知道，请继续下一题", control_intent="unknown"
+    )
+
+    assert skipped.stage["current"]["id"] == "career_planning"
+    assert skipped.question != fit.question
+
+
+@pytest.mark.asyncio
 async def test_hr_plan_never_emits_technical_or_coding_stage(tmp_path) -> None:
     settings = replace(get_settings(), mock_llm=True, db_path=tmp_path / "hr-stage.db")
     database = Database(settings)

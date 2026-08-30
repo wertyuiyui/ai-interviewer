@@ -745,6 +745,14 @@ class InterviewEngine:
         }
         if project_ownership_correction:
             next_stage_state["turn_count"] = 0
+        if (
+            (explicit_unknown or unknown_control)
+            and current_stage in {"fundamentals", *HR_STAGE_INDEX}
+            and next_stage_state["turn_count"] % 2 == 1
+        ):
+            # Skip both the current reviewed opener and its pending follow-up
+            # before deciding whether this also completes the stage.
+            next_stage_state["turn_count"] += 1
         should_advance_stage = False
         stage_reason = "coverage"
         if project_ownership_correction:
@@ -777,16 +785,6 @@ class InterviewEngine:
 
         if needs_clarification:
             should_advance_stage = False
-
-        if (
-            (explicit_unknown or unknown_control)
-            and current_stage in {"fundamentals", *HR_STAGE_INDEX}
-            and not should_advance_stage
-            and next_stage_state["turn_count"] % 2 == 1
-        ):
-            # “我不知道” skips the pending follow-up for this topic. It must
-            # never result in the same reviewed opener being asked again.
-            next_stage_state["turn_count"] += 1
 
         if should_advance_stage:
             next_stage_state = self._next_stage_state(
