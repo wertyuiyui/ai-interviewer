@@ -25,6 +25,7 @@ from .prompt_engine import (
     initial_question,
     interview_drill_target,
     is_internal_interview_instruction,
+    is_obvious_placeholder_answer,
     is_vague_answer,
     project_followup,
     select_questions,
@@ -720,6 +721,9 @@ class InterviewEngine:
         }
         decision = await self._decide(decision_interview, resume, turns, answer)
         vague_answer = is_vague_answer(answer)
+        obvious_non_answer = is_obvious_placeholder_answer(answer) or re.sub(
+            r"[\s，。！？,.!?]", "", answer
+        ).casefold() in {"hello", "hi", "hey", "你好", "您好"}
         explicit_unknown = self._explicit_unknown(answer)
         unknown_control = control_intent == "unknown"
         project_ownership_correction = self._explicit_project_ownership_correction(
@@ -727,7 +731,7 @@ class InterviewEngine:
         )
         explicit_resume_mismatch = self._explicit_resume_mismatch(answer)
         needs_clarification = (
-            vague_answer
+            obvious_non_answer
             and not explicit_unknown
             and not unknown_control
             and not project_ownership_correction
@@ -1721,7 +1725,11 @@ class InterviewEngine:
                     else "语音时长仅作表达节奏参考，不单独决定得分。"
                 ),
             },
-            "instruction": "完成私有评分并生成下一问。只输出 JSON。",
+            "instruction": (
+                "先结合当前问题、最近问答和简历事实理解候选人实际表达；"
+                "简短但相关的回答也要自然承接，只有明确无关时才澄清。"
+                "完成私有评分并生成下一问。只输出 JSON。"
+            ),
         }
         try:
             raw = await self.client.chat_json(

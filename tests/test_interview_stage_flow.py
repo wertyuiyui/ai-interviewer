@@ -152,6 +152,34 @@ async def test_manual_stage_advance_persists_without_fake_turn(tmp_path) -> None
 
 
 @pytest.mark.asyncio
+async def test_short_relevant_answer_is_followed_up_in_context(tmp_path) -> None:
+    settings = replace(get_settings(), mock_llm=True, db_path=tmp_path / "short-answer.db")
+    database = Database(settings)
+    await database.initialize()
+    engine = InterviewEngine(database, settings)
+    created = await engine.create(
+        InterviewCreate(
+            client_id="short-answer-client-001",
+            company="tencent",
+            interview_type="technical",
+            language_mode="zh",
+            resume=ResumeData(项目=[Project(name="订单系统", role="后端开发")]),
+        )
+    )
+    await database.start_interview(created["id"])
+    await engine.advance_stage(created["id"], expected_revision=created["stage"]["revision"])
+
+    answered = await engine.answer(created["id"], "用Redis")
+
+    assert answered.stage["current"]["id"] == "project_deep_dive"
+    assert "Redis" in answered.question
+    assert "没有听到" not in answered.question
+    current = await database.get_interview(created["id"])
+    assert current is not None
+    assert current["stage_state"]["turn_count"] == 1
+
+
+@pytest.mark.asyncio
 async def test_unknown_in_fundamentals_skips_followup_not_whole_interview(tmp_path) -> None:
     settings = replace(get_settings(), mock_llm=True, db_path=tmp_path / "unknown-topic.db")
     database = Database(settings)
