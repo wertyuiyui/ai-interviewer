@@ -209,11 +209,10 @@
               </div>
             </div>
             <div class="setting-row language-row">
-              <div class="setting-copy"><strong>面试语言</strong><small id="languageHint">中英双语会保留常用英文术语，并可能追问英文表达</small></div>
+              <div class="setting-copy"><strong>面试语言</strong><small id="languageHint">中文面试中，必要的技术术语可以使用英文或缩写</small></div>
               <div class="segmented language-segmented" role="radiogroup" aria-label="面试语言">
-                <label><input type="radio" name="language_mode" value="zh"><span>全程中文</span></label>
-                <label><input type="radio" name="language_mode" value="bilingual" checked><span>中英双语</span></label>
-                <label><input type="radio" name="language_mode" value="en"><span>Pure English</span></label>
+                <label><input type="radio" name="language_mode" value="zh" checked><span>中文</span></label>
+                <label><input type="radio" name="language_mode" value="en"><span>English</span></label>
               </div>
             </div>
             <div class="setting-row setting-row-stacked">
@@ -288,6 +287,6 @@
       </section>
     </main>
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-    <script type="module" src="/js/home.js?v=20260830-resume-merge-v1"></script>
+    <script type="module" src="/js/home.js?v=20260830-language-v1"></script>
   </body>
 </html>

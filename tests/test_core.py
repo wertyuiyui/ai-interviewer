@@ -1413,6 +1413,7 @@ async def test_three_layer_drill_early_end_report_and_memory(tmp_path) -> None:
         15,
         "通用后端",
         selection_seed=normal["id"],
+        language_mode=normal["language_mode"],
     )
     reviewed_fundamentals = [
         item

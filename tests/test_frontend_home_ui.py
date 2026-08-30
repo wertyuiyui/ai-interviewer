@@ -80,7 +80,7 @@ def test_home_can_create_a_persistent_microphone_free_text_interview() -> None:
     assert 'name="answer_mode" value="voice"' in html
     assert 'name="answer_mode" value="text"' in html
     assert 'id="hardwareTestSection"' in html
-    assert "/js/home.js?v=20260830-resume-merge-v1" in html
+    assert "/js/home.js?v=20260830-language-v1" in html
     assert "function getAnswerMode()" in home
     assert "serverMode === 'L3' ? 'text' : preferredAnswerMode" in home
     assert home.count("answer_mode: answerMode") == 2

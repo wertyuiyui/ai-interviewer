@@ -127,7 +127,7 @@ async def test_hint_memory_opt_out_and_owned_retry(tmp_path, monkeypatch) -> Non
         created = created_response.json()
         interview_id = created["id"]
         assert created["memory_enabled"] is False
-        assert created["language_mode"] == "bilingual"
+        assert created["language_mode"] == "zh"
         assert created["weak_topics"] == []
 
         before_start = await client.post(f"/api/interviews/{interview_id}/hint")
@@ -208,7 +208,7 @@ async def test_hint_memory_opt_out_and_owned_retry(tmp_path, monkeypatch) -> Non
         retry = retry_response.json()
         assert retry["retry_of"] == interview_id
         assert retry["memory_enabled"] is True
-        assert retry["language_mode"] == "bilingual"
+        assert retry["language_mode"] == "zh"
         assert retry["weak_topics"]
         source_row = await database.get_interview(interview_id)
         retry_row = await database.get_interview(retry["id"])

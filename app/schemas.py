@@ -83,7 +83,7 @@ class InterviewCreate(BaseModel):
     # Keep the original technical interview as the compatibility default.
     interview_type: InterviewType = "technical"
     specialization: str = Field(default="通用后端", min_length=1, max_length=80)
-    language_mode: Literal["zh", "bilingual", "en"] = "bilingual"
+    language_mode: Literal["zh", "en"] = "zh"
     # Candidate input is selected per interview. Text sessions deliberately
     # reuse the durable L3 path so reconnects never start microphone capture.
     answer_mode: Literal["voice", "text"] = "voice"

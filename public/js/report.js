@@ -384,9 +384,7 @@ function normalizeReport(raw, metadata = {}) {
       ? firstValue(report, ['interview_type'], firstValue(metadata, ['interview_type'], 'technical'))
       : 'technical',
     specialization: String(firstValue(report, ['specialization'], firstValue(metadata, ['specialization'], '通用后端')) || '通用后端'),
-    languageMode: ['zh', 'bilingual', 'en'].includes(
-      firstValue(report, ['language_mode'], firstValue(metadata, ['language_mode'], 'bilingual')),
-    ) ? firstValue(report, ['language_mode'], firstValue(metadata, ['language_mode'], 'bilingual')) : 'bilingual',
+    languageMode: firstValue(report, ['language_mode'], firstValue(metadata, ['language_mode'], 'zh')) === 'en' ? 'en' : 'zh',
     stress: stressLevel > 0,
     stressLevel,
     unlimited: durationRaw === null,
@@ -758,9 +756,7 @@ function renderCurrent(report) {
   const memoryLabel = report.scored
     ? (report.memoryEnabled ? '参与弱项记忆' : '未参与弱项记忆')
     : '数据不足 · 不写入弱项记忆';
-  const languageLabel = report.languageMode === 'zh'
-    ? '全程中文'
-    : report.languageMode === 'en' ? 'Pure English' : '中英双语';
+  const languageLabel = report.languageMode === 'en' ? 'English' : '中文';
   const tags = [formatDate(report.endedAt), interviewTypeLabel, durationLabel, pressureLabels[report.stressLevel], languageLabel, memoryLabel].filter(Boolean);
   $('#reportMeta').textContent = tags.join(' · ');
   $('#reportSummary').textContent = report.summary;

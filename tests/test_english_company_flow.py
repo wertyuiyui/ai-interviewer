@@ -101,6 +101,18 @@ def test_company_schema_is_extensible_but_rejects_unknown_slugs() -> None:
     )
     assert request.company == "alibaba"
     assert request.language_mode == "en"
+    assert InterviewCreate(
+        client_id="default-language-client",
+        company="alibaba",
+        resume=sample_resume(),
+    ).language_mode == "zh"
+    with pytest.raises(ValidationError):
+        InterviewCreate(
+            client_id="removed-bilingual-client",
+            company="alibaba",
+            language_mode="bilingual",
+            resume=sample_resume(),
+        )
     with pytest.raises(ValidationError):
         InterviewCreate(
             client_id="unknown-company-client",
@@ -117,9 +129,13 @@ def test_home_and_report_preserve_six_companies_and_english_mode() -> None:
     for company, label in SUPPORTED.items():
         assert f'name="company" value="{company}"' in html
         assert label in common
-    assert 'name="language_mode" value="en"' in html
-    assert "['zh', 'bilingual', 'en'].includes" in home
-    assert "report.languageMode === 'en' ? 'Pure English'" in report
+    assert html.count('name="language_mode"') == 2
+    assert '<span>中文</span>' in html
+    assert '<span>English</span>' in html
+    assert 'value="bilingual"' not in html
+    assert "['zh', 'en'].includes" in home
+    assert "必要的技术术语可以使用英文或缩写" in home
+    assert "report.languageMode === 'en' ? 'English' : '中文'" in report
 
 
 def test_pure_english_prompt_applies_company_skill_and_hides_provenance() -> None:

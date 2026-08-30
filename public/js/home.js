@@ -61,8 +61,7 @@ const interviewTypeHints = {
   technical_hr: '技术考察后继续聊价值观、职业选择、规划与薪酬期待',
 };
 const languageModeHints = {
-  zh: '全程使用中文，常见英文技术术语会保留原文',
-  bilingual: '中英双语会保留常用英文术语，并可能追问英文表达',
+  zh: '中文面试中，必要的技术术语可以使用英文或缩写',
   en: '面试官的开场、技术追问、综合题与结束语都只使用英文',
 };
 
@@ -607,11 +606,11 @@ function setStressLevel(level) {
 
 function getLanguageMode() {
   const value = $('input[name="language_mode"]:checked')?.value;
-  return ['zh', 'bilingual', 'en'].includes(value) ? value : 'bilingual';
+  return ['zh', 'en'].includes(value) ? value : 'zh';
 }
 
 function setLanguageMode(mode) {
-  const normalized = ['zh', 'bilingual', 'en'].includes(mode) ? mode : 'bilingual';
+  const normalized = ['zh', 'en'].includes(mode) ? mode : 'zh';
   const target = $(`input[name="language_mode"][value="${normalized}"]`);
   if (target) target.checked = true;
   $('#languageHint').textContent = languageModeHints[normalized];

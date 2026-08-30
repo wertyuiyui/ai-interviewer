@@ -62,6 +62,10 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
             2,
             3,
         ]
+        assert config_payload["language_modes"] == [
+            {"id": "zh", "name": "中文"},
+            {"id": "en", "name": "English"},
+        ]
         assert [item["id"] for item in config_payload["interview_types"]] == [
             "technical",
             "hr",

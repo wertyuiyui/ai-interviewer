@@ -247,9 +247,8 @@ async def config() -> dict[str, Any]:
             {"level": 3, "name": "高压"},
         ],
         "language_modes": [
-            {"id": "zh", "name": "全程中文"},
-            {"id": "bilingual", "name": "中英双语"},
-            {"id": "en", "name": "Pure English"},
+            {"id": "zh", "name": "中文"},
+            {"id": "en", "name": "English"},
         ],
         "interview_types": [
             {"id": "technical", "name": "技术面"},

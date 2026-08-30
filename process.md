@@ -39,6 +39,15 @@
 
 ## 变更日志
 
+### INTERVIEW-014 · 2026-08-30 · 正式面试语言收敛为中文与 English
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：首页正式面试语言由“全程中文 / 中英双语 / Pure English”收敛为“中文 / English”，默认中文；创建接口只接受 `zh` 或 `en`，不再接受新的 `bilingual` 面试。中文说明明确允许 MySQL、Redis、gRPC 等必要英文术语和缩写，English 模式继续保持候选人可见内容全英文。报告只显示中文或 English，历史 `bilingual` 报告按中文展示；首页脚本版本已更新以避开浏览器旧缓存。
+- 实际文件：`app/schemas.py`、`app/main.py`、`public/index.html`、`public/js/home.js`、`public/js/report.js`、`tests/test_api.py`、`tests/test_core.py`、`tests/test_english_company_flow.py`、`tests/test_frontend_home_ui.py`、`tests/test_hint_memory_retry.py`、`README.md`、`process.md`。
+- 验证：最新远端隔离快照全量 `265 passed`；`node --check public/js/home.js`、`node --check public/js/report.js`、Python compileall 与 `git diff --check` 通过。回归覆盖配置接口仅返回两种语言、默认中文、`bilingual` 创建校验失败、首页仅两个选项、旧报告语言归并和复练沿用中文。
+- 风险或后续事项：本变更只收敛正式模拟面试的“面试语言”；`/practice` 快速刷题仍保留独立的中英题目组合筛选，不属于首页正式面试语言设置。共享工作区中的 `INTERVIEW-013` 计时改动未进入本隔离快照。
+
 ### DEPLOY-024 · 2026-08-30 · 简历职责指标片段去重生产发布
 
 - Agent：`/root`。
