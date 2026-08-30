@@ -19,7 +19,7 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
-| `INTERVIEW-005` | `/root`（只读协作：`real_flow_research`、`adaptive_engine_audit`、`phase_ui_audit`） | `in_progress` | 将面试改为可见、可跳过且按回答自适应的显式阶段流程；修复“不知道”继续追同项目；技术/技术综合/纯综合采用不同阶段计划 | `interview_skills/interviewer_core.json`, `app/db.py`, `app/interview_engine.py`, `app/main.py`, `app/prompt_engine.py`, `app/voice_session.py`, `public/interview.html`, `public/js/interview.js`, `public/assets/app.css`, `tests/test_interview_stage_flow.py`, `tests/test_interviewer_skill.py`, `tests/test_frontend_interview_controls.py`, `tests/test_frontend_audio_ui.py`, `tests/test_voice_session.py`, `references/REAL_INTERVIEW_STAGE_DESIGN.md`, `process.md` | 当前无业务文件冲突；子 Agent 只读。显式阶段状态不得用假回答污染报告，纯综合面不得包含八股或手撕 |
+| `INTERVIEW-005` | `/root`（只读协作：`real_flow_research`、`adaptive_engine_audit`、`phase_ui_audit`） | `in_progress` | 将面试改为可见、可跳过且按回答自适应的显式阶段流程；修复“不知道”继续追同项目；技术/技术综合/纯综合采用不同阶段计划 | `interview_skills/interviewer_core.json`, `app/db.py`, `app/interview_engine.py`, `app/main.py`, `app/prompt_engine.py`, `app/voice_session.py`, `public/interview.html`, `public/js/interview.js`, `public/assets/app.css`, `tests/test_interview_stage_flow.py`, `tests/test_interviewer_skill.py`, `tests/test_frontend_interview_controls.py`, `tests/test_frontend_audio_ui.py`, `tests/test_voice_session.py`, `tests/test_core.py`（仅阶段流断言）, `tests/test_english_company_flow.py`, `references/REAL_INTERVIEW_STAGE_DESIGN.md`, `process.md` | `tests/test_core.py` 同时含 `PROFILE-004` 未提交增量，提交时仅暂存本任务断言 hunk；子 Agent 只读。显式阶段状态不得用假回答污染报告，纯综合面不得包含八股或手撕 |
 
 登记模板：
 
@@ -28,17 +28,25 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`0985dcc`；GitHub `origin/main` 已包含该功能提交及对应部署记录
+- 当前生产已部署提交：`1e017f1`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、中英双语、纯英文
-- 当前已部署功能的全量验证基线：`242 passed`
+- 当前已部署功能的全量验证基线：`248 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-014 · 2026-08-30 · 多简历解析韧性修复生产发布
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：将固定提交 `1e017f1` 推送至用户已授权的 GitHub `origin/main`，以 `git archive 1e017f1` 生成隔离快照同步至 `/opt/ai-interviewer-mvp`。发布包只包含已提交的简历项目归并、实习恢复和批量逐份容错修复，未带入共享工作区仍在进行的 `INTERVIEW-005`、`HOME-002` 文件；生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 和 Caddy 配置均保留。
+- 验证：发布前隔离全量 `248 passed`；发布后 `ai-interviewer-3000.service` 为 `active`，新主进程 PID `708753`，本机 8000、正式域名 HTTPS 443 与 3000 的 `/healthz` 均返回 `{"status":"ok"}`；生产文件确认包含 `_deduplicate_projects`、`_extract_source_internships`、逐份失败列表和 `resume-batch-v3` 静态资源版本。
+- 风险或后续事项：回滚代码包为 `/tmp/ai-interviewer-mvp-pre-1e017f1-20260830.tar.gz`，不含密钥、数据库和依赖；本轮只重启目标应用服务，未重启 Caddy 或其它服务。已有简历需由用户点击“重新识别”应用新结构规则。
 
 ### HOME-003 · 2026-08-30 · 首页简历选择与上传入口美化
 
