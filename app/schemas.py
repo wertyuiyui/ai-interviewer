@@ -38,11 +38,13 @@ class Project(BaseModel):
     technologies: list[str] = Field(default_factory=list)
     highlights: list[str] = Field(default_factory=list)
     metrics: list[str] = Field(default_factory=list)
+    links: list[str] = Field(default_factory=list)
 
 
 class ResumeData(BaseModel):
     model_config = ConfigDict(populate_by_name=True, extra="ignore")
 
+    candidate_name: str = Field(default="", alias="姓名", max_length=100)
     education: list[Education] = Field(default_factory=list, alias="教育")
     internships: list[Experience] = Field(default_factory=list, alias="实习经历")
     projects: list[Project] = Field(default_factory=list, alias="项目")

@@ -5,6 +5,7 @@ import {
 
 const RESUME_SELECTION_KEY = 'mock_interview.profile_resume.v1';
 const state = { profile: { resumes: [], projects: [], selected_project_id: '' }, mistakes: [], interviews: [], practice: [] };
+let editingProjectId = '';
 
 function element(tag, className = '', text = '') {
   const node = document.createElement(tag);
@@ -33,13 +34,8 @@ function saveResumeSelection(id) {
 }
 
 function resumeSurname(resume) {
-  const raw = itemName(resume, '')
-    .replace(/\.pdf$/i, '')
-    .replace(/(?:个人)?简历|求职|应聘|resume|curriculum\s*vitae|\bcv\b/gi, '')
-    .replace(/后端|前端|开发|实习|工程师|技术|校招|社招|本科生|应届生|最终版|最新版|附件/g, '')
-    .replace(/^\d{4,}[-_. ]*/, '')
-    .trim();
-  return raw.match(/[\u3400-\u9fff]/u)?.[0] || '人';
+  const name = String(resume?.parsed_resume?.['姓名'] || '').trim();
+  return name.match(/[\u3400-\u9fff]/u)?.[0] || name.match(/[A-Za-z]/)?.[0]?.toLocaleUpperCase() || '?';
 }
 
 function normalizeMatchName(value) {
@@ -47,7 +43,11 @@ function normalizeMatchName(value) {
     .replace(/[^\p{L}\p{N}]/gu, '');
 }
 
-function linkedProjectFor(resumeProject) {
+function linkedProjectFor(resume, resumeProject, projectIndex) {
+  const association = (resume?.project_associations || []).find((item) => Number(item?.project_index) === projectIndex);
+  if (association?.project_id) {
+    return state.profile.projects.find((project) => itemId(project) === String(association.project_id)) || null;
+  }
   const key = normalizeMatchName(resumeProject?.name);
   if (!key) return null;
   const matches = state.profile.projects.filter((project) => normalizeMatchName(project?.name) === key);
@@ -82,7 +82,7 @@ function detailList(title, values, projector) {
   const section = element('section', 'resume-detail-group');
   section.append(element('h4', '', title));
   const list = element('div', 'resume-detail-list');
-  items.forEach((value) => list.append(projector(value)));
+  items.forEach((value, index) => list.append(projector(value, index)));
   section.append(list);
   return section;
 }
@@ -112,17 +112,17 @@ function renderResumeDetails(resume) {
     renderTextLines(row, [...(entry?.highlights || []), ...(entry?.metrics || [])]);
     return row;
   });
-  const projects = detailList('论文 / 项目经历', parsed['项目'], (entry) => {
+  const projects = detailList('论文 / 项目经历', parsed['项目'], (entry, projectIndex) => {
     const row = element('article', 'resume-detail-row resume-project-row');
     const heading = element('div', 'resume-project-heading');
     heading.append(element('strong', '', entry?.name || '未命名项目'));
-    const linked = linkedProjectFor(entry);
+    const linked = linkedProjectFor(resume, entry, projectIndex);
     if (linked) {
       const badge = element('span', 'resume-link-match', '已关联档案资料');
       badge.title = `对应：${itemName(linked)}`;
       heading.append(badge);
     } else {
-      heading.append(element('span', 'resume-link-missing', '未关联公开链接'));
+      heading.append(element('span', 'resume-link-missing', '待关联档案资料'));
     }
     row.append(heading);
     if (entry?.role) row.append(element('small', '', entry.role));
@@ -133,9 +133,10 @@ function renderResumeDetails(resume) {
       row.append(tags);
     }
     renderTextLines(row, [...(entry?.highlights || []), ...(entry?.metrics || [])]);
-    if (linked) {
+    const extractedLinks = safeLinks(entry);
+    if (linked || extractedLinks.length) {
       const linkRow = element('div', 'resume-project-links');
-      safeLinks(linked).forEach((href, index) => {
+      safeLinks(linked || entry).forEach((href, index) => {
         const anchor = element('a', '', href.includes('arxiv.org') ? '查看 arXiv' : `查看项目链接${index ? ` ${index + 1}` : ''}`);
         anchor.href = href;
         anchor.target = '_blank';
@@ -147,6 +148,10 @@ function renderResumeDetails(resume) {
       linkRow.append(analysis);
       row.append(linkRow);
     }
+    const edit = element('button', 'resume-project-edit', linked ? '编辑关联资料' : '编辑并添加资料');
+    edit.type = 'button';
+    edit.addEventListener('click', () => editResumeProject(resume, projectIndex, linked));
+    row.append(edit);
     return row;
   });
   [education, internships, projects].filter(Boolean).forEach((section) => wrap.append(section));
@@ -252,10 +257,146 @@ function renderProjects() {
     const remove = element('button', 'is-danger', '删除');
     remove.type = 'button';
     remove.addEventListener('click', () => deleteProfileItem('projects', project));
-    actions.append(select, analyze, remove);
+    const edit = element('button', '', '编辑');
+    edit.type = 'button';
+    edit.addEventListener('click', () => openProjectEditor(project));
+    actions.append(select, edit, analyze, remove);
     card.append(actions);
     list.append(card);
   });
+}
+
+async function editResumeProject(resume, projectIndex, linkedProject) {
+  const resumeId = itemId(resume);
+  if (!resumeId) return;
+  try {
+    const response = await apiFetch(`/api/profile/resumes/${encodeURIComponent(resumeId)}/projects/${projectIndex}/association`, {
+      method: 'PUT',
+      timeout: 15_000,
+      json: { client_id: getClientId(), ...(linkedProject ? { project_id: itemId(linkedProject) } : {}) },
+    });
+    await loadProfile();
+    const projectId = String(response?.association?.project_id || itemId(response?.project));
+    const project = state.profile.projects.find((item) => itemId(item) === projectId) || response?.project;
+    if (project) {
+      openProjectEditor(project);
+      const extracted = resume?.parsed_resume?.['项目']?.[projectIndex];
+      const suggestedLinks = safeLinks(extracted).filter((url) => !safeLinks(project).includes(url));
+      if (suggestedLinks.length) $('#editProjectLinks').value = suggestedLinks.join('\n');
+    }
+  } catch (error) {
+    showToast(error?.message || '无法建立简历项目关联，请稍后重试。', 'error');
+  }
+}
+
+function renderEditorAssets(project) {
+  const files = Array.isArray(project?.files) ? project.files : [];
+  const links = safeLinks(project);
+  $('#editProjectFileCount').textContent = `${files.length} 个文件`;
+  $('#editProjectLinkCount').textContent = `${links.length} 个链接`;
+  const current = $('#editProjectCurrentAssets');
+  current.replaceChildren();
+  if (files.length) {
+    const group = element('div');
+    group.append(element('strong', '', '已关联文件'));
+    const list = element('p', '', files.slice(0, 8).map((item) => item.path).join(' · '));
+    if (files.length > 8) list.textContent += ` · 另 ${files.length - 8} 个`;
+    group.append(list); current.append(group);
+  }
+  if (links.length) {
+    const group = element('div'); group.append(element('strong', '', '已关联链接'));
+    const list = element('div', 'profile-project-link-list');
+    links.forEach((href) => {
+      const link = element('a', '', href.replace(/^https:\/\//, ''));
+      link.href = href; link.target = '_blank'; link.rel = 'noopener noreferrer'; list.append(link);
+    });
+    group.append(list); current.append(group);
+  }
+  if (!current.childElementCount) current.append(element('p', 'profile-empty-copy', '尚未关联文件或公开链接，可以在上方继续添加。'));
+}
+
+function openProjectEditor(project) {
+  editingProjectId = itemId(project);
+  $('#editProjectName').value = itemName(project);
+  $('#editProjectType').value = project?.project_type || 'application';
+  $('#editProjectPartialScope').checked = project?.responsibility_scope === 'partial';
+  $('#editProjectResponsibility').value = String(project?.responsibility || '');
+  $('#editProjectResponsibility').classList.toggle('is-hidden', !$('#editProjectPartialScope').checked);
+  $('#editProjectFiles').value = '';
+  $('#editProjectLinks').value = '';
+  $('#projectEditStatus').textContent = '';
+  renderEditorAssets(project);
+  const dialog = $('#projectEditDialog');
+  if (!dialog.open) dialog.showModal();
+}
+
+function currentEditingProject() {
+  return state.profile.projects.find((project) => itemId(project) === editingProjectId) || null;
+}
+
+async function saveProjectEdit() {
+  const project = currentEditingProject();
+  if (!project) return;
+  const partial = $('#editProjectPartialScope').checked;
+  const responsibility = $('#editProjectResponsibility').value.trim();
+  if (partial && !responsibility) return showToast('部分负责时请填写具体负责内容。', 'error');
+  const button = $('#saveProjectEdit');
+  setButtonBusy(button, true, '正在保存…');
+  try {
+    const response = await apiFetch(`/api/profile/projects/${encodeURIComponent(editingProjectId)}`, {
+      method: 'PATCH', timeout: 15_000, json: {
+        client_id: getClientId(),
+        name: $('#editProjectName').value.trim(),
+        project_type: $('#editProjectType').value,
+        responsibility_scope: partial ? 'partial' : 'all',
+        responsibility: partial ? responsibility : '',
+      },
+    });
+    await loadProfile();
+    const updated = response?.project || currentEditingProject();
+    if (updated) { editingProjectId = itemId(updated); renderEditorAssets(updated); }
+    $('#projectEditStatus').textContent = '基础信息已保存；已有分析将在下次查看时按新资料更新。';
+    showToast('论文/项目基础信息已保存。', 'success');
+  } catch (error) { showToast(error?.message || '项目保存失败。', 'error'); }
+  finally { setButtonBusy(button, false); }
+}
+
+async function appendEditingProjectFiles() {
+  const files = [...$('#editProjectFiles').files];
+  if (!editingProjectId || !files.length) return showToast('请先选择要追加的文件。', 'error');
+  if (currentEditingProject()?.project_type !== $('#editProjectType').value) return showToast('类型有改动，请先保存基础信息再追加文件。', 'error');
+  const button = $('#appendProjectFiles'); setButtonBusy(button, true, '正在追加…');
+  try {
+    const data = new FormData(); data.append('client_id', getClientId());
+    files.forEach((file) => data.append('files', file, file.name));
+    const response = await apiFetch(`/api/profile/projects/${encodeURIComponent(editingProjectId)}/files`, { method: 'POST', body: data, timeout: 65_000 });
+    await loadProfile();
+    const updated = response?.project || currentEditingProject();
+    if (updated) renderEditorAssets(updated);
+    $('#editProjectFiles').value = '';
+    $('#projectEditStatus').textContent = `已追加 ${files.length} 个所选文件。`;
+    showToast('关联文件已追加。', 'success');
+  } catch (error) { showToast(error?.message || '文件追加失败。', 'error', 5200); }
+  finally { setButtonBusy(button, false); }
+}
+
+async function appendEditingProjectLinks() {
+  const project = currentEditingProject();
+  const urls = $('#editProjectLinks').value.split(/\n+/).map((value) => value.trim()).filter(Boolean);
+  if (!project || !urls.length) return showToast('请先填写要追加的公开链接。', 'error');
+  if (project.project_type !== $('#editProjectType').value) return showToast('类型有改动，请先保存基础信息再追加链接。', 'error');
+  if (!validateProjectLinks([...safeLinks(project), ...urls], project.project_type)) return showToast('链接格式或类型不正确；论文需且只能包含一个 arXiv 主链接。', 'error');
+  const button = $('#appendProjectLinks'); setButtonBusy(button, true, '正在读取…');
+  try {
+    const response = await apiFetch(`/api/profile/projects/${encodeURIComponent(editingProjectId)}/links`, { method: 'POST', timeout: 65_000, json: { client_id: getClientId(), urls } });
+    await loadProfile();
+    const updated = response?.project || currentEditingProject();
+    if (updated) renderEditorAssets(updated);
+    $('#editProjectLinks').value = '';
+    $('#projectEditStatus').textContent = `已追加 ${urls.length} 个公开链接及其可读取快照。`;
+    showToast('关联链接已追加。', 'success');
+  } catch (error) { showToast(error?.message || '链接追加失败。', 'error', 5200); }
+  finally { setButtonBusy(button, false); }
 }
 
 async function loadProfile() {
@@ -521,5 +662,9 @@ $('#profileProjectType').addEventListener('change', () => {
 });
 $('#saveProjectFiles').addEventListener('click', uploadProjectFiles);
 $('#saveProjectLinks').addEventListener('click', saveProjectLinks);
+$('#editProjectPartialScope').addEventListener('change', () => $('#editProjectResponsibility').classList.toggle('is-hidden', !$('#editProjectPartialScope').checked));
+$('#saveProjectEdit').addEventListener('click', saveProjectEdit);
+$('#appendProjectFiles').addEventListener('click', appendEditingProjectFiles);
+$('#appendProjectLinks').addEventListener('click', appendEditingProjectLinks);
 
 await Promise.all([loadProfile(), loadActivity()]);

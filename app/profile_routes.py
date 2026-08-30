@@ -23,10 +23,12 @@ from .profile import (
     ProfileLinkedProjectCreate,
     ProfileProjectAnalysisRequest,
     ProfileProjectCreate,
+    ProfileProjectLinksAppend,
     ProfileProjectQuestionsRequest,
     ProfileProjectSelection,
     ProfileProjectUpdate,
     ProfileResumeCreate,
+    ProfileResumeProjectAssociation,
     ProfileService,
     ProjectUpload,
     clean_client_id,
@@ -226,6 +228,20 @@ def create_profile_router(
         await service_provider().delete_resume(resume_id, client_id)
         return {"deleted": True}
 
+    @router.put("/resumes/{resume_id}/projects/{project_index}/association")
+    async def associate_resume_project(
+        resume_id: str,
+        project_index: int,
+        request: ProfileResumeProjectAssociation,
+        profile_key: str = Header(
+            alias="X-Profile-Key", min_length=24, max_length=128
+        ),
+    ) -> dict[str, Any]:
+        _verify_profile_key(profile_key, request.client_id)
+        return await service_provider().associate_resume_project(
+            resume_id, project_index, request
+        )
+
     @router.post("/projects", status_code=201)
     async def create_uploaded_project(
         http_request: Request,
@@ -366,6 +382,60 @@ def create_profile_router(
             client_limit=60,
         )
         return {"project": await service_provider().update_project(project_id, request)}
+
+    @router.post("/projects/{project_id}/files")
+    async def append_project_files(
+        project_id: str,
+        http_request: Request,
+        client_id: str = Form(min_length=8, max_length=128),
+        files: list[UploadFile] = File(...),
+        profile_key: str = Header(
+            alias="X-Profile-Key", min_length=24, max_length=128
+        ),
+    ) -> dict[str, Any]:
+        _verify_profile_key(profile_key, client_id)
+        await require_budget(
+            http_request,
+            action="profile-project-append-files",
+            client_id=client_id,
+            host_limit=30,
+            client_limit=20,
+        )
+        if len(files) > MAX_UPLOAD_ITEMS:
+            raise AppError(
+                "PROJECT_UPLOAD_LIMIT",
+                f"一次最多上传 {MAX_UPLOAD_ITEMS} 个文件",
+                status_code=413,
+            )
+        uploads = [await ProjectUpload.from_async_upload(item) for item in files]
+        return {
+            "project": await service_provider().append_project_files(
+                project_id, client_id, uploads
+            )
+        }
+
+    @router.post("/projects/{project_id}/links")
+    async def append_project_links(
+        project_id: str,
+        request: ProfileProjectLinksAppend,
+        http_request: Request,
+        profile_key: str = Header(
+            alias="X-Profile-Key", min_length=24, max_length=128
+        ),
+    ) -> dict[str, Any]:
+        _verify_profile_key(profile_key, request.client_id)
+        await require_budget(
+            http_request,
+            action="profile-project-append-links",
+            client_id=request.client_id,
+            host_limit=16,
+            client_limit=8,
+        )
+        return {
+            "project": await service_provider().append_project_links(
+                project_id, request
+            )
+        }
 
     @router.post("/projects/{project_id}/analysis")
     async def analyze_project(

@@ -26,7 +26,7 @@
 
 .project-hero h1 {
   margin: 22px 0 17px;
-  font-family: ui-serif, "Songti SC", serif;
+  font-family: var(--font-serif);
   font-size: clamp(42px, 5vw, 65px);
   line-height: 1.12;
   letter-spacing: -.045em;
@@ -87,7 +87,7 @@
 
 .project-sidebar h2 {
   margin: 5px 0 0;
-  font-family: ui-serif, "Songti SC", serif;
+  font-family: var(--font-serif);
   font-size: 25px;
 }
 
@@ -405,7 +405,7 @@
   border-radius: 20px;
   color: #356eea;
   background: #edf3ff;
-  font-family: ui-serif, serif;
+  font-family: var(--font-serif);
   font-size: 21px;
   box-shadow: 0 12px 30px rgba(53,110,234,.11);
 }
@@ -413,7 +413,7 @@
 .project-ready h2,
 .project-analysis-loading h2 {
   margin: 22px 0 8px;
-  font-family: ui-serif, "Songti SC", serif;
+  font-family: var(--font-serif);
   font-size: 27px;
 }
 
@@ -557,7 +557,7 @@
 
 .project-analysis-header h2 {
   margin: 6px 0 5px;
-  font-family: ui-serif, "Songti SC", serif;
+  font-family: var(--font-serif);
   font-size: 28px;
 }
 
@@ -606,13 +606,13 @@
 .project-analysis-section > header > span {
   padding-top: 3px;
   color: #356eea;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 9px;
 }
 
 .project-analysis-section h3 {
   margin: 0;
-  font-family: ui-serif, "Songti SC", serif;
+  font-family: var(--font-serif);
   font-size: 20px;
 }
 
@@ -730,7 +730,7 @@
 
 .project-interview-intro h4 {
   margin: 3px 0 0;
-  font-family: ui-serif, "Songti SC", serif;
+  font-family: var(--font-serif);
   font-size: 16px;
 }
 
@@ -878,13 +878,13 @@
   border-radius: 9px;
   color: #356eea;
   background: #eaf0ff;
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 8px;
 }
 
 .project-question-card h4 {
   margin: 1px 0 6px;
-  font-family: ui-serif, "Songti SC", serif;
+  font-family: var(--font-serif);
   font-size: 15px;
   line-height: 1.55;
 }

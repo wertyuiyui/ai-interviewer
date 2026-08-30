@@ -97,7 +97,7 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
         )
         assert parsed.status_code == 200
         resume = parsed.json()["resume"]
-        assert set(resume) == {"教育", "实习经历", "项目", "技能"}
+        assert set(resume) == {"姓名", "教育", "实习经历", "项目", "技能"}
 
         unlimited = await client.post(
             "/api/interviews",

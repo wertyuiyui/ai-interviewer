@@ -38,6 +38,17 @@
 
 ## 变更日志
 
+### PROFILE-002 · 2026-08-30 · 可靠简历身份、项目资料编辑与全站字体统一
+
+- Agent：`/root`；只读协作调研/审计：`resume_skill_research`、`project_edit_audit`、`typography_audit`。
+- 状态：`completed`。
+- 摘要：新增项目内 `resume-reader` skill，并让真实/模拟简历解析都遵循“仅基于明确证据”的姓名规则；结构化简历新增 `姓名` 与项目链接字段，头像只显示可靠姓氏/英文首字母，无法识别统一显示 `?`，不再从文件名猜测或显示“人”。
+- 项目编辑：简历解析出的项目行可创建或绑定持久档案项目；解析项目和用户上传项目共用编辑弹窗，支持修改名称、类型、负责范围，继续追加文件与 GitHub/arXiv 链接；关联关系写入 SQLite，追加资料使用内容哈希防并发覆盖并清理旧分析缓存。
+- 前端：完善项目编辑弹窗、关联状态、已有资料展示和移动端布局；全站 sans/serif/mono 字体统一为本地字体变量，修复按钮字号继承、垂直居中、行高和不自然换行，并刷新相关静态资源版本。
+- 实际文件：`analysis_skills/resume-reader/SKILL.md`；`app/main.py`, `app/schemas.py`, `app/resume.py`, `app/profile.py`, `app/profile_routes.py`；`public/assets/{app,profile,project,coding}.css`, `public/js/{home,profile}.js`, `public/{index,interview,practice,report,project,coding,profile}.html`；`tests/test_api.py`, `tests/test_core.py`, `tests/test_profile.py`, `tests/test_profile_api.py`, `tests/test_frontend_home_ui.py`, `tests/test_frontend_interview_controls.py`, `tests/test_frontend_profile_project_ui.py`；`process.md`。
+- 验证：`python3 .../quick_validate.py analysis_skills/resume-reader` → `Skill is valid!`；`.venv/bin/python -m compileall -q app`、`node --check public/js/profile.js`、`node --check public/js/home.js` 通过；`PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `228 passed`；`git diff --check` 通过。
+- 风险/后续：姓名刻意采用保守策略，版式特殊且没有明确姓名标签/页眉联系方式的简历会显示 `?`，用户可通过更规范的简历文本改善识别；GitHub/arXiv 追加仍依赖公开可读取资源与外部服务可用性。
+
 ### PROJ-009 · 2026-08-30 · 项目主线解读与候选人介绍净化
 
 - Agent：`/root`；协作只读审计：`/root/practice_audit`。

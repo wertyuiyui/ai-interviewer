@@ -133,13 +133,8 @@ function profileItemName(item, fallback) {
 }
 
 function profileResumeSurname(item) {
-  const candidate = profileItemName(item, '')
-    .replace(/\.pdf$/i, '')
-    .replace(/(?:个人)?简历|求职|应聘|resume|curriculum\s*vitae|\bcv\b/gi, '')
-    .replace(/后端|前端|开发|实习|工程师|技术|校招|社招|本科生|应届生|最终版|最新版|附件/g, '')
-    .replace(/^\d{4,}[-_. ]*/, '')
-    .trim();
-  return candidate.match(/[\u3400-\u9fff]/u)?.[0] || '人';
+  const name = String(getStructuredResume(item)?.['姓名'] || '').trim();
+  return name.match(/[\u3400-\u9fff]/u)?.[0] || name.match(/[A-Za-z]/)?.[0]?.toLocaleUpperCase() || '?';
 }
 
 function updateProfileStatus(message = '') {

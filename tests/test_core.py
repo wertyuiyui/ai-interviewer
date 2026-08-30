@@ -756,9 +756,30 @@ async def test_mock_resume_parser_returns_required_chinese_schema(tmp_path) -> N
         "某大学计算机本科\n校园秒杀系统项目，使用 Java、Redis 和 MySQL，QPS 提升 50%。\n负责后端开发实习。"
     )
     payload = parsed.model_dump(by_alias=True)
-    assert set(payload) == {"教育", "实习经历", "项目", "技能"}
+    assert set(payload) == {"姓名", "教育", "实习经历", "项目", "技能"}
+    assert payload["姓名"] == ""
     assert "Redis" in payload["技能"]
     assert payload["项目"]
+
+
+@pytest.mark.asyncio
+async def test_mock_resume_parser_extracts_only_evidenced_candidate_name(tmp_path) -> None:
+    settings = mock_settings(tmp_path)
+    parser = ResumeParser(settings)
+
+    labelled = await parser.parse(
+        "姓名：张雨辰\n手机：13800000000\n某大学计算机本科\n订单平台项目使用 Java 和 Redis。"
+    )
+    headed = await parser.parse(
+        "欧阳娜娜\nnana@example.com | 13800000000\n某大学软件工程本科\n推荐系统项目使用 Python。"
+    )
+    generic = await parser.parse(
+        "后端实习简历\n某大学计算机本科\n校园交易平台项目使用 Go 和 MySQL。"
+    )
+
+    assert labelled.candidate_name == "张雨辰"
+    assert headed.candidate_name == "欧阳娜娜"
+    assert generic.candidate_name == ""
 
 
 @pytest.mark.asyncio

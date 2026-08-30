@@ -226,6 +226,17 @@ CREATE TABLE IF NOT EXISTS profile_project_analysis_cache (
 
 CREATE INDEX IF NOT EXISTS idx_profile_analysis_project_created
     ON profile_project_analysis_cache(project_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS profile_resume_project_links (
+    resume_id TEXT NOT NULL REFERENCES profile_resumes(id) ON DELETE CASCADE,
+    project_index INTEGER NOT NULL,
+    project_id TEXT NOT NULL REFERENCES profile_projects(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    PRIMARY KEY (resume_id, project_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_resume_project_links_project
+    ON profile_resume_project_links(project_id);
 """
 
 
@@ -391,6 +402,7 @@ class ProfileProjectUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     client_id: str = Field(min_length=8, max_length=128)
+    name: str | None = Field(default=None, min_length=1, max_length=120)
     project_type: Literal["application", "technical", "paper"] | None = None
     responsibility_scope: Literal["all", "partial"] | None = None
     responsibility: str | None = Field(default=None, max_length=MAX_PROJECT_RESPONSIBILITY_CHARS)
@@ -400,10 +412,51 @@ class ProfileProjectUpdate(BaseModel):
     def validate_client_id(cls, value: str) -> str:
         return clean_client_id(value)
 
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str | None) -> str | None:
+        return None if value is None else _clean_label(value, field="项目名称")
+
     @field_validator("responsibility")
     @classmethod
     def validate_responsibility(cls, value: str | None) -> str | None:
         return None if value is None else _clean_responsibility(value)
+
+
+class ProfileProjectLinksAppend(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_id: str = Field(min_length=8, max_length=128)
+    urls: list[str] = Field(min_length=1, max_length=MAX_PROJECT_LINKS)
+
+    @field_validator("client_id")
+    @classmethod
+    def validate_client_id(cls, value: str) -> str:
+        return clean_client_id(value)
+
+    @field_validator("urls")
+    @classmethod
+    def validate_urls(cls, values: list[str]) -> list[str]:
+        result: list[str] = []
+        for raw in values:
+            value = normalize_project_link(raw)
+            if value not in result:
+                result.append(value)
+        if not result:
+            raise ValueError("请至少提供一个支持的项目或论文链接")
+        return result
+
+
+class ProfileResumeProjectAssociation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_id: str = Field(min_length=8, max_length=128)
+    project_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
+
+    @field_validator("client_id")
+    @classmethod
+    def validate_client_id(cls, value: str) -> str:
+        return clean_client_id(value)
 
 
 class ProfileProjectAnalysisRequest(BaseModel):
@@ -1071,7 +1124,7 @@ def _content_sha(links: str | Sequence[str] | None, files: Sequence[_StoredFile]
 def _analysis_input_sha(project: dict[str, Any]) -> str:
     digest = hashlib.sha256()
     digest.update(str(project["content_sha256"]).encode("ascii"))
-    for key in ("project_type", "responsibility_scope", "responsibility"):
+    for key in ("name", "project_type", "responsibility_scope", "responsibility"):
         digest.update(f"\x00{key}\x00".encode("ascii"))
         digest.update(str(project.get(key) or "").encode("utf-8"))
     for link in project.get("links") or ():
@@ -1793,7 +1846,14 @@ class ProfileService:
                 """,
                 (normalized,),
             ).fetchall()
-            return [self._decode_resume(row) for row in rows]
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                resume = self._decode_resume(row)
+                resume["project_associations"] = self._resume_project_associations(
+                    connection, row["id"]
+                )
+                result.append(resume)
+            return result
 
         return await self.db._run(operation)
 
@@ -1805,7 +1865,13 @@ class ProfileService:
                 "SELECT * FROM profile_resumes WHERE id = ? AND client_id = ?",
                 (resume_id, normalized),
             ).fetchone()
-            return self._decode_resume(row) if row else None
+            if not row:
+                return None
+            resume = self._decode_resume(row)
+            resume["project_associations"] = self._resume_project_associations(
+                connection, row["id"]
+            )
+            return resume
 
         value = await self.db._run(operation)
         if value is None:
@@ -1825,6 +1891,84 @@ class ProfileService:
 
         if not await self.db._run(operation):
             raise AppError("PROFILE_RESUME_NOT_FOUND", "简历不存在", status_code=404)
+
+    @staticmethod
+    def _resume_project_associations(
+        connection: sqlite3.Connection, resume_id: str
+    ) -> list[dict[str, Any]]:
+        rows = connection.execute(
+            "SELECT project_index, project_id FROM profile_resume_project_links "
+            "WHERE resume_id = ? ORDER BY project_index",
+            (resume_id,),
+        ).fetchall()
+        return [
+            {"project_index": int(row["project_index"]), "project_id": row["project_id"]}
+            for row in rows
+        ]
+
+    async def associate_resume_project(
+        self,
+        resume_id: str,
+        project_index: int,
+        request: ProfileResumeProjectAssociation,
+    ) -> dict[str, Any]:
+        if project_index < 0:
+            raise AppError("PROFILE_RESUME_PROJECT_NOT_FOUND", "简历项目不存在", status_code=404)
+        resume = await self.get_resume(resume_id, request.client_id)
+        projects = list((resume.get("parsed_resume") or {}).get("项目") or ())
+        if project_index >= len(projects):
+            raise AppError("PROFILE_RESUME_PROJECT_NOT_FOUND", "简历项目不存在", status_code=404)
+        project_id = request.project_id
+        if project_id:
+            await self.get_project(project_id, request.client_id)
+        else:
+            existing = next(
+                (
+                    item["project_id"]
+                    for item in resume.get("project_associations") or ()
+                    if int(item.get("project_index", -1)) == project_index
+                ),
+                None,
+            )
+            if existing:
+                project_id = str(existing)
+            else:
+                extracted = projects[project_index] if isinstance(projects[project_index], dict) else {}
+                name = _clean_label(extracted.get("name") or f"简历项目 {project_index + 1}", field="项目名称")
+                project_id = await self._insert_project(
+                    request=ProfileProjectCreate(client_id=request.client_id, name=name),
+                    source_type="resume",
+                    links=[],
+                    files=[],
+                )
+
+        created_at = _utc_iso()
+
+        def operation(connection: sqlite3.Connection) -> None:
+            resume_owner = connection.execute(
+                "SELECT 1 FROM profile_resumes WHERE id = ? AND client_id = ?",
+                (resume_id, request.client_id),
+            ).fetchone()
+            project_owner = connection.execute(
+                "SELECT 1 FROM profile_projects WHERE id = ? AND client_id = ?",
+                (project_id, request.client_id),
+            ).fetchone()
+            if not resume_owner or not project_owner:
+                raise AppError("PROFILE_PROJECT_NOT_FOUND", "项目不存在", status_code=404)
+            connection.execute(
+                "INSERT INTO profile_resume_project_links "
+                "(resume_id, project_index, project_id, created_at) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(resume_id, project_index) DO UPDATE SET "
+                "project_id = excluded.project_id, created_at = excluded.created_at",
+                (resume_id, project_index, project_id, created_at),
+            )
+            connection.commit()
+
+        await self.db._run(operation)
+        return {
+            "association": {"project_index": project_index, "project_id": project_id},
+            "project": await self.get_project(project_id, request.client_id),
+        }
 
     async def create_uploaded_project(
         self, request: ProfileProjectCreate, uploads: Sequence[ProjectUpload]
@@ -1946,7 +2090,7 @@ class ProfileService:
         self,
         *,
         request: ProfileProjectCreate,
-        source_type: Literal["upload", "github", "linked", "arxiv"],
+        source_type: Literal["upload", "github", "linked", "arxiv", "resume"],
         links: Sequence[str],
         files: Sequence[_StoredFile],
     ) -> str:
@@ -2074,7 +2218,7 @@ class ProfileService:
 
         def operation(connection: sqlite3.Connection) -> None:
             row = connection.execute(
-                "SELECT project_type, responsibility_scope, responsibility, links_json FROM profile_projects "
+                "SELECT name, project_type, responsibility_scope, responsibility, links_json FROM profile_projects "
                 "WHERE id = ? AND client_id = ?",
                 (project_id, request.client_id),
             ).fetchone()
@@ -2126,6 +2270,138 @@ class ProfileService:
             )
             # The input hash also contains responsibility, but deleting stale
             # rows avoids retaining obsolete role-specific coaching forever.
+            connection.execute(
+                "DELETE FROM profile_project_analysis_cache WHERE project_id = ?",
+                (project_id,),
+            )
+            connection.commit()
+
+        await self.db._run(operation)
+        return await self.get_project(project_id, request.client_id)
+
+    @staticmethod
+    def _project_stored_files(project: dict[str, Any]) -> list[_StoredFile]:
+        return [
+            _StoredFile(
+                path=str(item["path"]),
+                content=str(item.get("content") or ""),
+                size_bytes=int(item["size_bytes"]),
+                sha256=str(item["sha256"]),
+            )
+            for item in project.get("_content_files") or ()
+        ]
+
+    async def append_project_files(
+        self,
+        project_id: str,
+        client_id: str,
+        uploads: Sequence[ProjectUpload],
+    ) -> dict[str, Any]:
+        normalized = clean_client_id(client_id)
+        project = await self._require_project(project_id, normalized, include_content=True)
+        new_files = validate_project_uploads(
+            uploads, project_type=str(project.get("project_type") or "application")
+        )
+        existing_files = self._project_stored_files(project)
+        existing_paths = {item.path for item in existing_files}
+        duplicate = next((item.path for item in new_files if item.path in existing_paths), "")
+        if duplicate:
+            raise AppError(
+                "DUPLICATE_PROJECT_PATH",
+                f"项目中已存在同名文件：{duplicate}",
+                status_code=409,
+            )
+        combined = [*existing_files, *new_files]
+        if len(combined) > MAX_PROJECT_FILES:
+            raise AppError("PROJECT_FILE_LIMIT", f"项目最多保留 {MAX_PROJECT_FILES} 个源码文件", status_code=413)
+        if sum(item.size_bytes for item in combined) > MAX_EXTRACTED_BYTES:
+            raise AppError("PROJECT_UPLOAD_TOO_LARGE", "项目源码总大小超限", status_code=413)
+        links = list(project.get("links") or ())
+        content_sha = _content_sha(links, combined)
+        updated_at = _utc_iso()
+
+        def operation(connection: sqlite3.Connection) -> None:
+            row = connection.execute(
+                "SELECT content_sha256 FROM profile_projects WHERE id = ? AND client_id = ?",
+                (project_id, normalized),
+            ).fetchone()
+            if not row:
+                raise AppError("PROFILE_PROJECT_NOT_FOUND", "项目不存在", status_code=404)
+            if row["content_sha256"] != project["content_sha256"]:
+                raise AppError("PROJECT_EDIT_CONFLICT", "项目资料刚刚发生变化，请刷新后重试", status_code=409)
+            self._insert_files(connection, project_id, new_files, updated_at)
+            connection.execute(
+                "UPDATE profile_projects SET content_sha256 = ?, updated_at = ? WHERE id = ?",
+                (content_sha, updated_at, project_id),
+            )
+            connection.execute(
+                "DELETE FROM profile_project_analysis_cache WHERE project_id = ?",
+                (project_id,),
+            )
+            connection.commit()
+
+        await self.db._run(operation)
+        return await self.get_project(project_id, normalized)
+
+    async def append_project_links(
+        self,
+        project_id: str,
+        request: ProfileProjectLinksAppend,
+    ) -> dict[str, Any]:
+        project = await self._require_project(project_id, request.client_id, include_content=True)
+        existing_links = list(project.get("links") or ())
+        new_links = [value for value in request.urls if value not in existing_links]
+        if not new_links:
+            project.pop("_content_files", None)
+            return project
+        combined_links = [*existing_links, *new_links]
+        if len(combined_links) > MAX_PROJECT_LINKS:
+            raise AppError("PROJECT_LINK_LIMIT", f"一个条目最多保留 {MAX_PROJECT_LINKS} 个链接", status_code=413)
+        project_type = str(project.get("project_type") or "application")
+        arxiv_links = [value for value in combined_links if is_arxiv_url(value)]
+        if project_type == "paper" and not arxiv_links:
+            raise AppError("PROJECT_PAPER_LINK_REQUIRED", "论文类型至少需要一个 arXiv 链接", status_code=422)
+        if project_type != "paper" and arxiv_links:
+            raise AppError("PROJECT_ARXIV_REQUIRES_PAPER_TYPE", "arXiv 链接只能用于论文类型", status_code=422)
+        if len(arxiv_links) > 1:
+            raise AppError("PROJECT_ARXIV_LINK_LIMIT", "一个论文条目只支持一个 arXiv 主链接", status_code=422)
+
+        fetched = await self._fetch_linked_files(new_links, project_type)
+        prefix_key = hashlib.sha256("\n".join(new_links).encode("utf-8")).hexdigest()[:10]
+        prefix = f"paper/linked-{prefix_key}" if project_type == "paper" else f"sources/linked-{prefix_key}"
+        appended = [
+            _StoredFile(
+                path=f"{prefix}/{item.path}",
+                content=item.content,
+                size_bytes=item.size_bytes,
+                sha256=item.sha256,
+            )
+            for item in fetched
+        ]
+        existing_files = self._project_stored_files(project)
+        combined_files = [*existing_files, *appended]
+        if len(combined_files) > MAX_PROJECT_FILES:
+            raise AppError("PROJECT_FILE_LIMIT", f"项目最多保留 {MAX_PROJECT_FILES} 个源码文件", status_code=413)
+        if sum(item.size_bytes for item in combined_files) > MAX_EXTRACTED_BYTES:
+            raise AppError("LINKED_PROJECT_TOO_LARGE", "链接内容总量超限", status_code=413)
+        content_sha = _content_sha(combined_links, combined_files)
+        updated_at = _utc_iso()
+        github_url = combined_links[0] if len(combined_links) == 1 and not is_arxiv_url(combined_links[0]) else None
+
+        def operation(connection: sqlite3.Connection) -> None:
+            row = connection.execute(
+                "SELECT content_sha256 FROM profile_projects WHERE id = ? AND client_id = ?",
+                (project_id, request.client_id),
+            ).fetchone()
+            if not row:
+                raise AppError("PROFILE_PROJECT_NOT_FOUND", "项目不存在", status_code=404)
+            if row["content_sha256"] != project["content_sha256"]:
+                raise AppError("PROJECT_EDIT_CONFLICT", "项目资料刚刚发生变化，请刷新后重试", status_code=409)
+            self._insert_files(connection, project_id, appended, updated_at)
+            connection.execute(
+                "UPDATE profile_projects SET links_json = ?, github_url = ?, content_sha256 = ?, updated_at = ? WHERE id = ?",
+                (json.dumps(combined_links, ensure_ascii=False), github_url, content_sha, updated_at, project_id),
+            )
             connection.execute(
                 "DELETE FROM profile_project_analysis_cache WHERE project_id = ?",
                 (project_id,),
@@ -3260,10 +3536,12 @@ __all__ = [
     "ProfileLinkedProjectCreate",
     "ProfileProjectAnalysisRequest",
     "ProfileProjectCreate",
+    "ProfileProjectLinksAppend",
     "ProfileProjectQuestionsRequest",
     "ProfileProjectSelection",
     "ProfileProjectUpdate",
     "ProfileResumeCreate",
+    "ProfileResumeProjectAssociation",
     "ProfileService",
     "ProjectAnalysis",
     "ProjectInterviewQuestion",

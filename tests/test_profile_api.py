@@ -111,6 +111,38 @@ async def test_profile_routes_project_analysis_and_interview_snapshot(
         }
         assert project["responsibility"] == "负责订单入口、幂等校验和失败补偿"
 
+        associated = await client.put(
+            f"/api/profile/resumes/{resume['id']}/projects/0/association",
+            json={"client_id": client_id, "project_id": project["id"]},
+        )
+        assert associated.status_code == 200
+        assert associated.json()["association"] == {
+            "project_index": 0,
+            "project_id": project["id"],
+        }
+
+        appended_file = await client.post(
+            f"/api/profile/projects/{project['id']}/files",
+            data={"client_id": client_id},
+            files={"files": ("metrics.py", "def latency():\n    return 12\n", "text/x-python")},
+        )
+        assert appended_file.status_code == 200
+        assert "metrics.py" in {
+            item["path"] for item in appended_file.json()["project"]["files"]
+        }
+
+        appended_link = await client.post(
+            f"/api/profile/projects/{project['id']}/links",
+            json={
+                "client_id": client_id,
+                "urls": ["https://github.com/example/gateway"],
+            },
+        )
+        assert appended_link.status_code == 200
+        assert appended_link.json()["project"]["links"] == [
+            "https://github.com/example/gateway"
+        ]
+
         selected = await client.patch(
             f"/api/profile/projects/{project['id']}/selection",
             json={"client_id": client_id, "selected": True},
@@ -157,10 +189,12 @@ async def test_profile_routes_project_analysis_and_interview_snapshot(
             f"/api/profile/projects/{project['id']}",
             json={
                 "client_id": client_id,
+                "name": "订单服务 2.0",
                 "responsibility": "负责库存预占与订单失败补偿",
             },
         )
         assert updated.status_code == 200
+        assert updated.json()["project"]["name"] == "订单服务 2.0"
         assert updated.json()["project"]["responsibility"] == "负责库存预占与订单失败补偿"
 
         analyzed_after_update = await client.post(

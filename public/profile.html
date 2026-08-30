@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#f3f0e9">
     <meta name="description" content="管理砺面匿名个人档案、简历、论文项目、错题本与练习历史。">
     <title>个人档案 · 砺面</title>
-    <link rel="stylesheet" href="/assets/app.css?v=20260830-profile-page">
-    <link rel="stylesheet" href="/assets/profile.css?v=20260830-profile-page">
+    <link rel="stylesheet" href="/assets/app.css?v=20260830-profile-edit-v1">
+    <link rel="stylesheet" href="/assets/profile.css?v=20260830-profile-edit-v1">
   </head>
   <body class="profile-page">
     <header class="site-header">
@@ -17,7 +17,7 @@
 
     <main class="profile-shell">
       <section class="profile-hero" aria-labelledby="profileTitle">
-        <div class="profile-avatar" id="profileAvatar" aria-label="档案姓氏头像">我</div>
+        <div class="profile-avatar" id="profileAvatar" aria-label="档案姓氏头像">?</div>
         <div class="profile-hero-copy"><span class="profile-eyebrow">MY INTERVIEW WORKSPACE</span><h1 id="profileTitle">我的个人档案</h1><p id="profileIdentity">正在读取当前设备的匿名资料…</p><div class="profile-hero-tags"><span id="resumeCount">0 份简历</span><span id="projectCount">0 个论文/项目</span><span id="mistakeCount">0 道错题</span></div></div>
         <div class="profile-hero-actions"><a class="primary-link" href="/#setupTitle">开始模拟面试 <span aria-hidden="true">→</span></a><a class="secondary-button" href="/project">进入论文/项目解读</a></div>
       </section>
@@ -57,7 +57,21 @@
         <div class="profile-history-columns"><section><h3>模拟面试</h3><div id="profileInterviewHistory" class="profile-history-list"><div class="profile-empty-state">正在读取历史报告…</div></div></section><section><h3>快速刷题</h3><div id="profilePracticeHistory" class="profile-history-list"><div class="profile-empty-state">正在读取刷题记录…</div></div></section></div>
       </section>
     </main>
+
+    <dialog class="profile-edit-dialog" id="projectEditDialog" aria-labelledby="projectEditTitle">
+      <form method="dialog" class="profile-edit-dialog-shell">
+        <header><div><span>EDIT PROJECT</span><h2 id="projectEditTitle">编辑论文 / 项目</h2><p>修改基础信息，或继续追加关联文件和公开链接。</p></div><button class="profile-dialog-close" value="cancel" aria-label="关闭编辑窗口">×</button></header>
+        <div class="profile-edit-fields">
+          <label>名称<input id="editProjectName" type="text" maxlength="120"></label>
+          <label>类型<select id="editProjectType"><option value="application">应用类项目</option><option value="technical">技术类项目</option><option value="paper">论文</option></select></label>
+          <label class="is-wide profile-scope-toggle"><span><input id="editProjectPartialScope" type="checkbox"> 我只负责其中一部分</span><textarea class="is-hidden" id="editProjectResponsibility" rows="3" maxlength="1200" placeholder="填写本人负责的模块、链路或实验"></textarea></label>
+        </div>
+        <div class="profile-edit-assets"><section><header><h3>关联文件</h3><span id="editProjectFileCount">0 个文件</span></header><label class="profile-file-button" for="editProjectFiles">选择要追加的文件<input id="editProjectFiles" type="file" multiple></label><button class="secondary-button" id="appendProjectFiles" type="button"><span class="button-label">追加文件</span></button></section><section><header><h3>关联链接</h3><span id="editProjectLinkCount">0 个链接</span></header><textarea id="editProjectLinks" rows="3" placeholder="每行一个新的 GitHub / arXiv 链接"></textarea><button class="secondary-button" id="appendProjectLinks" type="button"><span class="button-label">追加链接</span></button></section></div>
+        <div class="profile-edit-current" id="editProjectCurrentAssets"></div>
+        <footer><span id="projectEditStatus" role="status" aria-live="polite"></span><button class="primary-link" id="saveProjectEdit" type="button"><span class="button-label">保存基础信息</span></button></footer>
+      </form>
+    </dialog>
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-    <script type="module" src="/js/profile.js?v=20260830-profile-page"></script>
+    <script type="module" src="/js/profile.js?v=20260830-profile-edit-v1"></script>
   </body>
 </html>

@@ -24,11 +24,13 @@ from app.profile import (
     ProfileLinkedProjectCreate,
     ProfileProjectAnalysisRequest,
     ProfileProjectCreate,
+    ProfileProjectLinksAppend,
     ProfileProjectQuestionsRequest,
     ProfileProjectSelection,
     ProfileProjectUpdate,
     ProjectAnalysis,
     ProfileResumeCreate,
+    ProfileResumeProjectAssociation,
     ProfileService,
     ProjectUpload,
     _select_github_candidates,
@@ -155,6 +157,63 @@ async def test_profile_persists_multiple_resumes_projects_and_selection(profile_
     after_delete = await service.get_profile("profile-client-001")
     assert [item["id"] for item in after_delete["resumes"]] == [second_resume["id"]]
     assert [item["id"] for item in after_delete["projects"]] == [github["id"]]
+
+
+@pytest.mark.asyncio
+async def test_resume_project_association_can_be_edited_and_extended(profile_settings) -> None:
+    database = Database(profile_settings)
+    await database.initialize()
+    fetcher = _FakeGitHubFetcher()
+    service = ProfileService(database, profile_settings, github_fetcher=fetcher)
+    await service.initialize()
+    client_id = "resume-project-client-001"
+    resume = await service.create_resume(
+        ProfileResumeCreate(
+            client_id=client_id,
+            name="项目简历",
+            parsed_resume=ResumeData(
+                姓名="李雷",
+                项目=[Project(name="可靠网关", technologies=["Python"])],
+            ),
+            source_type="structured",
+        )
+    )
+
+    association = await service.associate_resume_project(
+        resume["id"], 0, ProfileResumeProjectAssociation(client_id=client_id)
+    )
+    project = association["project"]
+    assert project["name"] == "可靠网关"
+    assert project["source_type"] == "resume"
+    assert project["files"] == []
+    persisted = (await service.get_resume(resume["id"], client_id))["project_associations"]
+    assert persisted == [{"project_index": 0, "project_id": project["id"]}]
+
+    extended = await service.append_project_files(
+        project["id"], client_id, [ProjectUpload("gateway.py", b"def route():\n    return 200\n")]
+    )
+    assert [item["path"] for item in extended["files"]] == ["gateway.py"]
+    linked = await service.append_project_links(
+        project["id"],
+        ProfileProjectLinksAppend(
+            client_id=client_id, urls=["https://github.com/example/gateway"]
+        ),
+    )
+    assert linked["links"] == ["https://github.com/example/gateway"]
+    assert fetcher.urls == ["https://github.com/example/gateway"]
+    assert any(item["path"].endswith("src/server.py") for item in linked["files"])
+
+    renamed = await service.update_project(
+        project["id"],
+        ProfileProjectUpdate(client_id=client_id, name="可靠网关 2.0"),
+    )
+    assert renamed["name"] == "可靠网关 2.0"
+
+    with pytest.raises(AppError) as missing:
+        await service.associate_resume_project(
+            resume["id"], 1, ProfileResumeProjectAssociation(client_id=client_id)
+        )
+    assert missing.value.code == "PROFILE_RESUME_PROJECT_NOT_FOUND"
 
 
 @pytest.mark.asyncio

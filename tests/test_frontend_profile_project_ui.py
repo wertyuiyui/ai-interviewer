@@ -81,14 +81,27 @@ def test_standalone_profile_integrates_assets_mistakes_and_history() -> None:
         "profileMistakeList",
         "profileInterviewHistory",
         "profilePracticeHistory",
+        "projectEditDialog",
+        "editProjectName",
+        "editProjectFiles",
+        "editProjectLinks",
+        "saveProjectEdit",
+        "appendProjectFiles",
+        "appendProjectLinks",
     ):
         assert f'id="{element_id}"' in page
 
     assert "简历中的论文/项目行会与同名档案链接自动对应" in page
     assert "function resumeSurname" in script
-    assert "|| '人'" in script
+    assert "parsed_resume?.['姓名']" in script
+    assert "|| '?'" in script
     assert "icon.textContent = '历'" not in (PUBLIC / "js" / "home.js").read_text(encoding="utf-8")
     assert "function linkedProjectFor" in script
+    assert "project_associations" in script
+    assert "method: 'PUT'" in script
+    assert "/association`" in script
+    assert "/files`" in script and "/links`" in script
+    assert "编辑并添加资料" in script and "编辑关联资料" in script
     assert "matches.length === 1" in script
     assert "normalizeMatchName(project?.name) === key" in script
     assert "noopener noreferrer" in script
@@ -103,6 +116,26 @@ def test_standalone_profile_integrates_assets_mistakes_and_history() -> None:
     assert "/api/practice/history?client_id=" in script
     assert "Promise.allSettled" in script
     assert "@media (max-width: 720px)" in style
+    assert ".profile-edit-dialog" in style
+    assert "font-family: var(--font-serif)" in style
+
+
+def test_global_typography_uses_local_font_tokens_and_centered_buttons() -> None:
+    style = (PUBLIC / "assets" / "app.css").read_text(encoding="utf-8")
+    profile_style = (PUBLIC / "assets" / "profile.css").read_text(encoding="utf-8")
+    project_style = (PUBLIC / "assets" / "project.css").read_text(encoding="utf-8")
+    coding_style = (PUBLIC / "assets" / "coding.css").read_text(encoding="utf-8")
+
+    assert "--font-sans:" in style and "--font-serif:" in style
+    assert ".button-label { font-size: inherit; line-height: inherit; }" in style
+    assert ".secondary-button, .danger-button" in style
+    assert "display: inline-flex" in style
+    assert "Georgia" not in profile_style
+    assert not any(
+        legacy in css
+        for css in (style, profile_style, project_style, coding_style)
+        for legacy in ("font-family: ui-serif", "font-family: ui-monospace")
+    )
 
 
 def test_three_interview_types_are_available_in_full_and_quick_practice() -> None:
