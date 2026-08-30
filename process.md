@@ -19,7 +19,6 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
-| `PROJ-005` | `/root` | `in_progress` | 集成项目解读、核心面试官 skill、快速/手撕专项及 Profile 评分改动，完成全量回归、统一提交、推送与无中断部署 | 所有已在变更日志登记的业务、数据、前端、测试、参考文档及 `README.md`、`process.md` | `PROJ-002` 至 `PROJ-004`、`PRACTICE-100/105`、`SKILL-001`、`CODING-001` 均已交付；部署前确认服务和数据目录边界 |
 
 登记模板：
 
@@ -138,3 +137,13 @@
 - 文件：`app/practice.py`、`tests/test_practice.py`、`process.md`。
 - 验证：`PYTHONPATH=.deps .venv/bin/python -m pytest -q tests/test_practice.py tests/test_frontend_practice_ui.py tests/test_real_practice_bank.py` → `26 passed`；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `200 passed`；`PYTHONPATH=.deps .venv/bin/python -m py_compile app/practice.py`、`git diff --check` 均通过。
 - 风险或后续事项：未向模型发送项目原始文件，只使用 Profile 已存的结构化简历与分析摘要；没有个人档案时示范回答必须省略未知细节或显式提示补充真实信息。本轮未进行线上真实模型与浏览器视觉回归。
+
+### PROJ-005 · 2026-08-30 · 全量集成与本地提交
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：集成项目解读、核心面试官 skill、快速/无限/手撕专项、错题本及 Profile 锚定评分改动，确认所有子任务均有独立变更记录；按用户最终指示仅保留本地 Git 提交，不推送远端、不执行线上部署。
+- 文件：所有已在 `PROJ-002/003/004`、`PRACTICE-100/101/102/105`、`SKILL-001`、`CODING-001` 中登记的文件，以及 `README.md`、`process.md`。
+- 验证：集成提交前全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `200 passed`；`node --check public/js/home.js public/js/project.js public/js/practice.js` 分别通过；Python compileall 与 `git diff --check` 通过。
+- 提交：`9e927fb`（完整功能集成）、`a3e321e`（Profile 项目分析收口）；本条进度记录单独提交。
+- 风险或后续事项：本地 `main` 尚未推送 `origin/main`，线上服务未更新；后续如需上线，应先推送并在保留 `.env`、`.deps` 与 `data/` 的前提下仅重启 `ai-interviewer-3000.service`，随后验证本地 8000 与 HTTPS 443/3000。
