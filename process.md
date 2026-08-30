@@ -27,17 +27,24 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`0d99796`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`455d855`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、English
-- 当前已部署功能的全量验证基线：`272 passed`
+- 当前已部署功能的全量验证基线：`274 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-036 · 2026-08-30 · 分阶段智能追问与真实回放工具生产发布
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：固定提交 `455d855` 已推送至 GitHub `origin/main`，并以 `git archive` 隔离快照部署至 `/opt/ai-interviewer-mvp`。发布源根目录在同步前设为 `0755`，部署保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 与缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 验证：最新隔离基线全量 `274 passed`；5 份虚构 PDF 共 27 轮和 Python/AI 单简历 5 轮真实 `qwen3.8-flash` 回放通过，换题 anchor、薪酬追问与项目优先行为符合 `EVAL-001`。生产服务为 `active/running`，主进程 PID `888741`；本机 8000、正式域名 HTTPS 443 和 3000 均返回 `{"status":"ok"}`；生产 `app/interview_engine.py` 与固定快照 SHA-256 一致，生产根目录保持 `0755`。
+- 回滚与风险：部署前代码备份为 `/tmp/ai-interviewer-mvp-pre-455d855-20260830.tar.gz`，不含密钥、数据库、虚拟环境和依赖。正式面试链路未新增模型调用、依赖或数据库迁移；评测脚本不由生产服务调用。
 
 ### EVAL-001 · 2026-08-30 · 五份虚构简历真实模型回放与 interviewer skill 修正
 
