@@ -27,17 +27,24 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`112771e`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`bc9c737`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、English
-- 当前已部署功能的全量验证基线：`267 passed`
+- 当前已部署功能的全量验证基线：`269 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-032 · 2026-08-30 · 项目不会时切换其它经历生产发布
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：固定提交 `bc9c737` 已推送至 GitHub `origin/main`，并以 `git archive` 隔离快照部署至 `/opt/ai-interviewer-mvp`。部署保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 与缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。项目深挖明确不会时优先切换下一段简历项目/实习，全部用完后才进入下一阶段。
+- 验证：最新隔离基线全量 `269 passed`，项目阶段/归属/核心面试专项 `19 passed`，Python compileall 与 `git diff --check` 通过。生产服务为 `active`，主进程 PID `865116`；本机 8000、正式域名 HTTPS 443 和 3000 均返回 `{"status":"ok"}`；生产代码确认包含 `switch_project_after_unknown`、持久化经历排除与“换一个项目”转场。
+- 回滚与风险：部署前代码备份为 `/tmp/ai-interviewer-mvp-pre-bc9c737-20260830.tar.gz`，不含密钥、数据库、虚拟环境和依赖。未迁移或修改历史数据，已有问答会直接参与重连后的项目排除恢复。
 
 ### INTERVIEW-019 · 2026-08-30 · 项目不会时切换其它简历经历
 
