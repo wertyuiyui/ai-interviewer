@@ -39,6 +39,14 @@
 
 ## 变更日志
 
+### DEPLOY-020 · 2026-08-30 · 面试阶段与计时交互生产发布
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：将功能提交 `f104e2e` 在最新远端 `15808f4` 上隔离重放为 `2b2c420` 并推送到 GitHub `origin/main`；以 `git archive 2b2c420` 生成固定快照同步至 `/opt/ai-interviewer-mvp`，未带入共享工作区未提交的 `REPORT-001` 文件。同步保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 与缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 验证：隔离远端基线全量 `264 passed`，JavaScript 语法、Python compileall 与 `git diff --check` 通过；部署后服务为 `active/running`，主进程 PID `791044`，本机 8000、正式域名 HTTPS 443 和 3000 的 `/healthz` 均返回 `{"status":"ok"}`。生产代码确认包含三个显式 HR 阶段、持久化问题计时和暂停事件；生产根目录、`.env`、`data/` 权限分别保持 0755、0640 `root:interview`、0750 `interview:interview`。
+- 回滚与风险：发布前代码包为 `/tmp/ai-interviewer-mvp-pre-2b2c420-20260830.tar.gz`，不含密钥、数据库、虚拟环境和依赖。首次公网健康检查受当前 shell 的代理环境影响出现 TLS EOF，移除代理变量后 443 与 3000 直连复测均正常；旧活动场次沿用兼容阶段，不在中途改写。
+
 ### INTERVIEW-008 · 2026-08-30 · 面试阶段与作答计时交互修正
 
 - Agent：`/root`。
