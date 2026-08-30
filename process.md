@@ -27,7 +27,7 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`9fd0cd1`；GitHub `origin/main` 已同步至 `9fd0cd1`
+- 当前生产已部署提交：`0985dcc`；GitHub `origin/main` 已同步至 `0985dcc`
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
@@ -38,6 +38,15 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-013 · 2026-08-30 · 首页简历选择与上传合并发布
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：将固定提交 `0985dcc` 推送至用户已授权的 GitHub `origin/main`，再以 `git archive 0985dcc` 生成隔离发布快照同步到 `/opt/ai-interviewer-mvp`；未使用含 `INTERVIEW-005`、`PROFILE-004` 未提交改动的共享工作区快照。生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 和缓存均保留，只重启 `ai-interviewer-3000.service`。
+- 回滚：`/tmp/ai-interviewer-mvp-pre-0985dcc-20260830.tar.gz`，不含密钥、数据库和依赖。
+- 验证：GitHub `main` 已快进至 `0985dcc`；生产服务 `active/running`，主进程 PID `699722`；本机 8000、正式域名 HTTPS 443 与 3000 健康端点均返回 `{"status":"ok"}`；生产首页包含“选择 / 上传简历”和 `home.js?v=20260830-resume-merge-v1`，指定旧句已不存在。
+- 风险或后续事项：沙箱网络命名空间无法直连本机 8000，宿主网络验证正常；服务日志确认 Uvicorn 正常监听且真实首页、配置、Profile 请求均成功。只发布固定提交，不包含协作任务的中间状态。
 
 ### HOME-002 · 2026-08-30 · 首页简历选择与上传合并
 
