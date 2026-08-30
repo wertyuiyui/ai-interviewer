@@ -90,6 +90,45 @@ def _utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _normalize_report_scoring(
+    report: dict[str, Any], effective_turn_count: int
+) -> dict[str, Any]:
+    """Expose one unambiguous score state, including for legacy report JSON.
+
+    Older zero-turn reports used the deterministic rubric's neutral 5.0
+    defaults.  Deriving the state from persisted effective turns corrects those
+    reports at read time without a destructive database migration.
+    """
+
+    normalized = dict(report)
+    if effective_turn_count > 0:
+        normalized["scored"] = True
+        normalized["score_status"] = "scored"
+        return normalized
+
+    normalized.update(
+        scored=False,
+        score_status="insufficient_data",
+        overall_score=0.0,
+        rubric={
+            "project_depth": {"score": 0.0, "weight": 0.4, "deductions": []},
+            "fundamentals": {"score": 0.0, "weight": 0.3, "deductions": []},
+            "coding_thought": {"score": 0.0, "weight": 0.2, "deductions": []},
+            "communication": {"score": 0.0, "weight": 0.1, "deductions": []},
+        },
+        question_feedback=[],
+        topic_scores={},
+        must_practice=[],
+        next_focus=[],
+        comparison={},
+        summary=(
+            "本场没有有效回答或可用转写，评分数据不足，因此本次不计分，"
+            "也不会写入后续面试的弱项记忆。"
+        ),
+    )
+    return normalized
+
+
 class Database:
     def __init__(self, settings: Settings | None = None) -> None:
         self.settings = settings or get_settings()
@@ -463,10 +502,20 @@ class Database:
     async def get_report(self, interview_id: str) -> dict[str, Any] | None:
         def operation(connection: sqlite3.Connection) -> dict[str, Any] | None:
             row = connection.execute(
-                "SELECT report_json FROM reports WHERE interview_id = ?",
+                """
+                SELECT r.report_json,
+                       (SELECT COUNT(*) FROM interview_turns t
+                        WHERE t.interview_id = r.interview_id
+                          AND LENGTH(TRIM(t.answer)) > 0) AS effective_turn_count
+                FROM reports r WHERE r.interview_id = ?
+                """,
                 (interview_id,),
             ).fetchone()
-            return json.loads(row["report_json"]) if row else None
+            if not row:
+                return None
+            return _normalize_report_scoring(
+                json.loads(row["report_json"]), int(row["effective_turn_count"])
+            )
 
         return await self._run(operation)
 
@@ -482,7 +531,10 @@ class Database:
                 """
                 SELECT r.report_json, i.role, i.specialization, i.language_mode, i.stress,
                        i.stress_level, i.duration_minutes, i.ended_at,
-                       i.end_reason, i.memory_enabled, i.hint_events_json
+                       i.end_reason, i.memory_enabled, i.hint_events_json,
+                       (SELECT COUNT(*) FROM interview_turns t
+                        WHERE t.interview_id = r.interview_id
+                          AND LENGTH(TRIM(t.answer)) > 0) AS effective_turn_count
                 FROM reports r
                 JOIN interviews i ON i.id = r.interview_id
                 WHERE r.client_id = ?
@@ -493,7 +545,9 @@ class Database:
             ).fetchall()
             reports: list[dict[str, Any]] = []
             for row in rows:
-                report = json.loads(row["report_json"])
+                report = _normalize_report_scoring(
+                    json.loads(row["report_json"]), int(row["effective_turn_count"])
+                )
                 try:
                     hint_events = json.loads(row["hint_events_json"] or "[]")
                 except (TypeError, ValueError, json.JSONDecodeError):
@@ -552,7 +606,13 @@ class Database:
         return await self._run(operation)
 
     async def weak_topics(self, client_id: str, limit: int = 3) -> list[str]:
-        reports = await self.history(client_id, limit=3, memory_only=True)
+        reports = await self.history(client_id, limit=20, memory_only=True)
+        reports = [
+            report
+            for report in reports
+            if report.get("scored", True)
+            and report.get("score_status", "scored") == "scored"
+        ][:3]
         if not reports:
             return []
         weights = [0.6, 0.3, 0.1]

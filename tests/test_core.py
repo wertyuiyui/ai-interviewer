@@ -410,6 +410,78 @@ async def test_mock_resume_parser_returns_required_chinese_schema(tmp_path) -> N
 
 
 @pytest.mark.asyncio
+async def test_zero_turn_report_is_unscored_without_llm_or_memory_pollution(
+    tmp_path,
+) -> None:
+    settings = replace(mock_settings(tmp_path), mock_llm=False)
+    db = Database(settings)
+    await db.initialize()
+    engine = InterviewEngine(db, settings)
+    interview = await engine.create(
+        InterviewCreate(
+            client_id="unscored-client-001",
+            resume=sample_resume(),
+            company="tencent",
+            duration_minutes=15,
+        )
+    )
+    await db.finish_interview(interview["id"], "manual")
+
+    class MustNotCallReportLLM:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def chat_json(self, *args, **kwargs):
+            self.calls += 1
+            raise AssertionError("zero-turn report must not call the report LLM")
+
+    client = MustNotCallReportLLM()
+    report = await ReportEngine(db, settings, client=client).generate(interview["id"])
+
+    assert client.calls == 0
+    assert report.scored is False
+    assert report.score_status == "insufficient_data"
+    assert report.overall_score == 0
+    assert {
+        report.rubric.project_depth.score,
+        report.rubric.fundamentals.score,
+        report.rubric.coding_thought.score,
+        report.rubric.communication.score,
+    } == {0}
+    assert report.question_feedback == []
+    assert report.topic_scores == {}
+    assert report.must_practice == []
+    assert report.next_focus == []
+    assert "不计分" in report.summary
+    assert await db.weak_topics("unscored-client-001") == []
+
+    # Read-time normalization also repairs reports created by an older version,
+    # which represented an empty interview as a neutral 5.0 score.
+    legacy = report.model_dump()
+    legacy.pop("scored")
+    legacy.pop("score_status")
+    legacy["overall_score"] = 5.0
+    for dimension in legacy["rubric"].values():
+        dimension["score"] = 5.0
+    with sqlite3.connect(settings.db_path) as connection:
+        connection.execute(
+            "UPDATE reports SET overall_score = 5, report_json = ? WHERE interview_id = ?",
+            (json.dumps(legacy, ensure_ascii=False), interview["id"]),
+        )
+        connection.commit()
+
+    repaired = await db.get_report(interview["id"])
+    assert repaired is not None
+    assert repaired["scored"] is False
+    assert repaired["score_status"] == "insufficient_data"
+    assert repaired["overall_score"] == 0
+    history = await db.history("unscored-client-001")
+    assert history[0]["scored"] is False
+    assert history[0]["overall_score"] == 0
+    assert await db.weak_topics("unscored-client-001") == []
+
+
+@pytest.mark.asyncio
 async def test_three_layer_drill_early_end_report_and_memory(tmp_path) -> None:
     settings = mock_settings(tmp_path)
     db = Database(settings)
@@ -455,6 +527,8 @@ async def test_three_layer_drill_early_end_report_and_memory(tmp_path) -> None:
     assert turns[-1].category == "project_depth"
     await db.finish_interview(normal["id"], "manual")
     report = await ReportEngine(db, settings).generate(normal["id"])
+    assert report.scored is True
+    assert report.score_status == "scored"
     assert len(report.question_feedback) == len(answers) + 1
     assert all(item.deductions and item.better_answer for item in report.question_feedback)
     assert report.rubric.project_depth.weight == 0.4

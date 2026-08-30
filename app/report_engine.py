@@ -66,10 +66,26 @@ class ReportEngine:
             if interview["status"] in {"created", "active"}:
                 raise AppError("INTERVIEW_ACTIVE", "请先结束面试再生成报告", status_code=409)
             await self.db.mark_reporting(interview_id)
-            turns = await self.db.list_turns(interview_id)
+            turns = [
+                turn
+                for turn in await self.db.list_turns(interview_id)
+                if turn.answer.strip()
+            ]
             report = await self._build(interview, turns)
-            previous = await self.db.history(interview["client_id"], limit=1)
-            report.comparison = self._comparison(previous[0] if previous else None, report)
+            if report.scored:
+                history = await self.db.history(interview["client_id"], limit=20)
+                previous = next(
+                    (
+                        item
+                        for item in history
+                        if item.get("scored", True)
+                        and item.get("score_status", "scored") == "scored"
+                    ),
+                    None,
+                )
+                report.comparison = self._comparison(previous, report)
+            else:
+                report.comparison = {}
             await self.db.save_report(interview, report)
             return report
 
@@ -77,6 +93,11 @@ class ReportEngine:
         self, interview: dict[str, Any], turns: list[InterviewTurn]
     ) -> InterviewReport:
         report_id = uuid.uuid4().hex
+        # With no usable answer there is no evidence to score.  In particular,
+        # do not send an empty transcript to the report model: model-generated
+        # midpoint values would look like a real assessment and pollute memory.
+        if not turns:
+            return self._insufficient_data_report(interview, report_id)
         if self.settings.mock_llm:
             return self._deterministic_report(interview, turns, report_id)
 
@@ -170,6 +191,32 @@ class ReportEngine:
             hint_events=interview.get("hint_events") or [],
         )
 
+    def _insufficient_data_report(
+        self, interview: dict[str, Any], report_id: str
+    ) -> InterviewReport:
+        zero_scores = {dimension: 0.0 for dimension in RUBRIC_WEIGHTS}
+        return InterviewReport(
+            report_id=report_id,
+            interview_id=interview["id"],
+            company=interview["company"],
+            scored=False,
+            score_status="insufficient_data",
+            overall_score=0.0,
+            rubric=self._rubric(zero_scores, []),
+            question_feedback=[],
+            topic_scores={},
+            must_practice=[],
+            summary=(
+                "本场没有有效回答或可用转写，评分数据不足，因此本次不计分，"
+                "也不会写入后续面试的弱项记忆。"
+            ),
+            next_focus=[],
+            comparison={},
+            memory_enabled=bool(interview.get("memory_enabled", True)),
+            hint_count=len(interview.get("hint_events") or []),
+            hint_events=interview.get("hint_events") or [],
+        )
+
     def _normalize(
         self,
         candidate: InterviewReport,
@@ -182,6 +229,8 @@ class ReportEngine:
         candidate.report_id = candidate.report_id or uuid.uuid4().hex
         candidate.interview_id = interview["id"]
         candidate.company = interview["company"]
+        candidate.scored = True
+        candidate.score_status = "scored"
         candidate.memory_enabled = bool(interview.get("memory_enabled", True))
         candidate.hint_count = len(interview.get("hint_events") or [])
         candidate.hint_events = [
@@ -327,7 +376,12 @@ class ReportEngine:
     def _comparison(
         previous: dict[str, Any] | None, current: InterviewReport
     ) -> dict[str, Any]:
-        if not previous:
+        if (
+            not previous
+            or not current.scored
+            or not previous.get("scored", True)
+            or previous.get("score_status", "scored") != "scored"
+        ):
             return {}
         before = previous.get("topic_scores") or {}
         changes: dict[str, dict[str, float]] = {}

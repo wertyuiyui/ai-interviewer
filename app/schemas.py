@@ -211,6 +211,11 @@ class InterviewReport(BaseModel):
     interview_id: str
     generated_at: str = Field(default_factory=utc_now_iso)
     company: Company
+    # A report can exist before the candidate has produced any usable answer.
+    # Keep that state distinct from a genuine numeric score so API consumers do
+    # not mistake a placeholder rubric for performance evidence.
+    scored: bool = True
+    score_status: Literal["scored", "insufficient_data"] = "scored"
     overall_score: float = Field(ge=0, le=10)
     rubric: Rubric
     question_feedback: list[QuestionFeedback]
