@@ -7,3 +7,5 @@ python-multipart>=0.0.20,<1
 python-dotenv>=1.0,<2
 edge-tts>=7.0,<8
 dashscope>=1.25.17,<2
+# 1.9.1 has a WebSocketApp.close() race that can discard completed CosyVoice audio.
+websocket-client==1.8.0

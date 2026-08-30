@@ -718,3 +718,18 @@ def test_cosyvoice_and_edge_tts_support_injected_factories() -> None:
         assert edge_mime == "audio/mpeg"
 
     asyncio.run(scenario())
+
+
+def test_websocket_client_close_tolerates_concurrent_teardown() -> None:
+    """Protect CosyVoice from websocket-client's 1.9.1 close-frame race."""
+    import websocket
+
+    app = websocket.WebSocketApp("ws://offline.invalid")
+
+    class RaceSocket:
+        def close(self, **_kwargs) -> None:
+            app.sock = None
+
+    app.sock = RaceSocket()
+    app.close()
+    assert app.sock is None
