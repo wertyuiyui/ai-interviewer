@@ -5,6 +5,7 @@ export class AudioSession {
     this.onOutputLevel = callbacks.onOutputLevel || (() => {});
     this.onPlaybackDrained = callbacks.onPlaybackDrained || (() => {});
     this.onPlaybackMarkerDrained = callbacks.onPlaybackMarkerDrained || (() => {});
+    this.onCaptureState = callbacks.onCaptureState || (() => {});
     this.context = null;
     this.stream = null;
     this.source = null;
@@ -14,6 +15,12 @@ export class AudioSession {
     this.generation = 1;
     this.muted = false;
     this.closed = false;
+    this.captureFrames = 0;
+    this.lastCaptureFrameAt = 0;
+    this._captureStateHandler = null;
+    this._trackEndedHandler = null;
+    this._trackMuteHandler = null;
+    this._visibilityHandler = null;
   }
 
   get hasMicrophone() {
@@ -26,6 +33,17 @@ export class AudioSession {
     if (!window.isSecureContext && location.hostname !== 'localhost') throw new Error('麦克风只允许在 HTTPS 页面使用。');
 
     this.context = new AudioContextClass({ latencyHint: 'interactive' });
+    this._captureStateHandler = () => {
+      this.onCaptureState({ type: 'audio-context', state: this.context?.state || 'closed' });
+    };
+    this.context.addEventListener('statechange', this._captureStateHandler);
+    this._visibilityHandler = () => {
+      if (document.visibilityState === 'visible'
+          && ['suspended', 'interrupted'].includes(this.context?.state)) {
+        this.resume().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', this._visibilityHandler);
     await Promise.all([
       this.context.audioWorklet.addModule('/worklets/capture-processor.js'),
       this.context.audioWorklet.addModule('/worklets/playback-processor.js'),
@@ -55,35 +73,75 @@ export class AudioSession {
   async enableMicrophone() {
     if (this.hasMicrophone) return;
     if (!navigator.mediaDevices?.getUserMedia) throw new Error('浏览器无法访问麦克风，请检查 HTTPS 与浏览器权限。');
-    this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
+    this._closeCapture();
+    await this.resume();
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          channelCount: { ideal: 1 },
+          echoCancellation: { ideal: true },
+          noiseSuppression: { ideal: true },
+          autoGainControl: { ideal: true },
+        },
+        video: false,
+      });
+      const track = this.stream.getAudioTracks()[0];
+      if (!track) throw new Error('没有检测到可用的麦克风音轨。');
+      this._trackEndedHandler = () => this.onCaptureState({ type: 'microphone-ended', state: 'ended' });
+      this._trackMuteHandler = () => this.onCaptureState({ type: 'microphone-muted', state: 'muted' });
+      track.addEventListener('ended', this._trackEndedHandler);
+      track.addEventListener('mute', this._trackMuteHandler);
+      this.source = this.context.createMediaStreamSource(this.stream);
+      this.captureNode = new AudioWorkletNode(this.context, 'pcm-capture-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 1,
+        outputChannelCount: [1],
         channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-      video: false,
+        channelCountMode: 'explicit',
+        processorOptions: { targetSampleRate: 16000, frameSamples: 1600 },
+      });
+      this.captureSink = this.context.createGain();
+      this.captureSink.gain.value = 0;
+      this.captureNode.port.onmessage = ({ data }) => {
+        if (data?.type === 'audio' && data.buffer instanceof ArrayBuffer && !this.muted) {
+          this.captureFrames += 1;
+          this.lastCaptureFrameAt = performance.now();
+          this.onAudioFrame(data.buffer);
+        }
+        if (data?.type === 'level') this.onInputLevel(this.muted ? 0 : Number(data.value) || 0);
+      };
+      this.source.connect(this.captureNode).connect(this.captureSink).connect(this.context.destination);
+      this.onCaptureState({ type: 'microphone-ready', state: 'live' });
+    } catch (error) {
+      this._closeCapture();
+      this.onCaptureState({ type: 'microphone-error', state: 'error' });
+      throw error;
+    }
+  }
+
+  _closeCapture() {
+    const tracks = this.stream?.getAudioTracks() || [];
+    tracks.forEach((track) => {
+      if (this._trackEndedHandler) track.removeEventListener('ended', this._trackEndedHandler);
+      if (this._trackMuteHandler) track.removeEventListener('mute', this._trackMuteHandler);
+      track.stop();
     });
-    this.source = this.context.createMediaStreamSource(this.stream);
-    this.captureNode = new AudioWorkletNode(this.context, 'pcm-capture-processor', {
-      numberOfInputs: 1,
-      numberOfOutputs: 1,
-      outputChannelCount: [1],
-      channelCount: 1,
-      channelCountMode: 'explicit',
-      processorOptions: { targetSampleRate: 16000, frameSamples: 320 },
-    });
-    this.captureSink = this.context.createGain();
-    this.captureSink.gain.value = 0;
-    this.captureNode.port.onmessage = ({ data }) => {
-      if (data?.type === 'audio' && data.buffer instanceof ArrayBuffer && !this.muted) this.onAudioFrame(data.buffer);
-      if (data?.type === 'level') this.onInputLevel(this.muted ? 0 : Number(data.value) || 0);
-    };
-    this.source.connect(this.captureNode).connect(this.captureSink).connect(this.context.destination);
+    this.source?.disconnect();
+    this.captureNode?.disconnect();
+    this.captureSink?.disconnect();
+    this.captureNode?.port.close();
+    this.stream = null;
+    this.source = null;
+    this.captureNode = null;
+    this.captureSink = null;
+    this._trackEndedHandler = null;
+    this._trackMuteHandler = null;
+    this.captureFrames = 0;
+    this.lastCaptureFrameAt = 0;
   }
 
   async resume() {
-    if (this.context?.state === 'suspended') await this.context.resume();
+    if (['suspended', 'interrupted'].includes(this.context?.state)) await this.context.resume();
   }
 
   setMuted(value) {
@@ -150,14 +208,13 @@ export class AudioSession {
     if (this.closed) return;
     this.closed = true;
     this.clearPlayback();
-    this.stream?.getTracks().forEach((track) => track.stop());
-    this.source?.disconnect();
-    this.captureNode?.disconnect();
-    this.captureSink?.disconnect();
+    this._closeCapture();
     this.playbackNode?.disconnect();
-    this.captureNode?.port.close();
     this.playbackNode?.port.close();
+    if (this._captureStateHandler) this.context?.removeEventListener('statechange', this._captureStateHandler);
+    if (this._visibilityHandler) document.removeEventListener('visibilitychange', this._visibilityHandler);
     if (this.context && this.context.state !== 'closed') await this.context.close().catch(() => {});
-    this.stream = null;
+    this._captureStateHandler = null;
+    this._visibilityHandler = null;
   }
 }

@@ -94,6 +94,17 @@ class FakeEngine:
         )
 
 
+class BilingualFakeEngine:
+    async def answer(self, _interview_id: str, _text: str) -> Any:
+        return SimpleNamespace(
+            question="请解释 MySQL InnoDB 的 MVCC，并说明 Redis cache miss 的处理。",
+            pressure_action="chain",
+            silence_seconds=0,
+            ended=False,
+            end_reason=None,
+        )
+
+
 class TimeoutEngine:
     async def answer(self, _interview_id: str, _text: str) -> Any:
         raise AppError("INTERVIEW_TIMEOUT", "面试时间已到", status_code=409)
@@ -103,6 +114,7 @@ class FakeOmni:
     def __init__(self) -> None:
         self.incoming: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self.sent_text: list[tuple[str, bool]] = []
+        self.sent_audio: list[bytes] = []
         self.cancel_calls = 0
         self.closed = False
         self.control_response_id = "response-controlled"
@@ -119,6 +131,9 @@ class FakeOmni:
                     "status": "in_progress",
                 }
             )
+
+    async def send_audio(self, pcm: bytes) -> None:
+        self.sent_audio.append(pcm)
 
     async def cancel(self) -> None:
         self.cancel_calls += 1
@@ -258,6 +273,7 @@ def test_l0_session_enables_asr_and_disables_automatic_response() -> None:
             }
             assert session["turn_detection"]["create_response"] is False
             assert session["turn_detection"]["interrupt_response"] is True
+            assert session["turn_detection"]["threshold"] == 0.35
 
             await client.close()
             assert websocket.closed
@@ -320,6 +336,127 @@ def test_typed_l0_answer_does_not_cancel_and_waits_for_matching_response_done() 
         assert database.last_questions == [
             (session.interview_id, "请继续解释 Redis 的过期删除策略。")
         ]
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_l0_browser_session_mixed_language_audio_to_next_spoken_question(
+    caplog: Any,
+) -> None:
+    caplog.set_level("INFO", logger="app.voice_session")
+
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        database = FakeDatabase()
+        session = make_session(
+            recorder, engine=BilingualFakeEngine(), database=database
+        )
+        session.interview["language_mode"] = "bilingual"
+        omni = FakeOmni()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+        session.provider_task = asyncio.create_task(session._consume_omni())
+
+        pcm = b"\x10\x00" * 1600
+        await session.handle_audio(pcm)
+        assert omni.sent_audio == [pcm]
+
+        await omni.emit({"type": "speech_started", "item_id": "mixed-1"})
+        await omni.emit(
+            {
+                "type": "user_partial",
+                "item_id": "mixed-1",
+                "text": "我会先检查 Redis cache",
+                "language": "zh",
+            }
+        )
+        await omni.emit({"type": "speech_ended", "item_id": "mixed-1"})
+        await omni.emit(
+            {
+                "type": "user_done",
+                "item_id": "mixed-1",
+                "text": "我会先检查 Redis cache miss，再回源 MySQL。",
+                "language": "zh",
+            }
+        )
+
+        await asyncio.wait_for(omni.control_sent.wait(), timeout=1)
+        await omni.emit(
+            {
+                "type": "assistant_done",
+                "response_id": omni.control_response_id,
+                "text": "请解释 MySQL InnoDB 的 MVCC，并说明 Redis cache miss 的处理。",
+            }
+        )
+        await omni.emit(
+            {
+                "type": "audio_chunk",
+                "response_id": omni.control_response_id,
+                "audio": b"\x01\x00\x02\x00",
+                "sample_rate": 24000,
+            }
+        )
+        await omni.emit(
+            {
+                "type": "response_done",
+                "response_id": omni.control_response_id,
+                "status": "completed",
+            }
+        )
+        await wait_until(lambda: not session.evaluation_tasks)
+
+        assert recorder.first("candidate.transcript.partial") is not None
+        assert recorder.first("candidate.transcript.done") is not None
+        assert recorder.first("audio.chunk") is not None
+        assert recorder.first("audio.stream.done") is not None
+        assert database.last_questions == [
+            (
+                session.interview_id,
+                "请解释 MySQL InnoDB 的 MVCC，并说明 Redis cache miss 的处理。",
+            )
+        ]
+        spoken_control = omni.sent_text[-1][0]
+        assert "允许自然地中英混读" in spoken_control
+        assert "MySQL InnoDB" in spoken_control
+        assert "不要翻译" in spoken_control
+        await session.close()
+
+    asyncio.run(scenario())
+    assert "我会先检查 Redis" not in caplog.text
+    assert "请解释 MySQL InnoDB" not in caplog.text
+
+
+def test_l0_transcription_failure_is_recoverable_and_clears_partial() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+        omni = FakeOmni()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+        session.provider_task = asyncio.create_task(session._consume_omni())
+
+        await omni.emit({"type": "speech_started", "item_id": "failed-1"})
+        await omni.emit(
+            {"type": "user_partial", "item_id": "failed-1", "text": "Redis"}
+        )
+        await omni.emit(
+            {
+                "type": "transcription_error",
+                "item_id": "failed-1",
+                "code": "transcription_error",
+            }
+        )
+        await wait_until(
+            lambda: recorder.first("candidate.transcript.failed") is not None
+        )
+
+        assert session.actual_mode == "L0"
+        assert session.evaluation_tasks == set()
+        error = recorder.first("error")
+        assert error is not None
+        assert error["code"] == "ASR_TRANSCRIPTION_FAILED"
+        assert error["recoverable"] is True
         await session.close()
 
     asyncio.run(scenario())

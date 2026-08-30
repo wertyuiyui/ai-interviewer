@@ -234,6 +234,27 @@ def normalize_omni_event(event: Mapping[str, Any], output_sample_rate: int = 240
                 "type": "user_done",
                 "text": str(event.get("transcript") or ""),
                 "item_id": event.get("item_id"),
+                "language": event.get("language"),
+                "emotion": event.get("emotion"),
+            }
+        ]
+
+    if event_type == "conversation.item.input_audio_transcription.failed":
+        error = event.get("error")
+        if not isinstance(error, Mapping):
+            error = {}
+        # A transcription failure is scoped to one utterance.  Keep it
+        # distinct from a transport/provider error so the browser session can
+        # ask the candidate to repeat the answer without tearing down a
+        # healthy realtime connection.
+        return [
+            {
+                **common,
+                "type": "transcription_error",
+                "code": str(error.get("code") or "input_audio_transcription_failed"),
+                "message": str(error.get("message") or "Input audio transcription failed"),
+                "param": error.get("param"),
+                "item_id": event.get("item_id"),
             }
         ]
 
@@ -407,7 +428,11 @@ class OmniRealtimeClient(_EventEmitter):
         self.input_sample_rate = _env_int("OMNI_INPUT_SAMPLE_RATE", 16000)
         self.output_sample_rate = _env_int("OMNI_OUTPUT_SAMPLE_RATE", 24000)
         self.vad_type = _env_first("OMNI_VAD_TYPE", default="server_vad")
-        self.vad_threshold = _env_float("OMNI_VAD_THRESHOLD", 0.5)
+        # Laptop microphones can be considerably quieter after browser echo
+        # cancellation.  A slightly more sensitive default avoids the common
+        # "waveform moves but server VAD never starts" failure while retaining
+        # an environment override for noisy rooms.
+        self.vad_threshold = _env_float("OMNI_VAD_THRESHOLD", 0.35)
         self.silence_duration_ms = _env_int("OMNI_SILENCE_DURATION_MS", 800)
         self.input_transcription_model = _env_first(
             "OMNI_TRANSCRIPTION_MODEL", default="qwen3-asr-flash-realtime"
@@ -679,7 +704,12 @@ def normalize_paraformer_event(event: Mapping[str, Any]) -> list[Event]:
 class ParaformerClient(_EventEmitter):
     """Native duplex WebSocket client for Paraformer realtime ASR."""
 
-    def __init__(self, *, websocket_factory: WebSocketFactory | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        language_hints: list[str] | None = None,
+        websocket_factory: WebSocketFactory | None = None,
+    ) -> None:
         super().__init__()
         self.api_key = _env_first("PARAFORMER_API_KEY", "DASHSCOPE_API_KEY")
         self.workspace_id = _env_first("PARAFORMER_WORKSPACE_ID", "DASHSCOPE_WORKSPACE_ID")
@@ -699,8 +729,14 @@ class ParaformerClient(_EventEmitter):
         )
         self.sample_rate = _env_int("PARAFORMER_SAMPLE_RATE", 16000)
         self.format = _env_first("PARAFORMER_FORMAT", default="pcm")
-        language_raw = _env_first("PARAFORMER_LANGUAGE_HINTS", default="zh")
-        self.language_hints = [item.strip() for item in language_raw.split(",") if item.strip()]
+        if language_hints is None:
+            language_raw = _env_first("PARAFORMER_LANGUAGE_HINTS", default="zh")
+            language_hints = language_raw.split(",")
+        self.language_hints = [
+            item.strip().lower()
+            for item in language_hints
+            if isinstance(item, str) and item.strip()
+        ]
         self.max_sentence_silence = _env_int("PARAFORMER_MAX_SENTENCE_SILENCE_MS", 1000)
         self.semantic_punctuation = _env_bool("PARAFORMER_SEMANTIC_PUNCTUATION", False)
         self.disfluency_removal = _env_bool("PARAFORMER_DISFLUENCY_REMOVAL", False)

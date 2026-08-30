@@ -115,6 +115,26 @@ def test_normalize_omni_events() -> None:
         }
     ]
 
+    failed = normalize_omni_event(
+        {
+            "type": "conversation.item.input_audio_transcription.failed",
+            "item_id": "u2",
+            "error": {
+                "code": "transcription_error",
+                "message": "audio was not recognized",
+                "param": "audio",
+            },
+        }
+    )[0]
+    assert failed == {
+        "provider_event_id": None,
+        "type": "transcription_error",
+        "code": "transcription_error",
+        "message": "audio was not recognized",
+        "param": "audio",
+        "item_id": "u2",
+    }
+
     pcm = b"\x01\x00\x02\x00"
     audio = normalize_omni_event(
         {"type": "response.audio.delta", "delta": base64.b64encode(pcm).decode()}
@@ -231,7 +251,9 @@ def test_paraformer_waits_for_task_started_and_sends_binary_audio() -> None:
         async def factory(_url: str, _headers: dict[str, str]) -> FakeWebSocket:
             return ws
 
-        client = ParaformerClient(websocket_factory=factory)
+        client = ParaformerClient(
+            language_hints=["zh", "en"], websocket_factory=factory
+        )
         await client.start()
         await client.send_audio(b"\x00\x00" * 1600)
 
@@ -239,6 +261,7 @@ def test_paraformer_waits_for_task_started_and_sends_binary_audio() -> None:
         assert first["header"]["action"] == "run-task"
         assert first["payload"]["model"] == "paraformer-realtime-v2"
         assert first["payload"]["parameters"]["sample_rate"] == 16000
+        assert first["payload"]["parameters"]["language_hints"] == ["zh", "en"]
         assert ws.sent[1] == b"\x00\x00" * 1600
 
         await client.finish()

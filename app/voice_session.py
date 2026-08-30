@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
+import math
+import sys
+import time
+from array import array
 from contextlib import suppress
 from typing import Any, Awaitable, Callable
 import uuid
@@ -23,6 +28,40 @@ from .voice import (
 
 SendEvent = Callable[..., Awaitable[None]]
 EndCallback = Callable[[str], Awaitable[None]]
+
+
+logger = logging.getLogger(__name__)
+
+
+def _spoken_control_prompt(
+    text: str, *, startup: bool = False, language_mode: str = "bilingual"
+) -> str:
+    """Build a verbatim bilingual announcement instruction for Omni TTS."""
+
+    context = "会话启动" if startup else "面试流程控制"
+    language_instruction = (
+        "允许自然地中英混读，"
+        if language_mode == "bilingual"
+        else "以中文表达为主，但原文中的英文技术词不得翻译，"
+    )
+    return (
+        f"这是{context}消息，不是候选人的回答。"
+        f"请严格按原文自然朗读下面内容：{language_instruction}中文使用普通话；英文单词、缩写、"
+        "版本号和代码术语保留英文并清晰发音。不要翻译、改写、解释或增删，"
+        f"不要加开场白。只输出朗读内容：\n{text}"
+    )
+
+
+def _pcm16le_rms(pcm: bytes) -> int:
+    """Return frame RMS without retaining or logging audio content."""
+
+    samples = array("h")
+    samples.frombytes(pcm)
+    if sys.byteorder != "little":  # pragma: no cover - production is little-endian
+        samples.byteswap()
+    if not samples:
+        return 0
+    return int(math.sqrt(sum(sample * sample for sample in samples) / len(samples)))
 
 
 def fallback_chain(requested: str, enabled: bool = True) -> list[str]:
@@ -89,6 +128,21 @@ class BrowserVoiceSession:
         self._deliberate_interrupt_task: asyncio.Task[None] | None = None
         self._deliberate_interrupt_firing = False
         self._deliberate_interrupt_ordinals: set[int] = set()
+        self._audio_watchdog_task: asyncio.Task[None] | None = None
+        self._audio_input_frames = 0
+        self._audio_input_bytes = 0
+        self._audio_input_peak_rms = 0
+        self._audio_output_chunks = 0
+        self._audio_output_bytes = 0
+        self._vad_started_count = 0
+        self._transcript_partial_count = 0
+        self._transcript_done_count = 0
+        self._transcript_failed_count = 0
+        self._first_audio_input_at: float | None = None
+        self._last_audio_input_at: float | None = None
+        self._last_audio_health_log_at = 0.0
+        self._speech_started_at: float | None = None
+        self._omni_expected_speech: str | None = None
 
     async def start(self, initial_question: str) -> str:
         errors: list[str] = []
@@ -108,6 +162,19 @@ class BrowserVoiceSession:
                     voice_mode=self.actual_mode,
                     reason="；".join(errors) if errors else None,
                 )
+                logger.info(
+                    "voice.provider.ready interview_id=%s requested_mode=%s "
+                    "actual_mode=%s fallback_count=%d",
+                    self.interview_id,
+                    self.settings.voice_mode,
+                    self.actual_mode,
+                    len(errors),
+                )
+                if self.actual_mode != "L3":
+                    self._audio_watchdog_task = asyncio.create_task(
+                        self._audio_input_watchdog(),
+                        name=f"voice-audio-watchdog-{self.interview_id}",
+                    )
                 return self.actual_mode
             except asyncio.CancelledError:
                 raise
@@ -117,6 +184,12 @@ class BrowserVoiceSession:
                     await self._close_provider()
                 continue
         self.actual_mode = "L3"
+        logger.warning(
+            "voice.provider.unavailable interview_id=%s requested_mode=%s attempts=%d",
+            self.interview_id,
+            self.settings.voice_mode,
+            len(errors),
+        )
         await self.send(
             "mode.changed",
             requested_mode=self.settings.voice_mode,
@@ -137,18 +210,27 @@ class BrowserVoiceSession:
         self._omni_started_response_id = None
         self._omni_response_pending = True
         self._omni_responding = True
+        self._omni_expected_speech = initial_question
         try:
             await self.omni.send_text(
-                "这是会话启动控制消息，不是候选人的回答。"
-                f"请只用中文逐字说出下面这句面试问题，不要加开场白：{initial_question}"
+                _spoken_control_prompt(
+                    initial_question,
+                    startup=True,
+                    language_mode=str(
+                        self.interview.get("language_mode") or "bilingual"
+                    ),
+                )
             )
         except Exception:
             self._omni_response_pending = False
             self._omni_responding = False
+            self._omni_expected_speech = None
             raise
 
     async def _start_pipeline(self, mode: str, initial_question: str) -> None:
-        self.asr = ParaformerClient()
+        language_mode = str(self.interview.get("language_mode") or "bilingual")
+        language_hints = ["zh", "en"] if language_mode == "bilingual" else ["zh"]
+        self.asr = ParaformerClient(language_hints=language_hints)
         await self.asr.start()
         self.vad = SileroVAD(sample_rate=16000)
         self.tts = CosyVoiceTTS() if mode == "L1" else EdgeTTS()
@@ -161,6 +243,49 @@ class BrowserVoiceSession:
         # falls through to L2 before the candidate begins speaking.
         await self._speak(initial_question)
 
+    async def _audio_input_watchdog(self) -> None:
+        """Emit content-free diagnostics when the browser audio stream stalls."""
+
+        last_frames = 0
+        try:
+            while not self.closed and not self.ending and self.actual_mode != "L3":
+                await asyncio.sleep(5)
+                frames = self._audio_input_frames
+                if frames == last_frames:
+                    logger.warning(
+                        "voice.audio.stalled interview_id=%s mode=%s frames=%d "
+                        "bytes=%d vad_started=%d transcript_done=%d",
+                        self.interview_id,
+                        self.actual_mode,
+                        frames,
+                        self._audio_input_bytes,
+                        self._vad_started_count,
+                        self._transcript_done_count,
+                    )
+                elif frames > 0 and self._vad_started_count == 0:
+                    logger.info(
+                        "voice.vad.awaiting_speech interview_id=%s mode=%s frames=%d peak_rms=%d",
+                        self.interview_id,
+                        self.actual_mode,
+                        frames,
+                        self._audio_input_peak_rms,
+                    )
+                if (
+                    self._speech_started_at is not None
+                    and time.monotonic() - self._speech_started_at >= 15
+                ):
+                    logger.warning(
+                        "voice.transcript.pending interview_id=%s mode=%s "
+                        "pending_ms=%d partial_count=%d",
+                        self.interview_id,
+                        self.actual_mode,
+                        int((time.monotonic() - self._speech_started_at) * 1000),
+                        self._transcript_partial_count,
+                    )
+                last_frames = frames
+        except asyncio.CancelledError:
+            raise
+
     async def handle_audio(self, pcm: bytes) -> None:
         if self.closed or self.ending or not pcm:
             return
@@ -172,6 +297,36 @@ class BrowserVoiceSession:
                 recoverable=True,
             )
             return
+        now = time.monotonic()
+        rms = _pcm16le_rms(pcm)
+        self._audio_input_frames += 1
+        self._audio_input_bytes += len(pcm)
+        self._audio_input_peak_rms = max(self._audio_input_peak_rms, rms)
+        self._last_audio_input_at = now
+        if self._first_audio_input_at is None:
+            self._first_audio_input_at = now
+            self._last_audio_health_log_at = now
+            logger.info(
+                "voice.audio.first_frame interview_id=%s mode=%s bytes=%d rms=%d",
+                self.interview_id,
+                self.actual_mode,
+                len(pcm),
+                rms,
+            )
+        elif now - self._last_audio_health_log_at >= 5:
+            self._last_audio_health_log_at = now
+            logger.info(
+                "voice.audio.health interview_id=%s mode=%s frames=%d bytes=%d "
+                "peak_rms=%d vad_started=%d transcript_done=%d transcript_failed=%d",
+                self.interview_id,
+                self.actual_mode,
+                self._audio_input_frames,
+                self._audio_input_bytes,
+                self._audio_input_peak_rms,
+                self._vad_started_count,
+                self._transcript_done_count,
+                self._transcript_failed_count,
+            )
         try:
             if self.actual_mode == "L0" and self.omni:
                 await self.omni.send_audio(pcm)
@@ -184,6 +339,19 @@ class BrowserVoiceSession:
                                 source=str(event.get("source", "silero"))
                             )
                         elif event["type"] == "speech_ended":
+                            speech_ms = None
+                            if self._speech_started_at is not None:
+                                speech_ms = int(
+                                    (time.monotonic() - self._speech_started_at)
+                                    * 1000
+                                )
+                            logger.info(
+                                "voice.vad.ended interview_id=%s speech_ms=%s "
+                                "source=%s",
+                                self.interview_id,
+                                speech_ms,
+                                str(event.get("source") or "silero"),
+                            )
                             await self._candidate_speech_ended()
                 await self.asr.send_audio(pcm)
         except asyncio.CancelledError:
@@ -283,14 +451,20 @@ class BrowserVoiceSession:
                 self._omni_fatal_error = None
                 self._omni_response_pending = True
                 self._omni_responding = True
+                self._omni_expected_speech = text
                 try:
                     await self.omni.send_text(
-                        "这是面试流程控制消息，不是候选人回答。"
-                        f"请只说下面这句话，不要扩写：{text}"
+                        _spoken_control_prompt(
+                            text,
+                            language_mode=str(
+                                self.interview.get("language_mode") or "bilingual"
+                            ),
+                        )
                     )
                 except Exception:
                     self._omni_response_pending = False
                     self._omni_responding = False
+                    self._omni_expected_speech = None
                     raise
                 try:
                     await asyncio.wait_for(
@@ -326,12 +500,46 @@ class BrowserVoiceSession:
             async for event in self.omni.events():
                 event_type = event.get("type")
                 if event_type == "speech_started":
+                    self._vad_started_count += 1
+                    self._speech_started_at = time.monotonic()
+                    logger.info(
+                        "voice.vad.started interview_id=%s count=%d item_present=%s "
+                        "response_active=%s",
+                        self.interview_id,
+                        self._vad_started_count,
+                        bool(event.get("item_id")),
+                        self._omni_responding,
+                    )
                     await self._candidate_speech_started(
                         source="server_vad", cancel_provider=False
                     )
                 elif event_type == "speech_ended":
+                    speech_ms = None
+                    if self._speech_started_at is not None:
+                        speech_ms = int(
+                            (time.monotonic() - self._speech_started_at) * 1000
+                        )
+                    logger.info(
+                        "voice.vad.ended interview_id=%s speech_ms=%s item_present=%s",
+                        self.interview_id,
+                        speech_ms,
+                        bool(event.get("item_id")),
+                    )
                     await self._candidate_speech_ended()
                 elif event_type == "user_partial":
+                    self._transcript_partial_count += 1
+                    if (
+                        self._transcript_partial_count == 1
+                        or self._transcript_partial_count % 10 == 0
+                    ):
+                        logger.info(
+                            "voice.transcript.partial interview_id=%s partial_count=%d "
+                            "chars=%d language=%s",
+                            self.interview_id,
+                            self._transcript_partial_count,
+                            len(str(event.get("text") or "")),
+                            str(event.get("language") or "unknown"),
+                        )
                     await self.send(
                         "candidate.transcript.partial",
                         text=event.get("text", ""),
@@ -340,6 +548,22 @@ class BrowserVoiceSession:
                 elif event_type == "user_done":
                     await self._candidate_speech_ended()
                     text = str(event.get("text", "")).strip()
+                    self._transcript_done_count += 1
+                    speech_ms = None
+                    if self._speech_started_at is not None:
+                        speech_ms = int(
+                            (time.monotonic() - self._speech_started_at) * 1000
+                        )
+                    logger.info(
+                        "voice.transcript.done interview_id=%s count=%d chars=%d "
+                        "speech_to_final_ms=%s language=%s",
+                        self.interview_id,
+                        self._transcript_done_count,
+                        len(text),
+                        speech_ms,
+                        str(event.get("language") or "unknown"),
+                    )
+                    self._speech_started_at = None
                     if text:
                         await self.send(
                             "candidate.transcript.done",
@@ -347,6 +571,45 @@ class BrowserVoiceSession:
                             item_id=event.get("item_id"),
                         )
                         await self._schedule_evaluation(self._evaluate_l0(text))
+                    else:
+                        self._transcript_failed_count += 1
+                        logger.warning(
+                            "voice.transcript.empty interview_id=%s count=%d item_present=%s",
+                            self.interview_id,
+                            self._transcript_failed_count,
+                            bool(event.get("item_id")),
+                        )
+                        await self.send(
+                            "candidate.transcript.failed",
+                            item_id=event.get("item_id"),
+                        )
+                        await self.send(
+                            "error",
+                            code="ASR_EMPTY_TRANSCRIPT",
+                            message="没有识别到清晰内容，请靠近麦克风再说一次或改用文字输入。",
+                            recoverable=True,
+                        )
+                elif event_type == "transcription_error":
+                    await self._candidate_speech_ended()
+                    self._transcript_failed_count += 1
+                    self._speech_started_at = None
+                    logger.warning(
+                        "voice.transcript.failed interview_id=%s count=%d code=%s item_present=%s",
+                        self.interview_id,
+                        self._transcript_failed_count,
+                        str(event.get("code") or "unknown"),
+                        bool(event.get("item_id")),
+                    )
+                    await self.send(
+                        "candidate.transcript.failed",
+                        item_id=event.get("item_id"),
+                    )
+                    await self.send(
+                        "error",
+                        code="ASR_TRANSCRIPTION_FAILED",
+                        message="这次语音没有转写成功，请再说一次或改用文字输入。",
+                        recoverable=True,
+                    )
                 elif event_type == "response_started":
                     response_id = str(event.get("response_id") or "").strip()
                     if not response_id:
@@ -366,16 +629,36 @@ class BrowserVoiceSession:
                         response_id, asyncio.Event()
                     )
                     self._omni_response_started.set()
+                    logger.info(
+                        "voice.tts.started interview_id=%s response_id=%s",
+                        self.interview_id,
+                        response_id,
+                    )
                 elif event_type == "assistant_partial":
                     self._omni_responding = True
                     # All L0 responses are server-controlled announcements.
                     # Their exact text has already been emitted by the shared
                     # interview engine, so provider deltas are intentionally
                     # not duplicated into the transcript.
+                elif event_type == "assistant_done":
+                    actual = str(event.get("text") or "")
+                    expected = self._omni_expected_speech or ""
+                    compact_actual = "".join(actual.split())
+                    compact_expected = "".join(expected.split())
+                    logger.info(
+                        "voice.tts.transcript interview_id=%s exact_match=%s "
+                        "expected_chars=%d actual_chars=%d",
+                        self.interview_id,
+                        compact_actual == compact_expected,
+                        len(expected),
+                        len(actual),
+                    )
                 elif event_type == "audio_chunk":
                     self._omni_responding = True
                     if self._drop_omni_audio:
                         continue
+                    self._audio_output_chunks += 1
+                    self._audio_output_bytes += len(event.get("audio") or b"")
                     await self.send(
                         "audio.chunk",
                         audio=base64.b64encode(event["audio"]).decode("ascii"),
@@ -395,6 +678,24 @@ class BrowserVoiceSession:
                         self._omni_active_response_id = None
                         self._omni_response_pending = False
                         self._omni_responding = False
+                    logger.info(
+                        "voice.tts.done interview_id=%s response_id=%s status=%s "
+                        "output_chunks=%d output_bytes=%d",
+                        self.interview_id,
+                        response_id,
+                        status or "missing",
+                        self._audio_output_chunks,
+                        self._audio_output_bytes,
+                    )
+                    self._omni_expected_speech = None
+                    if status == "completed" and not self._drop_omni_audio:
+                        # This marker is ordered after all audio.chunk events by
+                        # the browser WebSocket send lock.  The AudioWorklet
+                        # turns it into a real queue-drained signal, so a brief
+                        # network gap cannot masquerade as end-of-question.
+                        await self.send(
+                            "audio.stream.done", announcement_id=response_id
+                        )
                     expected_cancel = self._omni_cancel_in_flight or self._drop_omni_audio
                     if (
                         self._omni_cancel_in_flight
@@ -420,6 +721,11 @@ class BrowserVoiceSession:
                         self._discard_omni_cancel_error_token()
                         self._clear_omni_cancel_state()
                         continue
+                    logger.warning(
+                        "voice.provider.error interview_id=%s code=%s",
+                        self.interview_id,
+                        str(event.get("code") or "unknown"),
+                    )
                     await self.send(
                         "error",
                         code=event.get("code", "VOICE_PROVIDER_ERROR"),
@@ -446,16 +752,42 @@ class BrowserVoiceSession:
             async for event in self.asr.events():
                 event_type = event.get("type")
                 if event_type == "user_partial":
+                    self._transcript_partial_count += 1
                     await self.send(
                         "candidate.transcript.partial", text=event.get("text", "")
                     )
                 elif event_type == "user_done":
                     await self._candidate_speech_ended()
                     text = str(event.get("text", "")).strip()
+                    self._transcript_done_count += 1
+                    logger.info(
+                        "voice.transcript.done interview_id=%s mode=%s count=%d "
+                        "chars=%d",
+                        self.interview_id,
+                        self.actual_mode,
+                        self._transcript_done_count,
+                        len(text),
+                    )
+                    self._speech_started_at = None
                     if text:
                         await self.send("candidate.transcript.done", text=text)
                         await self._schedule_evaluation(self._pipeline_answer(text))
+                    else:
+                        self._transcript_failed_count += 1
+                        await self.send("candidate.transcript.failed")
+                        await self.send(
+                            "error",
+                            code="ASR_EMPTY_TRANSCRIPT",
+                            message="没有识别到清晰内容，请靠近麦克风再说一次或改用文字输入。",
+                            recoverable=True,
+                        )
                 elif event_type == "error":
+                    logger.warning(
+                        "voice.provider.error interview_id=%s mode=%s code=%s",
+                        self.interview_id,
+                        self.actual_mode,
+                        str(event.get("code") or "unknown"),
+                    )
                     await self.send(
                         "error",
                         code=event.get("code", "ASR_ERROR"),
@@ -595,6 +927,8 @@ class BrowserVoiceSession:
             if generation != self.generation or self.closed:
                 return
             encoded = base64.b64encode(audio).decode("ascii")
+            self._audio_output_chunks += 1
+            self._audio_output_bytes += len(audio)
             if mime_type.startswith("audio/pcm"):
                 rate = 24000
                 marker = "rate="
@@ -642,8 +976,8 @@ class BrowserVoiceSession:
         finally:
             if self.tts_task is tts_task:
                 self.tts_task = None
-        if wait_for_playback and not self.closed:
-            await self._wait_for_browser_playback()
+        if not self.closed:
+            await self._mark_browser_playback_end(wait=wait_for_playback)
 
     async def _barge_in(
         self, *, source: str, cancel_provider: bool = True
@@ -699,6 +1033,17 @@ class BrowserVoiceSession:
     async def _candidate_speech_started(
         self, *, source: str, cancel_provider: bool = True
     ) -> None:
+        if source != "server_vad":
+            self._vad_started_count += 1
+            self._speech_started_at = time.monotonic()
+            logger.info(
+                "voice.vad.started interview_id=%s count=%d source=%s "
+                "response_active=%s",
+                self.interview_id,
+                self._vad_started_count,
+                source,
+                self._omni_responding or bool(self.tts_task),
+            )
         self._candidate_speaking = True
         await self._barge_in(source=source, cancel_provider=cancel_provider)
         raw_stress_level = self.interview.get("stress_level")
@@ -880,13 +1225,17 @@ class BrowserVoiceSession:
             )
         )
 
-    async def _wait_for_browser_playback(self) -> None:
+    async def _mark_browser_playback_end(self, *, wait: bool) -> None:
         announcement_id = uuid.uuid4().hex
-        waiter = asyncio.Event()
-        self._playback_waiters[announcement_id] = waiter
+        waiter: asyncio.Event | None = None
+        if wait:
+            waiter = asyncio.Event()
+            self._playback_waiters[announcement_id] = waiter
         await self.send(
             "audio.stream.done", announcement_id=announcement_id
         )
+        if waiter is None:
+            return
         try:
             await asyncio.wait_for(waiter.wait(), timeout=12)
         except asyncio.TimeoutError:
@@ -896,11 +1245,22 @@ class BrowserVoiceSession:
         finally:
             self._playback_waiters.pop(announcement_id, None)
 
+    async def _wait_for_browser_playback(self) -> None:
+        """Backward-compatible terminal playback helper."""
+
+        await self._mark_browser_playback_end(wait=True)
+
     async def _runtime_fallback(self, reason: str) -> None:
         self._fail_omni_waiters(reason)
         async with self.lifecycle_lock:
             if self.closed or self.actual_mode == "L3":
                 return
+            logger.warning(
+                "voice.provider.fallback interview_id=%s from_mode=%s reason=%s",
+                self.interview_id,
+                self.actual_mode,
+                reason,
+            )
             self.generation += 1
             current = asyncio.current_task()
             if self.tts_task and self.tts_task is not current and not self.tts_task.done():
@@ -948,9 +1308,31 @@ class BrowserVoiceSession:
                 await asyncio.gather(*tasks, return_exceptions=True)
             if self.tts_task and not self.tts_task.done():
                 self.tts_task.cancel()
+            if self._audio_watchdog_task and not self._audio_watchdog_task.done():
+                self._audio_watchdog_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._audio_watchdog_task
+            self._audio_watchdog_task = None
             self._clear_omni_cancel_state()
             self._omni_cancel_error_tokens = 0
             await self._close_provider()
+            logger.info(
+                "voice.session.closed interview_id=%s mode=%s input_frames=%d "
+                "input_bytes=%d peak_rms=%d vad_started=%d transcript_partial=%d "
+                "transcript_done=%d transcript_failed=%d output_chunks=%d "
+                "output_bytes=%d",
+                self.interview_id,
+                self.actual_mode,
+                self._audio_input_frames,
+                self._audio_input_bytes,
+                self._audio_input_peak_rms,
+                self._vad_started_count,
+                self._transcript_partial_count,
+                self._transcript_done_count,
+                self._transcript_failed_count,
+                self._audio_output_chunks,
+                self._audio_output_bytes,
+            )
 
     async def _close_provider(self, *, from_provider_task: bool = False) -> None:
         if self.omni:
