@@ -12,4 +12,5 @@ htmlcov
 data/*.db
 data/*.db-*
 tests
+testdata
 *.log

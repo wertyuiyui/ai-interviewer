@@ -18,7 +18,7 @@
 - rubric 固定为项目深度 40% / 基础八股 30% / 手撕思路 20% / 表达逻辑 10%，总分由后端重新计算。
 - SQLite 保存匿名历史；最近 3 场先归一成 MySQL / Redis / Java 并发 / 计网 / 手撕 / 项目深度等稳定知识域，再按时间加权。下一场为可命中的弱项预留约三分之一题目；项目深度较弱时从 4 层扩展到 6 层下钻。
 - Canvas 雷达图、逐知识点前后分数、历史删除和 localStorage 报告兜底。
-- 5 份带 PDF 文字层的完全虚构测试简历，可从首页下载，覆盖 Java、Go、云原生、AI 工程和薄弱项目早停场景。
+- 5 份带 PDF 文字层的完全虚构测试简历仅保存在本地 `testdata/fake-resume-pdfs/`，覆盖 Java、Go、云原生、AI 工程和薄弱项目早停场景；不在产品页面展示或提供公网下载。
 
 ## 技术栈
 
@@ -39,13 +39,21 @@ cards/               3 张公司风格卡
 questions/           3 × 36 道公司题库 + 31 道 ARIS 精选 AI 后端题
 resources/           JavaGuide / CodeTop 链接白名单
 references/          ARIS 来源说明与第三方许可证
-public/              三页 UI、5 份测试简历、AudioWorklet 与 Canvas 雷达图
+public/              三页 UI、AudioWorklet 与 Canvas 雷达图
 scripts/             测试简历 PDF 生成器
-testdata/            虚构简历结构化源数据与文字版
+testdata/            虚构简历结构化源数据、文字版与本地 PDF
 tests/               核心状态机和语音协议离线测试
 deploy/              Caddy 与 systemd 配置
 data/                SQLite（运行时生成，不进 Git）
 ```
+
+开发者需要重新生成五份本地测试简历时运行：
+
+```bash
+PYTHONPATH=.deps python3 scripts/generate_fake_resumes.py
+```
+
+生成文件只写入 `testdata/fake-resume-pdfs/`，不会被 FastAPI 挂载，也不会进入 Docker 构建上下文。
 
 ## 本地运行
 

@@ -9,7 +9,7 @@ import pymupdf as fitz
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "testdata" / "fake_resumes.json"
-PDF_DIR = ROOT / "public" / "sample-resumes"
+PDF_DIR = ROOT / "testdata" / "fake-resume-pdfs"
 TEXT_DIR = ROOT / "testdata" / "resumes"
 PAGE = fitz.paper_rect("a4")
 MARGIN_X = 48
@@ -209,7 +209,7 @@ def main() -> None:
                 "name": profile["name"],
                 "target": profile["target"],
                 "file": output.name,
-                "url": f"/sample-resumes/{output.name}",
+                "path": output.relative_to(ROOT).as_posix(),
             }
         )
     (PDF_DIR / "manifest.json").write_text(

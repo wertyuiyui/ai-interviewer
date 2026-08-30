@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
 
 import httpx
 import pytest
@@ -60,6 +61,15 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
         ]
         assert config_payload["references"][0]["name"] == "ARIS-in-AI-Offer"
         assert config.headers["cache-control"] == "no-store"
+
+        home_source = (
+            Path(main_module.__file__).resolve().parents[1] / "public" / "index.html"
+        ).read_text(encoding="utf-8")
+        assert "/sample-resumes/" not in home_source
+        private_resume = await client.get(
+            "/sample-resumes/01_java_ecommerce_backend.pdf"
+        )
+        assert private_resume.status_code == 404
 
         parsed = await client.post(
             "/api/resumes/parse",

@@ -126,12 +126,8 @@ svg { display: block; fill: none; stroke: currentColor; stroke-linecap: round; s
 .number-input-wrap { flex: 0 0 94px; min-height: 32px; display: flex; align-items: center; border: 1px solid #e0e3e7; border-radius: 8px; background: #faf9f7; }
 .number-input-wrap .compact-input { min-height: 30px; padding-right: 2px; border: 0; box-shadow: none; background: transparent; }
 .number-input-wrap span { padding-right: 8px; color: #8a919c; font-size: 9px; white-space: nowrap; }
-.sample-resumes { margin-top: 12px; color: var(--muted); font-size: 10px; }
-.sample-resumes summary { width: fit-content; cursor: pointer; }
-.sample-resume-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.sample-resume-links a, .specialization-reference a { color: var(--blue); text-decoration: none; }
-.sample-resume-links a { padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: #faf9f7; }
-.sample-resume-links a:hover, .specialization-reference a:hover { text-decoration: underline; }
+.specialization-reference a { color: var(--blue); text-decoration: none; }
+.specialization-reference a:hover { text-decoration: underline; }
 .specialization-reference { flex-basis: 100%; margin-top: 8px; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .switch { position: relative; flex: 0 0 auto; width: 42px; height: 24px; cursor: pointer; }
 .switch input { position: absolute; opacity: 0; }

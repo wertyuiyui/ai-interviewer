@@ -706,7 +706,7 @@ def _validate_client_id(client_id: str) -> None:
 
 
 PUBLIC_DIR = ROOT_DIR / "public"
-for directory in ("assets", "js", "worklets", "sample-resumes"):
+for directory in ("assets", "js", "worklets"):
     path = PUBLIC_DIR / directory
     path.mkdir(parents=True, exist_ok=True)
     app.mount(f"/{directory}", StaticFiles(directory=path), name=directory)

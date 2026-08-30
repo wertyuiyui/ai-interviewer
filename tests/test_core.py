@@ -55,7 +55,7 @@ def sample_resume() -> ResumeData:
 
 def test_five_fake_resume_pdfs_have_extractable_text_layers() -> None:
     root = Path(__file__).resolve().parents[1]
-    pdf_dir = root / "public" / "sample-resumes"
+    pdf_dir = root / "testdata" / "fake-resume-pdfs"
     paths = sorted(pdf_dir.glob("*.pdf"))
     assert len(paths) == 5
 
@@ -64,6 +64,11 @@ def test_five_fake_resume_pdfs_have_extractable_text_layers() -> None:
     assert {item["file"] for item in manifest["items"]} == {
         path.name for path in paths
     }
+    assert all("url" not in item for item in manifest["items"])
+    assert all(
+        item["path"].startswith("testdata/fake-resume-pdfs/")
+        for item in manifest["items"]
+    )
     for path in paths:
         document = fitz.open(path)
         text = "".join(page.get_text() for page in document)
