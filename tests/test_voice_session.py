@@ -1156,6 +1156,119 @@ def test_failed_omni_response_downgrades_without_waiting_for_playback() -> None:
     asyncio.run(scenario())
 
 
+def test_l0_non_silent_pcm_before_response_started_makes_cancel_expected() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+        omni = FakeOmni()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+        session._omni_response_pending = True
+        session._omni_responding = True
+        session.provider_task = asyncio.create_task(session._consume_omni())
+
+        # Browser PCM can beat response.created through the two independent
+        # WebSocket tasks. No speech_started event has arrived yet.
+        pcm = b"\xe8\x03" * 160
+        await session.handle_audio(pcm)
+        assert omni.sent_audio == [pcm]
+        assert session._omni_non_silent_input_pending_response is True
+
+        await omni.emit(
+            {"type": "response_started", "response_id": "input-cancelled-r"}
+        )
+        await omni.emit(
+            {
+                "type": "response_done",
+                "response_id": "input-cancelled-r",
+                "status": "cancelled",
+            }
+        )
+        await wait_until(
+            lambda: "input-cancelled-r" in session._omni_response_events
+        )
+        await asyncio.wait_for(
+            session._omni_response_events["input-cancelled-r"].wait(), timeout=1
+        )
+        await asyncio.sleep(0.01)
+
+        assert session.actual_mode == "L0"
+        assert session._vad_started_count == 0
+        assert recorder.first("error") is None
+        assert recorder.first("mode.changed") is None
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_l0_cancelled_response_without_non_silent_input_still_downgrades() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+        omni = FakeOmni()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+        session._omni_response_pending = True
+        session._omni_responding = True
+        session.provider_task = asyncio.create_task(session._consume_omni())
+
+        await omni.emit(
+            {"type": "response_started", "response_id": "unexpected-cancel-r"}
+        )
+        await omni.emit(
+            {
+                "type": "response_done",
+                "response_id": "unexpected-cancel-r",
+                "status": "cancelled",
+            }
+        )
+        await wait_until(lambda: session.actual_mode == "L3")
+
+        error = recorder.first("error")
+        assert error is not None and error["code"] == "VOICE_PROVIDER_ERROR"
+        changed = recorder.first("mode.changed")
+        assert changed is not None and changed["voice_mode"] == "L3"
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_l0_announcement_accepts_input_cancel_before_speech_started() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+        omni = FakeOmni()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+        session.provider_task = asyncio.create_task(session._consume_omni())
+
+        announcement = asyncio.create_task(
+            session.announce("请解释 Redis 的过期删除策略。")
+        )
+        await asyncio.wait_for(omni.control_sent.wait(), timeout=1)
+        await wait_until(
+            lambda: session._omni_active_response_id
+            == omni.control_response_id
+        )
+        await session.handle_audio(b"\xe8\x03" * 160)
+        await omni.emit(
+            {
+                "type": "response_done",
+                "response_id": omni.control_response_id,
+                "status": "cancelled",
+            }
+        )
+        await asyncio.wait_for(announcement, timeout=1)
+
+        assert session.actual_mode == "L0"
+        assert session._vad_started_count == 0
+        assert recorder.first("error") is None
+        assert recorder.first("mode.changed") is None
+        await session.close()
+
+    asyncio.run(scenario())
+
+
 def test_audio_send_disconnect_downgrades_to_l3() -> None:
     async def scenario() -> None:
         recorder = EventRecorder()

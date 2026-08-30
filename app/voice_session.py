@@ -31,6 +31,7 @@ from .voice import (
 
 SendEvent = Callable[..., Awaitable[None]]
 EndCallback = Callable[[str], Awaitable[None]]
+NON_SILENT_PCM_RMS = 64
 
 
 # A child of uvicorn.error inherits the server's configured journal handler.
@@ -175,6 +176,9 @@ class BrowserVoiceSession:
         self._omni_spoken_by_response: dict[str, str] = {}
         self._omni_audio_buffers: dict[str, list[tuple[bytes, int]]] = {}
         self._omni_release_tasks: dict[str, asyncio.Task[None]] = {}
+        self._omni_non_silent_input_pending_response = False
+        self._omni_non_silent_input_response_ids: set[str] = set()
+        self._omni_input_cancelled_response_ids: set[str] = set()
 
     async def start(self, initial_question: str) -> str:
         errors: list[str] = []
@@ -242,6 +246,7 @@ class BrowserVoiceSession:
         self._omni_started_response_id = None
         self._omni_response_pending = True
         self._omni_responding = True
+        self._omni_non_silent_input_pending_response = False
         self._omni_expected_speech = initial_question
         try:
             await self.omni.send_text(
@@ -379,6 +384,16 @@ class BrowserVoiceSession:
                     signal="active" if window_peak_rms >= 64 else "quiet",
                 )
             if self.actual_mode == "L0" and self.omni:
+                if rms >= NON_SILENT_PCM_RMS:
+                    if self._omni_active_response_id:
+                        self._omni_non_silent_input_response_ids.add(
+                            self._omni_active_response_id
+                        )
+                    elif self._omni_response_pending:
+                        # Provider response.created may still be queued behind
+                        # browser PCM. Transfer this evidence to its ID when
+                        # response_started arrives.
+                        self._omni_non_silent_input_pending_response = True
                 await self.omni.send_audio(pcm)
                 return
             if self.actual_mode in {"L1", "L2"} and self.asr:
@@ -595,6 +610,7 @@ class BrowserVoiceSession:
                 self._omni_fatal_error = None
                 self._omni_response_pending = True
                 self._omni_responding = True
+                self._omni_non_silent_input_pending_response = False
                 self._omni_expected_speech = text
                 try:
                     await self.omni.send_text(
@@ -629,10 +645,16 @@ class BrowserVoiceSession:
                 except asyncio.TimeoutError as exc:
                     raise VoiceTransportError("Omni 语音生成超时") from exc
                 status = self._omni_response_statuses.get(response_id, "")
-                if status != "completed":
+                input_interrupted = (
+                    response_id in self._omni_input_cancelled_response_ids
+                )
+                if status != "completed" and not input_interrupted:
                     raise VoiceTransportError(
                         f"Omni 响应未完整完成（status={status or 'missing'}）"
                     )
+                if input_interrupted:
+                    self._omni_input_cancelled_response_ids.discard(response_id)
+                    return
                 if wait_for_playback:
                     await self._wait_for_browser_playback()
         elif self.actual_mode in {"L1", "L2"}:
@@ -807,6 +829,13 @@ class BrowserVoiceSession:
                     self._omni_responding = True
                     self._omni_active_response_id = response_id
                     self._omni_started_response_id = response_id
+                    # A response ID is unique and announcements are serialized;
+                    # any older expected input-cancel marker no longer has a
+                    # waiter and can be discarded.
+                    self._omni_input_cancelled_response_ids.clear()
+                    if self._omni_non_silent_input_pending_response:
+                        self._omni_non_silent_input_response_ids.add(response_id)
+                        self._omni_non_silent_input_pending_response = False
                     self._omni_response_events.setdefault(
                         response_id, asyncio.Event()
                     )
@@ -869,6 +898,14 @@ class BrowserVoiceSession:
                         raise VoiceTransportError("Omni response.done 缺少 ID")
                     status = str(event.get("status") or "").strip().lower()
                     self._omni_response_statuses[response_id] = status
+                    input_cancelled_response = (
+                        status in {"cancelled", "canceled"}
+                        and response_id
+                        in self._omni_non_silent_input_response_ids
+                    )
+                    self._omni_non_silent_input_response_ids.discard(response_id)
+                    if input_cancelled_response:
+                        self._omni_input_cancelled_response_ids.add(response_id)
                     response_complete = self._omni_response_events.setdefault(
                         response_id, asyncio.Event()
                     )
@@ -896,7 +933,11 @@ class BrowserVoiceSession:
                         self._omni_expected_by_response.pop(response_id, None)
                         self._omni_spoken_by_response.pop(response_id, None)
                         response_complete.set()
-                    expected_cancel = self._omni_cancel_in_flight or self._drop_omni_audio
+                    expected_cancel = (
+                        self._omni_cancel_in_flight
+                        or self._drop_omni_audio
+                        or input_cancelled_response
+                    )
                     if (
                         self._omni_cancel_in_flight
                         and (
