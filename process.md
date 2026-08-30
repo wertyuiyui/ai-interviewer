@@ -39,6 +39,14 @@
 
 ## 变更日志
 
+### DEPLOY-016 · 2026-08-30 · 自适应面试阶段流生产发布
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：将已推送的固定提交 `6cdfd0f` 生成隔离发布快照同步至 `/opt/ai-interviewer-mvp`；同步前创建 `/tmp/ai-interviewer-mvp-pre-6cdfd0f-20260830.tar.gz` 回滚包。生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 保留，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 验证：GitHub `origin/main` 已更新至 `6cdfd0f`；应用服务为 `active (running)`，主进程 PID `714224`；本机 `127.0.0.1:8000`、Caddy 正式域名 HTTPS 443 和 3000 的 `/healthz` 均返回 `{"status":"ok"}`；本机 TLS 握手证书 CN 为 `39-106-146-28.sslip.io`；生产文件已包含 `stage_state_json`、面试进程条和“直接进入下一阶段”。
+- 风险或后续事项：首次立即探测时应用仍在启动窗口，随后重试通过；使用 `--noproxy '*'` 排除本机代理对 HTTPS 探测的影响。回滚仅需恢复上述代码包并重启目标应用服务。
+
 ### INTERVIEW-005 · 2026-08-30 · 自适应面试阶段流与可跳阶段控制
 
 - Agent：`/root`；只读协作：`/root/real_flow_research`、`/root/adaptive_engine_audit`、`/root/phase_ui_audit`。
