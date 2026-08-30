@@ -29,6 +29,7 @@ from app.profile import (
     ProfileResumeCreate,
     ProfileService,
     ProjectUpload,
+    _select_github_candidates,
     normalize_github_url,
     validate_project_uploads,
 )
@@ -542,6 +543,40 @@ async def test_github_snapshot_balances_architecture_layers_with_same_blob_budge
     context_paths = {item["path"] for item in context["source_snapshot"]}
     assert {"app/main.py", "app/interview_engine.py", "app/order_service.py"} <= context_paths
     assert sum(len(item["content"]) for item in context["source_snapshot"]) <= 60_000
+
+
+def test_github_snapshot_does_not_fill_remaining_budget_with_documentation() -> None:
+    candidates = [
+        (f"docs/README_{index}.md", f"{index:040x}", 100)
+        for index in range(1, 20)
+    ]
+    candidates.extend(
+        [
+            ("app/main.py", "a" * 40, 100),
+            ("app/order_service.py", "b" * 40, 100),
+            ("app/payment_service.py", "c" * 40, 100),
+            ("app/inventory_service.py", "d" * 40, 100),
+            ("app/refund_service.py", "e" * 40, 100),
+            ("app/models.py", "f" * 40, 100),
+            ("app/repository.py", "1" * 40, 100),
+            ("pyproject.toml", "2" * 40, 100),
+        ]
+    )
+
+    selected = {path for path, _, _ in _select_github_candidates(candidates)}
+
+    assert len(selected) <= 12
+    assert {
+        "app/main.py",
+        "app/order_service.py",
+        "app/payment_service.py",
+        "app/inventory_service.py",
+        "app/refund_service.py",
+        "app/models.py",
+        "app/repository.py",
+        "pyproject.toml",
+    } <= selected
+    assert len([path for path in selected if path.endswith(".md")]) == 1
 
 
 @pytest.mark.asyncio

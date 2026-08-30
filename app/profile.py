@@ -1056,10 +1056,11 @@ def _is_low_value_analysis_path(path: str) -> bool:
 
 
 def _analysis_path_group(path: str) -> str:
-    name = PurePosixPath(path).name.casefold()
+    item = PurePosixPath(path)
+    name = item.name.casefold()
     if name.startswith("readme"):
         return "readme"
-    stem = PurePosixPath(path).stem.casefold()
+    stem = item.stem.casefold()
     if any(marker in stem for marker in _ENTRY_MARKERS):
         return "entry"
     if any(marker in stem for marker in _SERVICE_MARKERS):
@@ -1069,7 +1070,7 @@ def _analysis_path_group(path: str) -> str:
     if (
         name in _CONFIG_NAMES
         or (name.startswith("requirements") and name.endswith(".txt"))
-        or PurePosixPath(path).suffix.casefold()
+        or item.suffix.casefold()
         in {
             ".cfg",
             ".conf",
@@ -1081,17 +1082,21 @@ def _analysis_path_group(path: str) -> str:
         }
     ):
         return "config"
+    if item.suffix.casefold() in _DOCUMENTATION_SUFFIXES:
+        return "readme"
     return "other"
 
 
 def _analysis_path_priority(path: str) -> int:
     return {
-        "readme": 0,
-        "entry": 1,
-        "service": 2,
-        "data": 3,
-        "config": 4,
-        "other": 5,
+        "entry": 0,
+        "service": 1,
+        "data": 2,
+        "config": 3,
+        "other": 4,
+        # One documentation file is already selected by the fixed quota.
+        # When capacity remains, implementation layers must win over more docs.
+        "readme": 5,
     }[_analysis_path_group(path)]
 
 
