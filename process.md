@@ -27,7 +27,7 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`e0e09d6`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`bc496ff`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
@@ -38,6 +38,13 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-038 · 2026-08-30 · 首页主标题字号修复生产发布
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：固定提交 `bc496ff` 已推送至 GitHub `origin/main`。本次只同步 `public/index.html` 与 `public/assets/app.css` 两份静态文件，未重启应用或 Caddy，不打断现有面试。
+- 验证：生产两份文件与固定提交 SHA-256 一致，正式首页引用 `20260830-home-hero-v1`，正式 CSS 标题字号上限为 55px。应用服务保持 `active`，本机 8000、正式域名 HTTPS 443 和 3000 健康端点均返回 `{"status":"ok"}`；发布前全量 `275 passed`。
+- 回滚与风险：原文件备份在 `/tmp/ai-interviewer-mvp-home-hero-pre-bc496ff-20260830/`；只调整宽屏字号和缓存版本，不改业务逻辑或数据。
 
 ### HOME-004 · 2026-08-30 · 首页主标题宽屏字号收敛
 
