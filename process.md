@@ -27,17 +27,25 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`97577b7`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`af4dbaa`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、中英双语、纯英文
-- 当前已部署功能的全量验证基线：`254 passed`
+- 当前已部署功能的全量验证基线：`256 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-018 · 2026-08-30 · 面试退出不留档生产发布
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：将独立功能提交 `af4dbaa` 快进推送至已授权的 GitHub `origin/main`，再用 `git archive af4dbaa` 生成隔离快照同步至 `/opt/ai-interviewer-mvp`。发布包只包含本任务已提交文件，未带入共享工作区中 `REPORT-001` 的 `public/report.html`、`public/js/report.js`、`public/assets/app.css`、测试或台账中间状态。同步明确保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/`，只重启 `ai-interviewer-3000.service`。
+- 验证：推送后 `origin/main` 至 `af4dbaa`；发布前全量 `256 passed`。服务最终为 `active`，主进程 PID `750195`；本机 8000、正式域名 HTTPS 443 和 3000 的 `/healthz` 均返回 `{"status":"ok"}`；线上 `/interview` 包含 `exitButton`、`20260830-exit-v1`和“退出不生成报告、不计入个人档案”，线上脚本包含 `discardInterview()` 与 32 位小写十六进制 ID 校验。生产根目录仍为 0755，`.env` 仍为 `640 root:interview`，`data/` 仍为 `750 interview:interview`。
+- 回滚与风险：发布前代码回滚包为 `/tmp/ai-interviewer-mvp-pre-af4dbaa-20260830.tar.gz`，已确认不含密钥、数据库、虚拟环境和依赖。本次未重启 Caddy 或其它服务，也未执行付费模型调用或写入真实用户资料。
 
 ### INTERVIEW-006 · 2026-08-30 · 面试退出不留档
 
