@@ -27,7 +27,7 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`b9239f4`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`214b53e`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
@@ -38,6 +38,13 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-027 · 2026-08-30 · 项目职责范围文案去重生产发布
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：固定提交 `214b53e` 已推送至 GitHub `origin/main`。本提交唯一的运行时差异是 `public/project.html`，因此只将该文件从隔离提交同步到生产；未重启应用或 Caddy，不打断现有面试。
+- 验证：发布前最新远端隔离基线全量 `266 passed`，项目/Profile 前端专项 `8 passed`，`git diff --check` 通过；生产文件与固定提交 SHA-256 一致。应用服务保持 `active`，本机 8000、正式域名 HTTPS 443 和 3000 健康端点均返回 `{"status":"ok"}`；正式 `/project` 已显示区分后的两条职责文案。
+- 回滚与风险：原项目页备份为 `/tmp/ai-interviewer-mvp-project-pre-214b53e-20260830.html`；本次仅改静态标签，不改 API、数据或会话状态。
 
 ### PROJECT-010 · 2026-08-30 · 项目职责范围文案去重
 
