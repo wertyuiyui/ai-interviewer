@@ -168,6 +168,8 @@ async def test_each_decision_receives_authoritative_interview_context(tmp_path) 
     assert context["confirmed_facts"][-1]["anchor"] == "Java"
     assert context["continuity"]["stage_transition_authority"] == "server"
     assert context["continuity"]["resolve_current_topic_before_transition"] is True
+    assert "candidate's latest answer" in context["continuity"]["delivery"]
+    assert "checklist of subquestions" in context["continuity"]["delivery"]
     assert client.payloads[1]["recent_transcript"][-1]["topic"].startswith(
         "自我介绍"
     )

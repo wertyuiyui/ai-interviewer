@@ -621,7 +621,12 @@ async def test_combined_interview_separates_intro_and_covers_hr_topics(tmp_path)
     assert [questions[index] for index in (8, 10, 12)] == [
         item["question"] for item in expected_hr
     ]
-    assert all("证据" in questions[index] for index in (9, 11, 13))
+    assert all(
+        "你提到" in questions[index]
+        and questions[index].count("？") == 1
+        and "仍围绕" not in questions[index]
+        for index in (9, 11, 13)
+    )
     reviewed = select_server_questions(
         "tencent",
         [],

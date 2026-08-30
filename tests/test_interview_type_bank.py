@@ -43,7 +43,9 @@ def test_bank_followup_stays_anchored_to_reviewed_question() -> None:
         language_mode="zh",
     )
     assert "Redis" in unrelated
-    assert "边界条件" in unrelated
+    assert "什么情况下会不成立" in unrelated
+    assert "仍围绕" not in unrelated
+    assert unrelated.count("？") == 1
     meta_followup = InterviewEngine._anchored_bank_followup(
         "当候选人回答 Redis 后，AI 必须生成追问：Redis 的边界条件是什么？",
         answer="我会用 Redis Lua 保证原子扣减。",
@@ -59,7 +61,7 @@ def test_bank_followup_stays_anchored_to_reviewed_question() -> None:
     )
     assert "AI 必须" not in meta_followup
     assert "候选人回答" not in meta_followup
-    assert "底层机制" in meta_followup
+    assert "Redis / 原子性" in meta_followup
     off_topic_evidence = InterviewEngine._anchored_bank_followup(
         "你提到 MySQL B+ 树，请继续说它的叶子节点。",
         answer="我不太清楚 Redis 淘汰，只熟悉 MySQL B+ 树。",
@@ -87,8 +89,8 @@ def test_bank_followup_stays_anchored_to_reviewed_question() -> None:
         language_mode="zh",
     )
     assert "后端" in hr_without_evidence
-    assert "具体行动" in hr_without_evidence
-    assert "证据" in hr_without_evidence
+    assert "具体经历" in hr_without_evidence
+    assert hr_without_evidence.count("？") == 1
     bilingual_english = InterviewEngine._anchored_bank_followup(
         "",
         answer="I used p99 latency to verify the change.",
@@ -103,7 +105,7 @@ def test_bank_followup_stays_anchored_to_reviewed_question() -> None:
         language_mode="bilingual",
     )
     assert "p99" in bilingual_english
-    assert "evidence" in bilingual_english
+    assert bilingual_english.count("?") == 1
     assert not any("\u4e00" <= char <= "\u9fff" for char in bilingual_english)
     assert InterviewEngine._recommended_seconds_for_item(
         {"suggested_seconds": 135}, "普通问题"
@@ -618,7 +620,9 @@ async def test_standalone_hr_flow_is_server_owned_and_skips_project_drill(tmp_pa
         next_questions.append((await engine.answer(created["id"], answer)).question)
     assert next_questions[::2] == [item["question"] for item in expected]
     assert all(
-        "具体行动" in next_questions[index] and "证据" in next_questions[index]
+        "你提到" in next_questions[index]
+        and next_questions[index].count("？") == 1
+        and "仍围绕" not in next_questions[index]
         for index in (1, 3, 5)
     )
 

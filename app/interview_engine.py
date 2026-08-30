@@ -1151,8 +1151,8 @@ class InterviewEngine:
         A bank follow-up has two independent anchors: the reviewed main
         question and a concrete word from the candidate's answer. Requiring
         both prevents an off-topic answer from steering the next question away
-        from the reviewed item. HR fallbacks explicitly ask for action,
-        evidence, result, and review.
+        from the reviewed item. Fallbacks keep one candidate detail and ask
+        one question instead of reciting an evaluation checklist.
         """
 
         item_language = str(bank_item.get("language") or "").lower()
@@ -1198,7 +1198,7 @@ class InterviewEngine:
             bank_context = normalized_item_question or (
                 category if not re.search(r"[\u4e00-\u9fff]", category) else "the original question"
             )
-            bank_context = bank_context[:140].rstrip()
+            bank_context = bank_context[:140].rstrip(" ?")
         else:
             bank_context = topic or category or normalized_item_question or "原问题"
             bank_context = bank_context[:56].rstrip()
@@ -1261,29 +1261,21 @@ class InterviewEngine:
         if english:
             if track == "hr":
                 return (
-                    f'Staying with "{bank_context}", you mentioned "{clean_anchor}". '
-                    "How does that evidence answer the original question? What action did "
-                    "you personally take, "
-                    "what was the result, what evidence did you use to judge it, and what "
-                    "would you change in hindsight?"
+                    f'You mentioned "{clean_anchor}". Which specific experience best '
+                    "shows that choice, and what did you personally do?"
                 )
             return (
-                f'Staying with "{bank_context}", you mentioned "{clean_anchor}". '
-                "How does that claim or evidence answer the original question? Explain "
-                "the underlying mechanism, "
-                "the boundary condition where it would fail, and the evidence you would "
-                "use to validate it."
+                f'While discussing "{bank_context}", you mentioned "{clean_anchor}". '
+                "When would that claim stop being true?"
             )
         if track == "hr":
             return (
-                f"仍围绕“{bank_context}”这个问题：你刚才提到“{clean_anchor}”。"
-                "这条依据如何回答原问题？当时你本人采取了什么具体行动，结果如何，"
-                "你用什么证据判断结果，复盘时会改什么？"
+                f"你提到“{clean_anchor}”。哪段具体经历最能说明这个选择，"
+                "当时你本人做了什么？"
             )
         return (
-            f"仍围绕“{bank_context}”这个问题：你刚才提到“{clean_anchor}”。"
-            "这条信息如何回答原问题？请把底层机制讲清楚：关键状态如何变化，"
-            "在哪个边界条件下会失效，你会用什么证据验证？"
+            f"你在聊“{bank_context}”时提到“{clean_anchor}”。"
+            "这个判断在什么情况下会不成立？"
         )
 
     @classmethod
@@ -1485,7 +1477,7 @@ class InterviewEngine:
                 "continuity": {
                     "stage_transition_authority": "server",
                     "resolve_current_topic_before_transition": True,
-                    "delivery": "Briefly acknowledge one relevant candidate detail when useful, then ask one natural professional question without canned praise.",
+                    "delivery": "Use one concrete detail from the candidate's latest answer, then ask one natural professional question. Do not repeat the full answer, restate the original question, use canned praise, or ask a checklist of subquestions.",
                 },
             },
             "recent_transcript": recent,
