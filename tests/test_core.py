@@ -858,6 +858,88 @@ def test_resume_normalization_merges_repeated_project_rows_and_evidence() -> Non
     assert normalized["项目"][0]["highlights"] == ["实现检索链路", "将延迟降低 30%"]
 
 
+def test_resume_normalization_keeps_same_row_project_and_all_wrapped_bullets() -> None:
+    source_text = (
+        "项目经历\n"
+        "实验室微服务可观测平台｜基础架构开发｜2025.02—2025.09\n"
+        "•使用 Spring Boot、MySQL、Redis 和 RocketMQ 实现商品、订单、支付回调与库存模块。\n"
+        "•为商品检索设计联合索引并重写分页查询；压测数据中 P95 从 420ms 降至 135ms，口径为 20 并发\n"
+        "、10 万商品测试集。\n"
+        "•使用 Redis Lua 实现库存预扣与幂等校验，MQ 异步创建超时取消任务；能够解释缓存与数据库一致性\n"
+        "的失败窗口。\n"
+        "•使用线程池异步聚合商品详情，设置核心线程 8、最大线程 16、队列 500，并补充拒绝策略和监控指标。\n"
+        "技能\nJava"
+    )
+    normalized = ResumeParser._normalize(
+        {
+            "姓名": "",
+            "教育": [],
+            "实习经历": [],
+            "项目": [
+                {"name": "实验室微服务可观测平台", "metrics": ["P95 从 420ms 降至 135ms"]},
+                {"name": "基础架构开发", "metrics": ["核心线程 8、最大线程 16、队列 500"]},
+            ],
+            "技能": ["Java"],
+        },
+        source_text=source_text,
+    )
+
+    assert len(normalized["项目"]) == 1
+    project = normalized["项目"][0]
+    assert project["name"] == "实验室微服务可观测平台"
+    assert project["role"] == "基础架构开发"
+    assert len(project["highlights"]) == 4
+    assert "使用 Spring Boot" in project["highlights"][0]
+    assert "20 并发、10 万商品测试集" in project["highlights"][1]
+    assert project["highlights"][2].endswith("的失败窗口。")
+    assert "拒绝策略和监控指标" in project["highlights"][3]
+
+
+def test_resume_normalization_recovers_education_stages_and_complete_internship() -> None:
+    source_text = (
+        "教育经历\n"
+        "远山高级中学｜高中｜2016.09—2019.06\n"
+        "海滨大学｜软件工程｜本科｜2019.09—2023.06\n"
+        "北方大学｜计算机科学与技术｜硕士｜2023.09—2026.06\n"
+        "实习经历\n"
+        "星河科技｜后端开发实习生｜2025.06—2025.09\n"
+        "•负责订单、支付回调和库存模块。\n"
+        "•使用 Redis Lua 实现库存预扣与幂等校验，失败率降低 20%。\n"
+        "技能\nJava"
+    )
+    normalized = ResumeParser._normalize(
+        {
+            "姓名": "",
+            "教育": [{"学校": "海滨大学", "学历": "本科"}],
+            "实习经历": [
+                {
+                    "company": "星河科技",
+                    "role": "后端开发实习生",
+                    "metrics": ["失败率降低 20%"],
+                }
+            ],
+            "项目": [],
+            "技能": ["Java"],
+        },
+        source_text=source_text,
+    )
+
+    assert [item["degree"] for item in normalized["教育"]] == ["高中", "本科", "硕士"]
+    bachelor = normalized["教育"][1]
+    master = normalized["教育"][2]
+    assert bachelor["major"] == "软件工程"
+    assert master["major"] == "计算机科学与技术"
+    assert all(item["degree"] != "小学" for item in normalized["教育"])
+    internship = normalized["实习经历"][0]
+    assert internship["company"] == "星河科技"
+    assert internship["role"] == "后端开发实习生"
+    assert internship["period"] == "2025.06—2025.09"
+    assert internship["highlights"] == [
+        "负责订单、支付回调和库存模块。",
+        "使用 Redis Lua 实现库存预扣与幂等校验，失败率降低 20%。",
+    ]
+
+
 def test_resume_normalization_recovers_internship_omitted_by_model() -> None:
     source_text = (
         "李明\n"

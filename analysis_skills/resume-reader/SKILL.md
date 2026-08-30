@@ -21,6 +21,18 @@ it and extract only facts explicitly present in the document.
 
 - Keep education, internships, projects and skills separate. Preserve the
   document order inside each section.
+- Emit one education row for every stage explicitly written in the resume,
+  from primary school through postdoctoral work. Do not add missing stages.
+  Preserve the stated major for college, undergraduate, master's and doctoral
+  rows instead of replacing it with a generic degree label.
+- A header such as `项目名｜岗位/角色｜时间` is one project entry: the first
+  field is the project name and the second is the candidate's role. Never turn
+  fields from the same physical row into separate projects. Apply the same
+  rule to `公司｜岗位｜时间` in internship or work sections.
+- Preserve every responsibility/description bullet under its owning project
+  or internship. Keep the complete sentence, including its technical action,
+  context and result; a numeric result alone is not a substitute for the
+  bullet that contains it. Join visual line wraps before extracting facts.
 - Treat labels such as `项目介绍`, `项目经历`, `个人项目`, `Projects`, and
   `Project Experience` as section headings, never as project names. A project
   must have a distinct name in its own entry; drop an otherwise unnamed
