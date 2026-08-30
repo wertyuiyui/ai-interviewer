@@ -28,13 +28,13 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 基线提交：`941100b`（建立本进度簿前）
+- 已推送并部署的稳定提交：`b8e88cf`
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、中英双语、纯英文
-- 建立本文件前的验证基线：`181 passed`
+- 当前已部署功能的全量验证基线：`204 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
@@ -184,3 +184,12 @@
 - 文件：`app/profile.py`、`tests/test_profile.py`、`process.md`。
 - 验证：Profile/API 专项 `38 passed`；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `204 passed`；Python compileall 与 `git diff --check` 通过。
 - 风险或后续事项：首次重新解读旧项目会产生一次新的百炼分析调用；v2 缓存保留在 SQLite 中但不会被读取，后续可在单独的数据维护窗口清理。
+
+### DEPLOY-002 · 2026-08-30 · 项目解读最终增量发布
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：将 `6fc90fd`、`b8e88cf` 的 ZIP 源码保留、证据定位符和项目分析缓存 v3 修复推送至用户指定 GitHub `main`，并把已提交的 `app/profile.py` 增量同步到生产目录；未暂存、推送或部署仍在开发的 `CODING-002` 工作区文件。生产旧模块备份为 `/tmp/ai-interviewer-profile-pre-b8e88cf.py`，`.env`、SQLite 数据、依赖和 Caddy 配置均未修改。
+- 文件：GitHub `main` 至 `b8e88cf`；生产 `/opt/ai-interviewer-mvp/app/profile.py`；`process.md`。
+- 验证：`ai-interviewer-3000.service` 为 `active`，主进程 PID `585880`；本机 8000 健康端点正常；用正式域名 SNI 与证书分别直连本机 Caddy 443、HTTPS 3000，均返回 `{"status":"ok"}`；生产 `/project` 已包含职责输入、链路核验、面试介绍、更多题目和重新生成控件，生产脚本已包含 NDJSON 流式分析；生产模块确认 `PROJECT_ANALYSIS_SCHEMA_VERSION = "3"`。
+- 风险或后续事项：服务器自身通过公网地址回环访问时 TLS 被网络路径提前断开，但 Caddy 服务正常、443/3000 均在监听，使用相同正式域名和证书直连本机 Caddy 验证成功；未执行付费的真实项目重新分析，避免为健康检查消耗百炼额度。
