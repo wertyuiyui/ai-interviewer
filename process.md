@@ -19,7 +19,6 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
-| `PROJ-006` | `/root` | `in_progress` | 集成首次部署后出现的 Profile 静态证据保守化与元规则过滤修正，完成回归、提交和生产同步 | `app/profile.py`, `tests/test_profile.py`, `process.md` | 基于已部署 `a3e321e`；不修改其它业务文件，生产仍保留 `.env`、`data/` 与依赖目录 |
 
 登记模板：
 
@@ -148,3 +147,21 @@
 - 验证：集成提交前全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `200 passed`；`node --check public/js/home.js public/js/project.js public/js/practice.js` 分别通过；Python compileall 与 `git diff --check` 通过。
 - 提交：`9e927fb`（完整功能集成）、`a3e321e`（Profile 项目分析收口）；本条进度记录单独提交。
 - 风险或后续事项：本地 `main` 尚未推送 `origin/main`，线上服务未更新；后续如需上线，应先推送并在保留 `.env`、`.deps` 与 `data/` 的前提下仅重启 `ai-interviewer-3000.service`，随后验证本地 8000 与 HTTPS 443/3000。
+
+### PROJ-006 · 2026-08-30 · Profile 静态证据保守化收口
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：集成首次生产同步后出现的 Profile 安全收口：GitHub/上传项目的分析上下文只保留一份 README 并优先实现层文件；架构、请求链路、技术选型和风险字段继续过滤项目实现以外的 prompt/skill/服务端控制规则；仅有真实文件路径不能证明模型描述的组件、动作和执行顺序，链路核验最高保持“部分核验”，面试介绍同步使用保守措辞。
+- 文件：`app/profile.py`、`tests/test_profile.py`、`process.md`。
+- 验证：Profile 专项 `36 passed`；最终全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `202 passed`；Python compileall 与 `git diff --check` 通过。提交：`6064b47`（`fix: keep project analysis evidence conservative`）。
+- 风险或后续事项：仍不执行候选人代码，静态分析只提供待面试核实的候选链路；增量发布前线上旧 `app/profile.py` 已备份为 `/tmp/ai-interviewer-profile-pre-6064b47.py`。
+
+### DEPLOY-001 · 2026-08-30 · 生产同步与健康检查
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：按用户上线指示，将已登记的完整发布候选同步至 `/opt/ai-interviewer-mvp`。首次同步前创建 `/tmp/ai-interviewer-mvp-pre-a3e321e-20260830.tar.gz` 可回滚代码备份，rsync 明确排除并保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/`；随后增量同步 `6064b47` 的 Profile 安全收口。两次均只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它系统服务。
+- 文件：生产目录中所有本轮已登记代码、静态资源、题库、测试与文档；生产密钥、数据库和依赖目录未改动。
+- 验证：最终服务为 `active/running`，主进程 PID `571421`；`http://127.0.0.1:8000/healthz`、`https://39-106-146-28.sslip.io/healthz`、`https://39-106-146-28.sslip.io:3000/healthz` 均返回 `{"status":"ok"}`；公网真实请求已成功访问 `/practice?drill=coding`、静态资源、`/api/practice/catalog`、`/api/practice/mistakes` 与 `/api/config`，响应为 `200`。
+- 风险或后续事项：单 worker 重启窗口内 Caddy 曾记录一次短暂 `502`，应用启动后恢复正常；Caddy 与其它进程未受重启。`origin/main` 当前为 `a3e321e`；部署记录 `9bffadf` 与最终安全修正 `6064b47` 尚未推送，因为自动安全审查无法验证 `https://github.com/wertyuiyui/ai-interviewer.git` 的归属。生产目录已包含全部改动；若需继续同步 GitHub，用户需明确确认该仓库的 `main` 分支是授权推送目标。
