@@ -19,7 +19,6 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
-| `RELEASE-001` | `/root` | `in_progress` | 在最新远端上集成连续追问与上下文 harness，验证后提交、推送和部署 | `app/interview_engine.py`, `tests/test_interview_stage_flow.py`, `tests/test_interviewer_skill.py`, `process.md` | 复用远端已完成的 `INTERVIEW-013/014`，不重复修改其文件 |
 
 登记模板：
 
@@ -28,17 +27,24 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`67eac78`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`b9239f4`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、English
-- 当前已部署功能的全量验证基线：`265 passed`
+- 当前已部署功能的全量验证基线：`266 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-026 · 2026-08-30 · 连续追问 harness 与整场计时集成发布
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：等待并行任务释放后，在最新远端 `INTERVIEW-013/014` 基线上只重放 `INTERVIEW-011/015` 的面试引擎与回归测试；保留已发布的简历去重、两种语言和整场计时改动。固定集成提交 `b9239f4` 已推送至 GitHub `origin/main`，并通过 `git archive` 隔离快照同步到 `/opt/ai-interviewer-mvp`。同步保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 与缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 验证：最新远端隔离基线全量 `266 passed`；Python compileall、前端脚本语法和 `git diff --check` 通过。生产服务为 `active`，主进程 PID `838281`；本机 8000、正式域名 HTTPS 443 和 3000 健康端点均返回 `{"status":"ok"}`。生产代码已确认包含 `needs_clarification`、`interview_context` 与 `resolve_current_topic_before_transition`，线上 `/api/config` 只返回中文和 English。
+- 回滚与风险：部署前代码备份为 `/tmp/ai-interviewer-mvp-pre-b9239f4-20260830.tar.gz`，不含密钥、数据库、虚拟环境和依赖。未做真实百炼长对话付费回归；服务端状态机、真实 JSON payload 捕获及完整自动化回归已覆盖本次流程边界。
 
 ### INTERVIEW-015 · 2026-08-30 · 权威上下文 harness 与自然连续追问
 
