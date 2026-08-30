@@ -115,6 +115,14 @@ async def test_unknown_in_fundamentals_skips_followup_not_whole_interview(tmp_pa
     )
     first_question = advanced["question"]
 
+    greeting = await engine.answer(created["id"], "你好")
+
+    assert greeting.stage["current"]["id"] == "fundamentals"
+    assert "当前问题" in greeting.question
+    current = await database.get_interview(created["id"])
+    assert current is not None
+    assert current["stage_state"]["turn_count"] == 0
+
     skipped = await engine.answer(
         created["id"], "我不知道，请继续下一题", control_intent="unknown"
     )

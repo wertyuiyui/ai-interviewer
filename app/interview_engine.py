@@ -25,7 +25,6 @@ from .prompt_engine import (
     initial_question,
     interview_drill_target,
     is_internal_interview_instruction,
-    is_obvious_placeholder_answer,
     is_vague_answer,
     project_followup,
     select_questions,
@@ -628,10 +627,17 @@ class InterviewEngine:
         decision = await self._decide(decision_interview, resume, turns, answer)
         vague_answer = is_vague_answer(answer)
         explicit_unknown = self._explicit_unknown(answer)
-        invalid_answer = is_obvious_placeholder_answer(answer)
         unknown_control = control_intent == "unknown"
         project_ownership_correction = self._explicit_project_ownership_correction(
             answer
+        )
+        explicit_resume_mismatch = self._explicit_resume_mismatch(answer)
+        needs_clarification = (
+            vague_answer
+            and not explicit_unknown
+            and not unknown_control
+            and not project_ownership_correction
+            and not explicit_resume_mismatch
         )
         prior_project_corrections = [
             turn
@@ -654,15 +660,9 @@ class InterviewEngine:
         if project_ownership_correction:
             anchor = ""
             response_anchor = ""
-        elif vague_answer and not explicit_unknown:
-            previous_anchor = next(
-                (turn.anchor_keyword for turn in reversed(turns) if turn.anchor_keyword),
-                "",
-            )
-            if previous_anchor:
-                anchor = previous_anchor
-            elif resume.projects and resume.projects[0].name:
-                anchor = resume.projects[0].name
+        elif needs_clarification:
+            anchor = ""
+            response_anchor = ""
         elif explicit_unknown:
             anchor = ""
             response_anchor = ""
@@ -680,7 +680,6 @@ class InterviewEngine:
             if last_project_correction_ordinal
             else completed_turns
         )
-        explicit_resume_mismatch = self._explicit_resume_mismatch(answer)
         resume_mismatch_reason = " ".join(
             str(decision.resume_mismatch_reason or "").replace("\x00", "").split()
         )[:600]
@@ -741,7 +740,8 @@ class InterviewEngine:
 
         next_stage_state = {
             **stage_state,
-            "turn_count": int(stage_state.get("turn_count") or 0) + 1,
+            "turn_count": int(stage_state.get("turn_count") or 0)
+            + (0 if needs_clarification else 1),
         }
         if project_ownership_correction:
             next_stage_state["turn_count"] = 0
@@ -753,7 +753,7 @@ class InterviewEngine:
             current_drill_dimension = ""
             current_drill_depth = 0
         elif current_stage == "self_intro":
-            should_advance_stage = not invalid_answer
+            should_advance_stage = True
         elif current_stage == "project_deep_dive":
             should_advance_stage = (
                 explicit_unknown
@@ -774,6 +774,9 @@ class InterviewEngine:
             should_advance_stage = True
         elif current_stage in HR_STAGE_INDEX:
             should_advance_stage = next_stage_state["turn_count"] >= 2
+
+        if needs_clarification:
+            should_advance_stage = False
 
         if (
             (explicit_unknown or unknown_control)
@@ -872,14 +875,20 @@ class InterviewEngine:
                 resume=drill_resume,
                 anchor="" if explicit_unknown or unknown_control else anchor,
             )
-        if current_stage == "self_intro" and invalid_answer:
-            question = (
-                "That introduction appears incomplete or contains placeholder text. "
-                "Please introduce your actual background, current studies, and technical direction again."
-                if interview.get("language_mode") == "en"
-                else "刚才的介绍信息不完整或包含占位内容。请按实际情况重新介绍你的基本情况、当前学习进度和技术方向。"
-            )
-        if project_ownership_correction:
+        if needs_clarification:
+            if current_stage == "self_intro":
+                question = (
+                    "Hello. Start with your current studies and the technical direction you want to pursue."
+                    if interview.get("language_mode") == "en"
+                    else "你好。先简单说说你目前的学习进度，以及接下来想做的技术方向。"
+                )
+            else:
+                question = (
+                    "I haven't heard an answer to the current question yet. Start with what you can confirm; if you genuinely don't know, just say so."
+                    if interview.get("language_mode") == "en"
+                    else "我还没有听到对当前问题的回答。先说你能确认的部分；如果确实不知道，直接说不知道即可。"
+                )
+        elif project_ownership_correction:
             acknowledgement = (
                 "Understood. We will not treat that project as your experience. "
                 if interview.get("language_mode") == "en"
@@ -974,6 +983,8 @@ class InterviewEngine:
                 else "你的自我介绍与当前简历中的基础经历明显不一致。请确认是否选错了简历？你可以澄清后继续，也可以点击“退出”返回首页重新选择。"
             )
         elif project_ownership_correction:
+            pressure_action = "none"
+        elif needs_clarification:
             pressure_action = "none"
         elif explicit_unknown:
             pressure_action = "none"
@@ -1438,10 +1449,47 @@ class InterviewEngine:
             turns=turns,
         )
         recent = [
-            {"question": turn.question, "answer": turn.answer}
+            {
+                "question": turn.question,
+                "answer": turn.answer,
+                "topic": turn.topic,
+                "anchor": turn.anchor_keyword,
+            }
             for turn in turns[-8:]
         ]
+        stage_state = self._stage_state(interview)
+        current_stage = stage_state["plan"][stage_state["index"]]
+        confirmed_facts = [
+            {
+                "topic": turn.topic,
+                "anchor": turn.anchor_keyword,
+                "candidate_words": turn.answer[:180],
+            }
+            for turn in turns[-8:]
+            if turn.anchor_keyword
+        ][-5:]
         user_payload = {
+            "interview_context": {
+                "current_stage": {
+                    "id": current_stage,
+                    "label": STAGE_LABELS[current_stage],
+                    "topic_turn": stage_state["turn_count"],
+                },
+                "completed_stages": [
+                    item.get("stage") for item in stage_state["history"]
+                ],
+                "confirmed_facts": confirmed_facts,
+                "previous_gap": (
+                    turns[-1].deductions[:2]
+                    if turns and stage_state["turn_count"]
+                    else []
+                ),
+                "continuity": {
+                    "stage_transition_authority": "server",
+                    "resolve_current_topic_before_transition": True,
+                    "delivery": "Briefly acknowledge one relevant candidate detail when useful, then ask one natural professional question without canned praise.",
+                },
+            },
             "recent_transcript": recent,
             "current_question": interview["last_question"],
             "candidate_answer": answer,

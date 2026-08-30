@@ -19,6 +19,7 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
+| `RELEASE-001` | `/root` | `in_progress` | 在最新远端上集成连续追问与上下文 harness，验证后提交、推送和部署 | `app/interview_engine.py`, `tests/test_interview_stage_flow.py`, `tests/test_interviewer_skill.py`, `process.md` | 复用远端已完成的 `INTERVIEW-013/014`，不重复修改其文件 |
 
 登记模板：
 
@@ -38,6 +39,22 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### INTERVIEW-015 · 2026-08-30 · 权威上下文 harness 与自然连续追问
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：参考 `data/实习面试资源整理.md` 中开源模拟面试项目的状态编排思路，在现有 SQLite 阶段状态机上增加最小 context packet：每轮向决策模型注入当前阶段及阶段内轮次、已完成阶段、最近问答的 topic/anchor、最多 5 条候选人原话事实和当前阶段上一缺口；同时明确阶段切换由服务端掌权、当前话题先闭环、自然承接后只问一个问题。未引入 LangGraph、多 Agent、Redis、新表或额外模型调用。
+- 实际文件：`app/interview_engine.py`、`tests/test_interviewer_skill.py`、`process.md`；与 `INTERVIEW-011` 联合验证 `tests/test_interview_stage_flow.py`。
+- 验证：在包含 `INTERVIEW-013/014` 的最新远端隔离基线上全量 `266 passed`；Python compileall、前端脚本语法和 `git diff --check` 通过。测试截获真实第二轮决策 payload，确认项目阶段、轮次、已完成自我介绍、候选人 `Java` 锚点、最近 topic 和服务端阶段权限均被重新注入。
+- 风险或后续事项：只借鉴公开架构模式，未复制第三方代码、prompt 或题库；上下文仅来自本场持久化问答和既有 Profile 快照，最多发送 8 轮简短记录及 5 个锚点。
+
+### INTERVIEW-011 · 2026-08-30 · 信息不足时留在当前话题澄清
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：`hello`、`你好`、占位或明显未回答当前问题的内容不再消费当前话题轮次、不切换阶段，也不触发压力质疑；自我介绍继续询问学习进度和技术方向，其它阶段请候选人先说能确认的部分。回答补充完整后才推进；明确“不知道/不会”、简历选错和项目归属纠正仍按其真实控制意图处理。
+- 实际文件：`app/interview_engine.py`、`tests/test_interview_stage_flow.py`、`tests/test_interviewer_skill.py`、`process.md`。
+- 验证：在包含 `INTERVIEW-013/014` 的最新远端隔离基线上全量 `266 passed`；Python compileall、前端脚本语法和 `git diff --check` 通过。回归覆盖连续问候仍停留自我介绍、有效补充后再推进、基础题问候不消费当前题，以及明确不知道按原流程跳题。
+- 风险或后续事项：完整度复用已有保守短回答判定，不增加模型调用；很短但有效的事实会留在当前话题继续追问，而非强硬切题。
 
 ### INTERVIEW-013 · 2026-08-30 · 面试页显示整场已用时间
 

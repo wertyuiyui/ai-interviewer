@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 import pytest
@@ -39,7 +40,7 @@ def test_obvious_placeholder_answer_requires_clarification() -> None:
 
 
 @pytest.mark.asyncio
-async def test_placeholder_self_intro_does_not_advance_stage(tmp_path) -> None:
+async def test_incomplete_self_intro_stays_until_answered_or_skipped(tmp_path) -> None:
     settings = replace(
         get_settings(),
         mock_llm=True,
@@ -59,11 +60,23 @@ async def test_placeholder_self_intro_does_not_advance_stage(tmp_path) -> None:
     )
     await database.start_interview(created["id"])
 
-    result = await engine.answer(created["id"], "我叫xxxxx")
+    greeting = await engine.answer(created["id"], "hello")
+    greeting_again = await engine.answer(created["id"], "你好")
 
-    assert result.stage["current"]["id"] == "self_intro"
-    assert "重新" in result.question
-    assert "校园二手交易平台" not in result.question
+    assert greeting.stage["current"]["id"] == "self_intro"
+    assert greeting_again.stage["current"]["id"] == "self_intro"
+    assert "学习进度" in greeting.question
+    assert "校园二手交易平台" not in greeting_again.question
+    row = await database.get_interview(created["id"])
+    assert row is not None
+    assert row["stage_state"]["turn_count"] == 0
+
+    answered = await engine.answer(
+        created["id"], "我目前大三，主要学习 Java 后端，希望继续做服务端开发。"
+    )
+
+    assert answered.stage["current"]["id"] == "project_deep_dive"
+    assert "校园二手交易平台" in answered.question
 
 
 def test_every_company_skill_compiles_with_the_same_core_contract() -> None:
@@ -95,6 +108,69 @@ def test_compiled_core_skill_is_injected_without_provenance() -> None:
     assert '"interviewer_core"' not in company_section
     assert "experience-bytedance" not in prompt
     assert '"source_refs"' not in prompt
+
+
+@pytest.mark.asyncio
+async def test_each_decision_receives_authoritative_interview_context(tmp_path) -> None:
+    class RecordingClient:
+        def __init__(self) -> None:
+            self.payloads: list[dict] = []
+
+        async def chat_json(self, messages, **_kwargs):
+            self.payloads.append(json.loads(messages[1]["content"]))
+            return {
+                "next_question": "你在这个项目里具体负责哪部分？",
+                "assessment": {
+                    "score": 7.0,
+                    "scorable": True,
+                    "score_source": "llm",
+                    "failed": False,
+                    "dimension": "communication",
+                    "topic": "自我介绍",
+                    "deductions": [],
+                },
+                "pressure_action": "none",
+                "drill_dimension": "业务背景",
+                "drill_depth": 1,
+                "anchor_keyword": "Java",
+                "should_end": False,
+            }
+
+    settings = replace(
+        get_settings(), mock_llm=False, db_path=tmp_path / "context-harness.db"
+    )
+    database = Database(settings)
+    await database.initialize()
+    client = RecordingClient()
+    engine = InterviewEngine(database, settings, client=client)
+    created = await engine.create(
+        InterviewCreate(
+            client_id="context-harness-client",
+            company="bytedance",
+            language_mode="zh",
+            resume=ResumeData(项目=[Project(name="校园二手交易平台后端")]),
+        )
+    )
+    await database.start_interview(created["id"])
+
+    await engine.answer(
+        created["id"], "我目前大三，主修软件工程，想继续做 Java 后端。"
+    )
+    await engine.answer(created["id"], "我负责 Redis 缓存和商品发布链路。")
+
+    context = client.payloads[1]["interview_context"]
+    assert context["current_stage"] == {
+        "id": "project_deep_dive",
+        "label": "项目深挖",
+        "topic_turn": 0,
+    }
+    assert context["completed_stages"] == ["self_intro"]
+    assert context["confirmed_facts"][-1]["anchor"] == "Java"
+    assert context["continuity"]["stage_transition_authority"] == "server"
+    assert context["continuity"]["resolve_current_topic_before_transition"] is True
+    assert client.payloads[1]["recent_transcript"][-1]["topic"].startswith(
+        "自我介绍"
+    )
 
 
 @pytest.mark.asyncio
