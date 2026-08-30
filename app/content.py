@@ -4,7 +4,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import urlparse
 
 from .config import ROOT_DIR
@@ -77,6 +77,11 @@ SPECIALIZATIONS = [
     "AI 工程后端 / LLM Infra",
 ]
 
+# Compatibility fallback for deployments where the reviewed bank is missing
+# or temporarily unreadable.  The API catalog itself is derived at request
+# time from the checked-in bank via ``load_specialization_catalog``.
+SPECIALIZATION_FALLBACKS = tuple(SPECIALIZATIONS)
+
 AI_SPECIALIZATION_KEYWORDS = (
     "ai后端",
     "ai 后端",
@@ -102,6 +107,238 @@ AI_SPECIALIZATION_KEYWORDS = (
 def _load_json(path: str) -> Any:
     with Path(path).open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def _is_reviewed_real_question(raw: Any) -> bool:
+    return bool(
+        isinstance(raw, dict)
+        and raw.get("status") == "approved"
+        and raw.get("authenticity") == "licensed_bank"
+        and all(
+            str(raw.get(key) or "").strip()
+            for key in ("id", "source_id", "source_path", "revision", "license")
+        )
+    )
+
+
+def _reviewed_real_records() -> list[dict[str, Any]]:
+    """Return only record-level verified entries from the licensed bank."""
+
+    question_dir = ROOT_DIR / "questions"
+    paths = [
+        question_dir / "real_practice_bank.json",
+        question_dir / "real_practice_bank_extended.json",
+    ]
+    records_by_id: dict[str, dict[str, Any]] = {}
+    for path in paths:
+        if not path.exists():
+            continue
+        try:
+            value = _load_json(str(path))
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        records = value.get("questions") if isinstance(value, dict) else None
+        if not isinstance(records, list):
+            continue
+        for raw in records:
+            if _is_reviewed_real_question(raw):
+                records_by_id[str(raw["id"])] = dict(raw)
+    return list(records_by_id.values())
+
+
+def _real_question_category(
+    raw: dict[str, Any], topics: list[str], language_mode: str
+) -> str:
+    kind = str(raw.get("kind") or "technical").strip().lower()
+    if language_mode == "en":
+        if kind == "behavioral":
+            return "Behavioral"
+        if kind == "coding":
+            return "Coding Thought"
+        if kind == "ai_engineering":
+            return "AI Engineering"
+        if kind == "system_design":
+            return "System Design"
+        topic_categories = {
+            "Java": "Java",
+            "MySQL": "MySQL",
+            "Redis": "Redis",
+            "Go": "Go",
+            "并发": "Concurrency",
+            "操作系统": "Operating Systems",
+            "计算机网络": "Networking",
+            "系统设计": "System Design",
+            "AI 工程": "AI Engineering",
+        }
+        return next(
+            (topic_categories[topic] for topic in topics if topic in topic_categories),
+            "Backend Fundamentals",
+        )
+    if kind == "behavioral":
+        return "综合面"
+    if kind == "coding":
+        return "手撕思路"
+    if kind == "ai_engineering":
+        return "AI工程"
+    if kind == "system_design":
+        return "系统设计"
+    topic_categories = {
+        "Java": "Java",
+        "MySQL": "MySQL",
+        "Redis": "Redis",
+        "Go": "Go",
+        "并发": "Java并发",
+        "操作系统": "操作系统",
+        "计算机网络": "计网",
+        "系统设计": "系统设计",
+        "AI 工程": "AI工程",
+    }
+    return next(
+        (topic_categories[topic] for topic in topics if topic in topic_categories),
+        "后端基础",
+    )
+
+
+def load_real_interview_question_bank(
+    *,
+    language_mode: str = "bilingual",
+    company: str | None = None,
+    kinds: set[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Normalize the reviewed practice bank for server-controlled interviews.
+
+    Chinese and bilingual interviews use the reviewed Chinese wording; pure
+    English interviews use the paired English wording.  No prompt is admitted
+    unless it retains the approved status and complete pinned-source metadata.
+    """
+
+    language = "en" if language_mode == "en" else "zh"
+    requested_kinds = {str(kind).strip().lower() for kind in kinds or set()}
+    result: list[dict[str, Any]] = []
+    for raw in _reviewed_real_records():
+        kind = str(raw.get("kind") or "technical").strip().lower()
+        if requested_kinds and kind not in requested_kinds:
+            continue
+        company_tags = {
+            str(item).strip().lower()
+            for item in (raw.get("company_tags") or [])
+            if str(item).strip()
+        }
+        if company and company_tags and not (
+            company.lower() in company_tags
+            or company_tags.intersection({"all", "global", "global_tech", "overseas"})
+        ):
+            continue
+        prompt = raw.get("prompt")
+        question = (
+            str(prompt.get(language) or "").strip()
+            if isinstance(prompt, dict)
+            else ""
+        )
+        if not question:
+            continue
+        topics = [
+            str(item).strip()
+            for item in (raw.get("topics") or [])
+            if str(item).strip()
+        ]
+        result.append(
+            {
+                "id": f"{raw['id']}-{language}",
+                "bank_id": str(raw["id"]),
+                "kind": kind,
+                "language": language,
+                "category": _real_question_category(raw, topics, language_mode),
+                "topic": " / ".join(topics)
+                or ("Behavioral" if language == "en" else "综合面"),
+                "topics": topics,
+                "question": question,
+                "followups": [],
+                "difficulty": str(raw.get("difficulty") or "medium"),
+                "suggested_seconds": int(raw.get("suggested_seconds") or 90),
+                "company_tags": sorted(company_tags),
+                "direction_tags": [
+                    str(item).strip().lower()
+                    for item in (raw.get("direction_tags") or [])
+                    if str(item).strip()
+                ],
+                "scoring": raw.get("scoring") or {},
+                "source_id": raw["source_id"],
+                "source_path": raw["source_path"],
+                "revision": raw["revision"],
+                "license": raw["license"],
+                "authenticity": raw["authenticity"],
+                "status": raw["status"],
+            }
+        )
+    return result
+
+
+def load_specialization_catalog() -> list[str]:
+    """Derive supported role directions from reviewed tag/topic coverage."""
+
+    records = [
+        raw
+        for raw in _reviewed_real_records()
+        if str(raw.get("kind") or "technical") != "behavioral"
+    ]
+    if not records:
+        return list(SPECIALIZATION_FALLBACKS)
+    covered_tags = {
+        str(tag).strip().lower()
+        for raw in records
+        for tag in (raw.get("direction_tags") or [])
+        if str(tag).strip()
+    }
+    covered_topics = {
+        str(topic).strip().casefold()
+        for raw in records
+        for topic in (raw.get("topics") or [])
+        if str(topic).strip()
+    }
+    # Labels are presentation-only.  Inclusion is entirely evidence-driven:
+    # every returned preset has at least one reviewed direction tag or topic.
+    descriptors = [
+        ("通用后端", {"backend"}, set()),
+        ("Java 后端", {"java", "jvm"}, {"java", "jvm"}),
+        ("Go 后端", {"go"}, {"go"}),
+        ("并发与高性能", {"concurrency", "performance"}, {"并发"}),
+        ("基础架构", {"systems"}, {"操作系统"}),
+        (
+            "云原生与微服务",
+            {"infrastructure", "protocol_design"},
+            {"rpc", "反向代理"},
+        ),
+        ("数据库与存储", {"database"}, {"mysql"}),
+        ("缓存与 Redis", {"cache"}, {"redis"}),
+        ("网络与服务治理", {"network"}, {"计算机网络"}),
+        (
+            "消息队列与中间件",
+            {"messaging"},
+            {"消息队列"},
+        ),
+        (
+            "可观测性与故障排查",
+            {"observability", "reliability"},
+            {"可观测性"},
+        ),
+        (
+            "分布式系统",
+            {"distributed_system", "system_design"},
+            {"系统设计"},
+        ),
+        (
+            "AI 工程后端 / LLM Infra",
+            {"ai_engineering", "llm_infra", "rag"},
+            {"ai 工程"},
+        ),
+    ]
+    catalog = [
+        label
+        for label, tags, topics in descriptors
+        if covered_tags.intersection(tags) or covered_topics.intersection(topics)
+    ]
+    return catalog or list(SPECIALIZATION_FALLBACKS)
 
 
 def load_style_card(company: str) -> dict[str, Any]:
@@ -149,6 +386,7 @@ def load_interview_skill(company: str) -> dict[str, Any]:
                 "project": float(card.get("project_weight", 0.55)),
                 "fundamentals": float(card.get("fundamentals_weight", 0.45)),
             },
+            "question_topic_priorities": [],
             "difficulty_ladder": ["事实", "原理", "边界", "变化条件"],
             "project_followup_rules": card.get("followup_preferences", []),
             "pressure_policy": card.get("pressure_profile", {}),
@@ -169,6 +407,7 @@ def load_interview_skill(company: str) -> dict[str, Any]:
         "flow",
         "tone",
         "topic_weights",
+        "question_topic_priorities",
         "difficulty_ladder",
         "project_followup_rules",
         "pressure_policy",
@@ -182,6 +421,68 @@ def load_interview_skill(company: str) -> dict[str, Any]:
     if value.get("company") != company:
         raise RuntimeError(f"公司面试 skill 标识不匹配：{path}")
     return dict(value)
+
+
+_QUESTION_TOPIC_ALIASES: dict[str, set[str]] = {
+    "手撕思路": {"coding", "coding thought", "手撕思路", "algorithm", "算法"},
+    "并发": {"concurrency", "performance", "并发", "java并发"},
+    "计算机网络": {"network", "networking", "计算机网络", "计网"},
+    "操作系统": {"operating systems", "operating_system", "操作系统"},
+    "系统设计": {"system design", "system_design", "系统设计"},
+    "分布式系统": {"distributed_system", "distributed system", "分布式系统"},
+    "消息队列": {"messaging", "message queue", "消息队列", "mq"},
+    "数据结构": {"data structure", "data_structure", "数据结构", "coding"},
+    "可观测性": {"observability", "可观测性", "metrics", "logging", "trace"},
+    "故障排查": {"reliability", "observability", "故障", "排查", "debugging"},
+    "可靠性": {"reliability", "availability", "可靠性", "可用性", "故障"},
+}
+
+
+def company_question_rank(
+    company: str | None, item: Mapping[str, Any]
+) -> int:
+    """Rank one common-bank record by a company's evidence-backed topic order.
+
+    The question wording remains from the shared reviewed public bank.  Company
+    skills only change ordering; they never relabel a common question as a
+    company-exclusive interview question.
+    """
+
+    if not company:
+        return 0
+    priorities = load_interview_skill(company).get("question_topic_priorities") or []
+    raw_signals = [
+        item.get("kind", ""),
+        item.get("category", ""),
+        item.get("topic", ""),
+        *(item.get("topics") or []),
+        *(item.get("direction_tags") or []),
+    ]
+    signals = {
+        str(value).strip().casefold()
+        for value in raw_signals
+        if str(value).strip()
+    }
+    haystack = " ".join(sorted(signals))
+    for index, raw_priority in enumerate(priorities):
+        priority = str(raw_priority).strip()
+        if not priority:
+            continue
+        aliases = {
+            priority.casefold(),
+            *{
+                alias.casefold()
+                for alias in _QUESTION_TOPIC_ALIASES.get(priority, set())
+            },
+        }
+        if aliases.intersection(signals) or any(
+            alias
+            and not (alias.isascii() and alias.isalnum() and len(alias) < 4)
+            and alias in haystack
+            for alias in aliases
+        ):
+            return index
+    return len(priorities) + 1
 
 
 def _normalize_questions(value: Any, path: Path) -> list[dict[str, Any]]:
@@ -224,26 +525,50 @@ def load_question_bank(company: str) -> list[dict[str, Any]]:
 def load_hr_question_bank(
     company: str, language_mode: str = "bilingual"
 ) -> list[dict[str, Any]]:
-    """Return company-specific behavioral questions for combined interviews.
-
-    These prompts are intentionally written for undergraduate internship
-    candidates.  They look for concrete choices and self-awareness rather
-    than importing experienced-hire assumptions about management scope.
-    """
+    """Return three HR stages made only from reviewed behavioral questions."""
 
     if company not in COMPANIES:
         raise AppError("INVALID_COMPANY", "暂不支持该公司", status_code=422)
-    path = ROOT_DIR / "questions" / "hr_internship.json"
-    if not path.exists():
-        return []
-    value = _load_json(str(path))
-    companies = value.get("companies") if isinstance(value, dict) else None
-    if not isinstance(companies, dict):
-        raise RuntimeError(f"综合面题库格式错误：{path}")
-    if language_mode == "en":
-        return _generic_hr_questions(company, english=True)
-    questions = _normalize_questions(companies.get(company, []), path)
-    return questions or _generic_hr_questions(company, english=False)
+    reviewed = load_real_interview_question_bank(
+        language_mode=language_mode,
+        company=company,
+        kinds={"behavioral"},
+    )
+    by_bank_id = {str(item.get("bank_id")): item for item in reviewed}
+    stages = [
+        (
+            "tih-behavior-001",
+            "Values and company fit" if language_mode == "en" else "价值观与公司契合",
+            ("tih-behavior-006", "tih-behavior-004"),
+        ),
+        (
+            "tih-behavior-008",
+            "Career planning and choices" if language_mode == "en" else "人生规划与选择",
+            ("tih-behavior-005", "tih-behavior-002"),
+        ),
+        (
+            "tih-behavior-007",
+            "Compensation expectations" if language_mode == "en" else "薪酬期待",
+            ("tih-behavior-003", "tih-behavior-001"),
+        ),
+    ]
+    result: list[dict[str, Any]] = []
+    for primary_id, topic, followup_ids in stages:
+        primary = by_bank_id.get(primary_id)
+        if not primary:
+            continue
+        item = dict(primary)
+        item.update(
+            category="Behavioral" if language_mode == "en" else "综合面",
+            topic=topic,
+            followups=[
+                str(by_bank_id[followup_id]["question"])
+                for followup_id in followup_ids
+                if followup_id in by_bank_id
+            ],
+        )
+        result.append(item)
+    return result
 
 
 def _generic_hr_questions(
@@ -327,73 +652,7 @@ def load_english_question_bank() -> list[dict[str, Any]]:
     the same pinned Apache-2.0/MIT records used by quick practice.
     """
 
-    path = ROOT_DIR / "questions" / "real_practice_bank.json"
-    if not path.exists():
-        return []
-    value = _load_json(str(path))
-    records = value.get("questions") if isinstance(value, dict) else None
-    if not isinstance(records, list):
-        raise RuntimeError(f"英文题库格式错误：{path}")
-    categories = {
-        "ai_engineering": "AI Engineering",
-        "behavioral": "Behavioral",
-        "system_design": "System Design",
-        "technical": "Backend Fundamentals",
-    }
-    topic_categories = {
-        "Java": "Java",
-        "MySQL": "MySQL",
-        "Redis": "Redis",
-        "Go": "Go",
-        "并发": "Concurrency",
-        "操作系统": "Operating Systems",
-        "计算机网络": "Networking",
-        "系统设计": "System Design",
-        "AI 工程": "AI Engineering",
-        "English behavioral": "Behavioral",
-    }
-    result: list[dict[str, Any]] = []
-    for raw in records:
-        if not isinstance(raw, dict):
-            continue
-        prompt = raw.get("prompt")
-        question = str(prompt.get("en") or "").strip() if isinstance(prompt, dict) else ""
-        if (
-            not question
-            or raw.get("status") != "approved"
-            or raw.get("authenticity") != "licensed_bank"
-            or not all(
-                str(raw.get(key) or "").strip()
-                for key in ("source_id", "source_path", "revision", "license")
-            )
-        ):
-            continue
-        topics = [str(item).strip() for item in (raw.get("topics") or []) if str(item).strip()]
-        kind = str(raw.get("kind") or "technical")
-        category = categories.get(kind, "Backend Fundamentals")
-        if kind == "technical":
-            category = next(
-                (topic_categories[topic] for topic in topics if topic in topic_categories),
-                category,
-            )
-        result.append(
-            {
-                "id": f"{raw.get('id')}-en",
-                "language": "en",
-                "category": category,
-                "topic": " / ".join(topics) or categories.get(kind, "Backend Fundamentals"),
-                "question": question,
-                "followups": [],
-                "difficulty": str(raw.get("difficulty") or "medium"),
-                "source_id": raw["source_id"],
-                "source_path": raw["source_path"],
-                "revision": raw["revision"],
-                "license": raw["license"],
-                "authenticity": raw["authenticity"],
-                "status": raw["status"],
-            }
-        )
-    return result
+    return load_real_interview_question_bank(language_mode="en")
 
 
 def is_ai_specialization(specialization: str) -> bool:

@@ -1,0 +1,343 @@
+{
+  "schema_version": "1.0",
+  "title": "Permissively licensed real interview practice bank — extended set",
+  "description": "Second reviewed set of short bilingual prompts distilled from the same pinned MIT or Apache-2.0 sources.",
+  "questions": [
+    {
+      "id": "jg-network-007", "kind": "technical", "topics": ["计算机网络", "TLS"],
+      "prompt": {"zh": "SSL 与 TLS 是什么关系？一次 HTTPS 连接如何完成身份认证和会话密钥协商？", "en": "How are SSL and TLS related, and how does an HTTPS connection authenticate the server and establish session keys?"},
+      "source_id": "javaguide", "source_path": "docs/cs-basics/network/http-vs-https.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 135,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "network", "security"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["TLS 是 SSL 的标准化后继，现代系统不应继续使用已废弃 SSL 版本", "证书链认证服务端，密钥交换得到对称会话密钥，后续记录层提供机密性与完整性"], "red_flags": ["声称 HTTPS 全程用非对称加密传输业务数据", "忽略证书校验或把证书等同私钥"]}
+    },
+    {
+      "id": "jg-network-008", "kind": "technical", "topics": ["计算机网络", "TCP/UDP"],
+      "prompt": {"zh": "什么场景更适合 TCP，什么场景更适合 UDP？请从可靠性、时延和应用补偿机制说明。", "en": "When would you choose TCP versus UDP? Discuss reliability, latency, and what the application must compensate for."},
+      "source_id": "javaguide", "source_path": "docs/cs-basics/network/other-network-questions2.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "easy", "suggested_seconds": 105,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "network"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["TCP 提供有序可靠字节流和拥塞控制，适合完整性优先的传输", "UDP 保留报文边界且开销低，丢包、重排、拥塞等需由应用按场景处理"], "red_flags": ["声称 UDP 一定比 TCP 快", "只列协议名称而不说明业务取舍"]}
+    },
+    {
+      "id": "jg-network-009", "kind": "technical", "topics": ["计算机网络", "TIME_WAIT"],
+      "prompt": {"zh": "TCP 主动关闭方为什么进入 TIME_WAIT，并等待约 2MSL？大量 TIME_WAIT 时你会先排查什么？", "en": "Why does the active TCP closer enter TIME_WAIT for roughly 2MSL, and what would you inspect first if many such sockets accumulate?"},
+      "source_id": "javaguide", "source_path": "docs/cs-basics/network/tcp-time-wait.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 120,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "network", "reliability"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["等待可重传最终 ACK，并让旧连接的延迟报文从网络中消失", "先检查谁在主动关闭、连接复用、上游超时与端口范围，再决定是否调参"], "red_flags": ["看到 TIME_WAIT 就直接缩短内核时间", "把 TIME_WAIT 当作连接泄漏的充分证据"]}
+    },
+    {
+      "id": "jg-network-010", "kind": "technical", "topics": ["计算机网络", "TCP 可靠性"],
+      "prompt": {"zh": "不要只讲三次握手：TCP 在数据传输阶段通过哪些机制保证可靠、有序并适应网络拥塞？", "en": "Beyond the handshake, which mechanisms let TCP deliver data reliably and in order while adapting to congestion?"},
+      "source_id": "javaguide", "source_path": "docs/cs-basics/network/tcp-reliability-guarantee.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 135,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "network"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["序列号、确认、校验、超时/快速重传与接收端重排共同保证可靠有序", "滑动窗口做流量控制，拥塞窗口和相关算法适应网络容量"], "red_flags": ["把握手当作传输可靠性的全部", "混淆接收窗口与拥塞窗口"]}
+    },
+    {
+      "id": "jg-network-011", "kind": "technical", "topics": ["计算机网络", "连接容量"],
+      "prompt": {"zh": "一台服务器是否最多只能保持 65535 个 TCP 连接？请说明连接四元组与真正的容量约束。", "en": "Is a server limited to 65,535 TCP connections? Explain the connection four-tuple and the practical capacity limits."},
+      "source_id": "javaguide", "source_path": "docs/cs-basics/network/maximum-number-of-tcp-connections-per-host.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 105,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "network", "systems"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["连接由源/目的 IP 与端口四元组区分，监听端口可对应大量不同客户端连接", "实际受文件描述符、内存、端口/IP、队列、CPU 与应用架构等限制"], "red_flags": ["把端口号数量直接等同服务器连接上限", "忽略操作系统和应用资源约束"]}
+    },
+    {
+      "id": "jg-network-012", "kind": "technical", "topics": ["计算机网络", "IPv4/IPv6"],
+      "prompt": {"zh": "IPv4 与 IPv6 除地址长度外还有哪些关键差异？请从地址配置、NAT、首部与 ICMPv6 等方面说明。", "en": "Besides address length, what are key IPv4/IPv6 differences in address configuration, NAT, headers, and ICMPv6?"},
+      "source_id": "javaguide", "source_path": "docs/cs-basics/network/other-network-questions2.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 120,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "network", "infrastructure"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["IPv6 使用 128 位地址，并支持 SLAAC；充足地址空间使 NAT 不再是地址节省的必需手段", "IPv6 简化基本首部并使用扩展首部，ICMPv6 还承载邻居发现和路径 MTU 发现等能力"], "red_flags": ["只回答地址从 32 位变 128 位", "声称 IPv6 完全不需要路由或安全策略"]}
+    },
+    {
+      "id": "jg-network-013", "kind": "technical", "topics": ["计算机网络", "ARP"],
+      "prompt": {"zh": "ARP 解决什么问题？同一网段与跨网段发送数据时，主机最终查询的是谁的 MAC 地址？", "en": "What problem does ARP solve, and whose MAC address is resolved for same-subnet versus off-subnet traffic?"},
+      "source_id": "javaguide", "source_path": "docs/cs-basics/network/arp.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "easy", "suggested_seconds": 90,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "network"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["ARP 在本地链路把 IPv4 地址解析为链路层 MAC 地址并缓存结果", "同网段解析目标主机，跨网段解析下一跳默认网关而不是远端主机"], "red_flags": ["声称路由器把远端服务器 MAC 直接告诉客户端", "混淆 DNS 名称解析与 ARP"]}
+    },
+    {
+      "id": "jg-network-014", "kind": "technical", "topics": ["计算机网络", "反向代理"],
+      "prompt": {"zh": "服务经过多层反向代理后，怎样可靠获取客户端真实 IP？为什么不能无条件信任 X-Forwarded-For？", "en": "Behind multiple reverse proxies, how can a service determine the real client IP, and why must it not blindly trust X-Forwarded-For?"},
+      "source_id": "javaguide", "source_path": "docs/cs-basics/network/other-network-questions2.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 135,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "network", "security", "request_lifecycle"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["只信任受控代理写入/清洗的标准头，并按可信代理链规则解析地址", "外部客户端可伪造普通请求头，边界代理必须覆盖或规范化并限制可信来源"], "red_flags": ["直接取 X-Forwarded-For 第一个值用于鉴权", "忽略代理链配置与 IPv6/私网地址处理"]}
+    },
+    {
+      "id": "jg-network-015", "kind": "technical", "topics": ["计算机网络", "TCP 粘包"],
+      "prompt": {"zh": "为什么 TCP 会出现应用层所谓的粘包/拆包？请比较定长、分隔符和长度前缀三种消息 framing。", "en": "Why do applications observe TCP message coalescing or splitting? Compare fixed-size, delimiter-based, and length-prefixed framing."},
+      "source_id": "javaguide", "source_path": "docs/cs-basics/network/tcp-byte-stream-udp-datagram.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 135,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "network", "protocol_design"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["TCP 是无消息边界的字节流，单次 send 与 recv 的分段没有一一对应保证", "协议需自行 framing；长度前缀高效但要限制长度，分隔符需转义，定长可能浪费空间"], "red_flags": ["把它描述成 TCP 数据损坏", "只说多读几次而没有协议边界"]}
+    },
+    {
+      "id": "jg-network-016", "kind": "technical", "topics": ["计算机网络", "Keep-Alive"],
+      "prompt": {"zh": "HTTP Keep-Alive 与 TCP Keepalive 分别解决什么问题？为什么它们不能互相替代？", "en": "What problems do HTTP Keep-Alive and TCP keepalive solve, and why are they not substitutes?"},
+      "source_id": "javaguide", "source_path": "docs/cs-basics/network/tcp-keepalive-vs-http-keepalive.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 105,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "network"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["HTTP Keep-Alive 复用连接承载多个请求，减少建连成本", "TCP keepalive 是长时间空闲后的存活探测，周期通常较长且不替代应用超时和健康检查"], "red_flags": ["把两者视为同一配置", "声称开启 TCP keepalive 就能及时发现所有业务故障"]}
+    },
+    {
+      "id": "jg-network-017", "kind": "system_design", "topics": ["计算机网络", "RPC"],
+      "prompt": {"zh": "公司内部服务为什么常选 RPC？请比较 RPC 与 REST/HTTP 在契约、治理、可观测性和耦合上的取舍。", "en": "Why do internal services often use RPC? Compare it with REST/HTTP in contracts, service governance, observability, and coupling."},
+      "source_id": "javaguide", "source_path": "docs/cs-basics/network/http-vs-rpc.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 165,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "network", "distributed_system", "system_design"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["RPC 框架常提供强契约、代码生成、发现、负载均衡、重试与链路治理的一体化体验", "REST/HTTP 生态通用且边界清晰；协议选择需考虑跨语言、版本演进、故障语义和组织耦合"], "red_flags": ["简单断言 RPC 一定比 HTTP 快", "忽略超时、重试幂等和版本兼容"]}
+    },
+    {
+      "id": "jg-distributed-006", "kind": "technical", "topics": ["分布式系统", "Redis 分布式锁"],
+      "prompt": {"zh": "用 Redis 实现分布式锁时，获取、过期和释放分别怎样保证原子性与所有权？", "en": "When implementing a Redis distributed lock, how do acquisition, expiration, and release preserve atomicity and ownership?"},
+      "source_id": "javaguide", "source_path": "docs/distributed-system/distributed-lock-implementations.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 150,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "cache", "distributed_system", "reliability"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["用带随机所有者 token 的 NX+TTL 原子获取，防止锁永久占用", "释放需用 Lua 原子比较 token 后删除，不能直接 DEL 别人的锁"], "red_flags": ["SETNX 后再单独 EXPIRE 且不处理中间故障", "释放时不校验所有者"]}
+    },
+    {
+      "id": "jg-distributed-007", "kind": "technical", "topics": ["分布式系统", "锁续期"],
+      "prompt": {"zh": "分布式锁为什么需要租约与续期？业务暂停、续期线程失败或主从切换时有哪些安全边界？", "en": "Why do distributed locks need leases and renewal, and what safety limits arise from pauses, renewal failures, or failover?"},
+      "source_id": "javaguide", "source_path": "docs/distributed-system/distributed-lock-implementations.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 165,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "distributed_system", "reliability"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["租约防止持有者崩溃后永久占锁，续期应只延长仍属于自己的锁并设置最大边界", "长暂停或复制切换可能导致两个执行者都以为持锁，高安全场景还需 fencing token 或更强协调语义"], "red_flags": ["认为 watchdog 能保证绝对互斥", "无限续期且没有超时、幂等或补偿设计"]}
+    },
+    {
+      "id": "jg-distributed-008", "kind": "technical", "topics": ["分布式系统", "ZooKeeper 锁"],
+      "prompt": {"zh": "ZooKeeper 如何用临时顺序节点实现公平分布式锁？为什么每个等待者只监听前驱节点？", "en": "How can ZooKeeper ephemeral sequential nodes implement a fair distributed lock, and why should each waiter watch only its predecessor?"},
+      "source_id": "javaguide", "source_path": "docs/distributed-system/distributed-lock-implementations.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 150,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "distributed_system", "coordination"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["参与者创建临时顺序节点，序号最小者持锁；会话结束自动删除临时节点", "只监听前驱避免 herd effect，前驱删除后重新检查排序并竞争"], "red_flags": ["所有等待者都监听最小节点造成惊群", "忽略会话断开、重连和临时节点语义"]}
+    },
+    {
+      "id": "jg-java-009", "kind": "technical", "topics": ["Java", "虚拟线程"],
+      "prompt": {"zh": "Java 虚拟线程适合什么工作负载？它和平台线程、异步回调相比有什么收益与限制？", "en": "Which workloads suit Java virtual threads, and what are their benefits and limits versus platform threads and callback-style async code?"},
+      "source_id": "javaguide", "source_path": "docs/java/concurrent/virtual-thread.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 135,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "java", "concurrency"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["虚拟线程适合大量阻塞 I/O 任务，可保留同步代码结构并降低线程资源成本", "它不让 CPU 密集任务变快，仍需限制下游并发并关注 pinning、ThreadLocal 和观测成本"], "red_flags": ["认为虚拟线程等于协程且没有任何调度成本", "用无限虚拟线程压垮数据库或外部服务"]}
+    },
+    {
+      "id": "jg-java-010", "kind": "technical", "topics": ["Java", "锁设计"],
+      "prompt": {"zh": "一把锁究竟应该保护什么？你会怎样确定锁对象、临界区和锁粒度？", "en": "What exactly should a lock protect, and how do you choose its lock object, critical section, and granularity?"},
+      "source_id": "javaguide", "source_path": "docs/java/concurrent/java-lock.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 150,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "java", "concurrency"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["锁保护的是一组需要保持不变量的共享状态，所有访问路径必须遵守同一同步协议", "锁对象应稳定且边界清晰；粒度需权衡竞争、吞吐、死锁风险与维护复杂度"], "red_flags": ["只给每个方法随意加 synchronized", "不同代码路径用不同锁保护同一状态"]}
+    },
+    {
+      "id": "jg-security-001", "kind": "technical", "topics": ["计算机网络", "数字证书"],
+      "prompt": {"zh": "摘要、数字签名和数字证书分别解决什么问题？浏览器为什么能够信任某个站点证书？", "en": "What problems do hashes, digital signatures, and certificates solve, and why can a browser trust a site's certificate?"},
+      "source_id": "javaguide", "source_path": "docs/cs-basics/network/network-attack-means.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 135,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "network", "security"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["摘要提供内容指纹，签名用私钥证明完整性与持有者身份，证书把公钥绑定到主体", "浏览器沿受信根验证证书链、域名、有效期和用途，并检查撤销等状态"], "red_flags": ["声称签名用私钥加密整段业务数据", "只验证证书存在而不验证域名或证书链"]}
+    },
+    {
+      "id": "jg-sql-001", "kind": "technical", "topics": ["MySQL", "SQL"],
+      "prompt": {"zh": "请说明 SELECT 查询中 FROM/JOIN、WHERE、GROUP BY、HAVING、SELECT、ORDER BY、LIMIT 的逻辑处理顺序。", "en": "Explain the logical processing order of FROM/JOIN, WHERE, GROUP BY, HAVING, SELECT, ORDER BY, and LIMIT in a query."},
+      "source_id": "javaguide", "source_path": "docs/database/sql/README.md", "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "easy", "suggested_seconds": 105,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "database"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["逻辑上先形成 FROM/JOIN 行集，再 WHERE 过滤、分组与 HAVING 过滤", "随后计算 SELECT，ORDER BY 排序并用 LIMIT 截取；物理执行计划可由优化器改写"], "red_flags": ["把 SQL 书写顺序直接当成物理执行顺序", "混淆 WHERE 与 HAVING 的作用阶段"]}
+    },
+    {
+      "id": "igo-go-009", "kind": "technical", "topics": ["Go", "逃逸分析"],
+      "prompt": {"zh": "Go 的逃逸分析解决什么问题？哪些代码模式容易让变量分配到堆上，如何用编译器信息验证？", "en": "What does Go escape analysis decide, which patterns tend to move values to the heap, and how can compiler diagnostics verify it?"},
+      "source_id": "interview-go", "source_path": "question/q019.md", "revision": "ac017e269c91983889f4dbd392c6318435f4239f", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 135,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "go", "performance"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["编译器根据值是否可能超出栈帧生命周期决定栈或堆分配，而不是简单按 new 判断", "返回局部指针、接口/闭包/未知生命周期等可能逃逸，可用 go build -gcflags=-m 检查"], "red_flags": ["声称 new 一定分配在堆上", "为了避免逃逸盲目使用 unsafe"]}
+    },
+    {
+      "id": "igo-go-010", "kind": "technical", "topics": ["Go", "字符串与切片"],
+      "prompt": {"zh": "Go 中 string 转 []byte 通常是否复制？如果追求零拷贝，为什么 unsafe 方案需要非常谨慎？", "en": "Does converting a Go string to []byte normally copy, and why are unsafe zero-copy tricks dangerous?"},
+      "source_id": "interview-go", "source_path": "question/q020.md", "revision": "ac017e269c91983889f4dbd392c6318435f4239f", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 120,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "go", "performance"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["常规转换通常复制以维护 string 不可变与切片可变语义", "unsafe 别名会破坏生命周期/可变性保证并依赖实现细节，应先基准验证且优先标准 API"], "red_flags": ["声称转换永远零拷贝", "在可写 []byte 上暴露只读字符串底层内存"]}
+    },
+    {
+      "id": "igo-go-011", "kind": "technical", "topics": ["Go", "context"],
+      "prompt": {"zh": "一个 worker 在 select 中同时等待 2 秒任务和 100ms 的 context.WithTimeout：它会走哪个分支，Done 与 Err 分别说明什么？", "en": "A worker selects between a two-second task and a 100 ms context.WithTimeout. Which branch runs, and what do Done and Err indicate?"},
+      "source_id": "interview-go", "source_path": "question/q025.md", "revision": "ac017e269c91983889f4dbd392c6318435f4239f", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 135,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "go", "concurrency", "request_lifecycle"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["100ms deadline 先到，context 的 Done 通道变为可读，worker 因此进入取消分支而不是完成分支", "Err 返回 context deadline exceeded；调用方仍应保留并 defer 调用 cancel"], "red_flags": ["认为 time.After(2s) 分支会先执行", "把 Done 当作普通布尔值或忽略 Err"]}
+    },
+    {
+      "id": "igo-go-012", "kind": "technical", "topics": ["Go", "range/append"],
+      "prompt": {"zh": "range 遍历切片时在循环体内 append 会发生什么？底层数组是否扩容会怎样影响观察结果？", "en": "What happens when appending to a slice during a range loop, and how does backing-array reallocation affect what is observed?"},
+      "source_id": "interview-go", "source_path": "question/q025.md", "revision": "ac017e269c91983889f4dbd392c6318435f4239f", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 105,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "go"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["range 在开始时基于切片描述符确定迭代长度，新增元素通常不会自动加入本轮迭代", "未扩容时修改可能作用于同一底层数组，扩容后别名关系改变，代码应避免依赖这种隐蔽行为"], "red_flags": ["认为 range 会无限遍历所有 append 元素", "忽略 len/cap 与底层数组别名"]}
+    },
+    {
+      "id": "igo-architecture-001", "kind": "system_design", "topics": ["Kafka", "消息顺序"],
+      "prompt": {"zh": "Kafka 为什么只保证分区内顺序？生产环境怎样为同一业务键保证有序消费，并处理失败重试？", "en": "Why does Kafka guarantee order only within a partition, and how can production consumers preserve per-key order while handling retries?"},
+      "source_id": "interview-go", "source_path": "architecture/0002.md", "revision": "ac017e269c91983889f4dbd392c6318435f4239f", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 165,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "go", "distributed_system", "messaging", "system_design"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["同一分区是追加日志并按 offset 消费，而跨分区没有统一全局顺序", "用稳定业务 key 分区，并让同 key 同步或进入同一处理队列；结合幂等、版本号或日志重放处理失败"], "red_flags": ["声称 Kafka 默认全局有序", "同一分区内随意多线程异步处理却仍承诺完成顺序"]}
+    },
+    {
+      "id": "igo-architecture-002", "kind": "system_design", "topics": ["系统设计", "短链接"],
+      "prompt": {"zh": "设计短链接唯一 ID 时有哪些核心挑战？请比较自增 ID、随机码和分布式 ID 的碰撞、可预测性与扩展性。", "en": "What are the core challenges in short-link ID design? Compare sequential IDs, random codes, and distributed IDs in collisions, predictability, and scalability."},
+      "source_id": "interview-go", "source_path": "architecture/0010.md", "revision": "ac017e269c91983889f4dbd392c6318435f4239f", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 180,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "go", "distributed_system", "system_design"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["需同时考虑唯一性、编码长度、热点、生成吞吐、重试与恶意枚举", "自增易唯一但可预测和集中；随机需碰撞检测；分布式 ID 需时钟/节点与编码取舍"], "red_flags": ["只说 Base62 而不解释 ID 来源", "不考虑碰撞、重复请求或安全枚举"]}
+    },
+    {
+      "id": "igo-architecture-003", "kind": "system_design", "topics": ["系统设计", "高可用"],
+      "prompt": {"zh": "如果你负责一个互联网服务，怎样从冗余与故障切换、限流隔离、降级、发布回滚、可观测性和混沌演练提升可用性？", "en": "How would you improve service availability through redundancy and failover, traffic isolation, degradation, safe rollback, observability, and chaos drills?"},
+      "source_id": "interview-go", "source_path": "architecture/0007.md", "revision": "ac017e269c91983889f4dbd392c6318435f4239f", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 180,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "go", "reliability", "system_design"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["多副本、健康检查和自动故障切换消除单点，限流、熔断与资源隔离限制故障扩散", "功能降级、灰度或蓝绿发布与自动回滚降低影响，指标日志追踪和混沌工程负责发现并验证薄弱点"], "red_flags": ["只回答多部署几台机器", "没有降级、观测或故障演练"]}
+    },
+    {
+      "id": "igo-architecture-004", "kind": "technical", "topics": ["操作系统", "I/O 多路复用"],
+      "prompt": {"zh": "I/O 多路复用中的“多路”和“复用”分别是什么？select、poll、epoll 的核心差异在哪里？", "en": "What do multiplexing's 'many channels' and 'reuse' mean, and what are the core differences among select, poll, and epoll?"},
+      "source_id": "interview-go", "source_path": "architecture/0008.md", "revision": "ac017e269c91983889f4dbd392c6318435f4239f", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 150,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "go", "systems", "network"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["一个线程/等待点监视多个文件描述符的就绪事件，而非同时执行多个 I/O", "select 有描述符数量限制且每次遍历集合，poll 取消固定数量限制但仍遍历，epoll 由内核返回就绪事件"], "red_flags": ["声称 epoll 完成业务数据读写", "把异步 I/O 与就绪通知完全等同"]}
+    },
+    {
+      "id": "igo-architecture-005", "kind": "system_design", "topics": ["可观测性", "系统设计"],
+      "prompt": {"zh": "可观测性和普通监控有什么区别？指标、日志、链路追踪分别适合回答什么问题？", "en": "How does observability differ from ordinary monitoring, and what questions are metrics, logs, and traces best at answering?"},
+      "source_id": "interview-go", "source_path": "architecture/0009.md", "revision": "ac017e269c91983889f4dbd392c6318435f4239f", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 150,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "go", "observability", "reliability", "system_design"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["可观测性强调从外部信号推断未知内部状态，不只是预设故障告警", "指标用于发现趋势与告警，日志定位具体上下文，trace 展示一次请求的跨服务因果链路"], "red_flags": ["只列 Prometheus/ELK 等工具名", "把可观测性完全等同于预设指标监控"]}
+    },
+    {
+      "id": "igo-architecture-006", "kind": "technical", "topics": ["可观测性", "Trace"],
+      "prompt": {"zh": "分布式追踪中的 Trace、Span、Trace ID、Span ID 如何组织？跨进程时怎样传播父子关系和采样信息？", "en": "How are traces, spans, trace IDs, and span IDs organized, and how are parent-child relationships and sampling propagated across processes?"},
+      "source_id": "interview-go", "source_path": "architecture/0011.md", "revision": "ac017e269c91983889f4dbd392c6318435f4239f", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 150,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "go", "observability", "distributed_system"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["Trace ID 关联整条调用，Span ID 标识一个操作，ParentSpanID 把操作组成调用树或有向图", "W3C trace context 等载体跨进程传递 Trace ID、当前 Span ID 和采样标记，下游保留 Trace ID 并创建子 Span"], "red_flags": ["每个服务重新生成 Trace ID", "跨服务只传 Trace ID 而丢失父 Span 或采样上下文"]}
+    },
+    {
+      "id": "igo-architecture-007", "kind": "technical", "topics": ["存储", "LSM Tree"],
+      "prompt": {"zh": "LSM Tree 与 B+ Tree 的写入、读取、空间放大和后台维护有何本质取舍？", "en": "What are the fundamental trade-offs between LSM trees and B+ trees in writes, reads, space amplification, and background maintenance?"},
+      "source_id": "interview-go", "source_path": "architecture/0013.md", "revision": "ac017e269c91983889f4dbd392c6318435f4239f", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 165,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "go", "database", "storage", "system_design"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["LSM 将随机写转为内存与顺序落盘，读取需查多层并依赖 Bloom/filter 与 compaction", "B+ Tree 原地维护有序页，点查/范围读直接但写可能随机 I/O；两者有不同读写与空间放大"], "red_flags": ["声称 LSM 读写都更快", "忽略 compaction 抖动、墓碑和缓存"]}
+    },
+    {
+      "id": "igo-architecture-008", "kind": "system_design", "topics": ["Redis", "缓存一致性"],
+      "prompt": {"zh": "Redis 缓存与 MySQL 如何做到可解释的最终一致？请讨论 Cache Aside、删除失败和并发回填。", "en": "How can Redis and MySQL achieve explainable eventual consistency? Discuss cache-aside, failed invalidation, and concurrent refill."},
+      "source_id": "interview-go", "source_path": "architecture/0004.md", "revision": "ac017e269c91983889f4dbd392c6318435f4239f", "license": "Apache-2.0",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 180,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"], "direction_tags": ["backend", "go", "cache", "database", "distributed_system", "system_design"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["常用先更新数据库再删除缓存的 Cache Aside，并明确缓存失效并发回填仍可能产生短暂不一致窗口", "删除失败可通过消息队列可靠重试，或订阅 Binlog 后异步失效缓存来实现最终一致"], "red_flags": ["承诺缓存与数据库天然强一致", "只说延时双删而不解释窗口与删除失败"]}
+    },
+    {
+      "id": "aris-ai-009", "kind": "ai_engineering", "topics": ["AI 工程", "推测解码"],
+      "prompt": {"zh": "推测解码为什么能在保持目标分布的同时加速生成？它在什么情况下反而收益很低？", "en": "How can speculative decoding accelerate generation while preserving the target distribution, and when does it provide little benefit?"},
+      "source_id": "aris-in-ai-offer", "source_path": "docs/tutorials/kv_cache_speculative_decoding_tutorial.md", "revision": "6f60d728ae290982f7bddd88d9816073dd64d045", "license": "MIT",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 165,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "ai_engineering", "llm_infra", "inference"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["小草稿模型提出多个 token，目标模型并行验证并按接受/残差规则保持与目标采样分布一致", "草稿接受率低、验证开销大、批处理/内存瓶颈或目标模型很小时收益可能消失"], "red_flags": ["声称直接采用草稿输出而无需验证", "只报加速倍数而不讨论接受率和系统瓶颈"]}
+    },
+    {
+      "id": "aris-ai-010", "kind": "ai_engineering", "topics": ["AI 工程", "Prefix Cache"],
+      "prompt": {"zh": "LLM Prefix Cache 适合哪些请求？多租户服务中如何处理命中率、隔离、驱逐与提示词隐私？", "en": "Which requests benefit from an LLM prefix cache, and how should a multi-tenant service handle hit rate, isolation, eviction, and prompt privacy?"},
+      "source_id": "aris-in-ai-offer", "source_path": "docs/tutorials/llm_inference_serving_tutorial.md", "revision": "6f60d728ae290982f7bddd88d9816073dd64d045", "license": "MIT",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 165,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "ai_engineering", "llm_infra", "cache", "security"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["共享系统提示、长文档或重复对话前缀可复用已计算 KV，降低 prefill 与 TTFT", "缓存键需含模型/适配器/模板等版本，多租户要隔离授权、限制泄漏并按显存价值驱逐"], "red_flags": ["只按 prompt 文本哈希跨租户共享", "忽略模型版本、位置编码或隐私边界"]}
+    },
+    {
+      "id": "aris-ai-011", "kind": "ai_engineering", "topics": ["AI 工程", "模型评测"],
+      "prompt": {"zh": "一个模型离线基准提升但线上体验变差，你会怎样设计分层评测并定位差异？", "en": "A model improves on offline benchmarks but degrades online experience. How would you design layered evaluation and diagnose the gap?"},
+      "source_id": "aris-in-ai-offer", "source_path": "docs/tutorials/llm_evaluation_benchmarking_tutorial.md", "revision": "6f60d728ae290982f7bddd88d9816073dd64d045", "license": "MIT",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "hard", "suggested_seconds": 180,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "ai_engineering", "llm_infra", "evaluation"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["分开能力基准、领域集、人工/模型裁判、对抗安全、时延成本与真实任务成功率，并保留版本化样本", "检查数据污染、分布偏移、裁判偏差、提示模板、服务参数和尾延迟，再用灰度/A-B 与回滚阈值验证"], "red_flags": ["只增加一个总分 benchmark", "线上全量发布后才观察用户投诉"]}
+    },
+    {
+      "id": "aris-ai-012", "kind": "ai_engineering", "topics": ["AI 工程", "LoRA/QLoRA"],
+      "prompt": {"zh": "LoRA 为什么能减少微调参数与显存？QLoRA 又增加了什么，部署合并时有哪些风险？", "en": "Why does LoRA reduce trainable parameters and memory, what does QLoRA add, and what risks arise when merging for deployment?"},
+      "source_id": "aris-in-ai-offer", "source_path": "docs/tutorials/lora_peft_tutorial.md", "revision": "6f60d728ae290982f7bddd88d9816073dd64d045", "license": "MIT",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 150,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "ai_engineering", "llm_infra", "finetuning"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["LoRA 冻结基座并学习低秩增量矩阵，显著减少可训练参数、梯度与优化器状态", "QLoRA 量化冻结基座再训练适配器；合并需注意反量化/再量化误差、dtype、缩放和多适配器版本"], "red_flags": ["声称 LoRA 不需要基座权重", "合并量化模型后不做质量回归"]}
+    },
+    {
+      "id": "tih-behavior-009", "kind": "behavioral", "topics": ["English behavioral", "自我认知"],
+      "prompt": {"zh": "请做一段面向软件工程实习的自我介绍：你是谁、学了什么、做过什么，以及为什么适合这个岗位。", "en": "Tell me about yourself for a software engineering internship: who you are, what you have learned and built, and why you fit this role."},
+      "source_id": "tech-interview-handbook", "source_path": "apps/website/contents/behavioral-interview-questions.md", "revision": "e1d28e8886c0b6ff3e50da991ce0e895134ddc59", "license": "MIT",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "easy", "suggested_seconds": 120,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "behavioral", "hr", "english_interview"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["用清晰主线连接学习背景、最相关经历与岗位动机", "控制在约一到两分钟，并用具体证据而不是形容词证明匹配"], "red_flags": ["逐字念完整简历且没有重点", "只说热爱技术而没有经历证据"]}
+    },
+    {
+      "id": "tih-behavior-010", "kind": "behavioral", "topics": ["English behavioral", "优势与成长"],
+      "prompt": {"zh": "你最大的岗位相关优势是什么？当前最需要成长的一项能力是什么，你正在怎样改进？", "en": "What is your strongest role-relevant strength, and what is one growth area you are actively improving?"},
+      "source_id": "tech-interview-handbook", "source_path": "apps/website/contents/behavioral-interview-questions.md", "revision": "e1d28e8886c0b6ff3e50da991ce0e895134ddc59", "license": "MIT",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "easy", "suggested_seconds": 120,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "behavioral", "hr", "english_interview"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["优势用一次具体行动与结果验证，成长项真实但不破坏岗位核心可信度", "说明已采取的练习、反馈或机制以及观察到的变化"], "red_flags": ["把完美主义包装成唯一缺点", "给成长目标但没有任何行动或反馈"]}
+    },
+    {
+      "id": "tih-behavior-011", "kind": "behavioral", "topics": ["English behavioral", "截止时间"],
+      "prompt": {"zh": "讲一次你面对很紧截止时间的经历。你如何排优先级、沟通风险并保证关键结果？", "en": "Tell me about a time you faced a tight deadline. How did you prioritize, communicate risk, and protect the critical outcome?"},
+      "source_id": "tech-interview-handbook", "source_path": "apps/website/contents/behavioral-interview-questions.md", "revision": "e1d28e8886c0b6ff3e50da991ce0e895134ddc59", "license": "MIT",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 150,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "behavioral", "hr", "english_interview"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["用具体情境说明目标、约束和自己的责任，再讲取舍与沟通动作", "结果包含质量/时间证据和复盘，而不是单纯靠加班完成"], "red_flags": ["没有提前暴露风险或寻求资源", "把牺牲测试和长期透支当成唯一办法"]}
+    },
+    {
+      "id": "tih-behavior-012", "kind": "behavioral", "topics": ["English behavioral", "岗位期望"],
+      "prompt": {"zh": "下一份实习中你最希望获得什么？如果入职六个月，你希望团队怎样评价你的表现？", "en": "What are you looking for in your next internship, and after six months, how would you hope the team describes your impact?"},
+      "source_id": "tech-interview-handbook", "source_path": "apps/website/contents/behavioral-interview-questions.md", "revision": "e1d28e8886c0b6ff3e50da991ce0e895134ddc59", "license": "MIT",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 135,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "behavioral", "hr", "english_interview"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["期望同时覆盖学习、实际贡献与团队协作，并与目标岗位环境有联系", "六个月目标具体可观察，如独立交付、可靠沟通、质量和业务理解，而非夸大职位级别"], "red_flags": ["只谈薪酬或履历品牌而不谈贡献", "对实习生提出不现实的管理权或晋升承诺"]}
+    },
+    {
+      "id": "tih-coding-001", "kind": "coding", "topics": ["手撕思路", "LRU", "数据结构"],
+      "prompt": {"zh": "请口述设计一个 O(1) 的 LRU Cache：说明数据结构、get/put 流程、淘汰规则、复杂度和边界。", "en": "Verbally design an O(1) LRU cache. Explain the data structures, get/put flow, eviction rule, complexity, and edge cases."},
+      "source_id": "tech-interview-handbook", "source_path": "apps/website/contents/algorithms/hash-table.md", "revision": "e1d28e8886c0b6ff3e50da991ce0e895134ddc59", "license": "MIT",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 180,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "algorithm", "data_structure"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["哈希表定位节点，双向链表维护最近使用顺序，访问和更新都移动到队首", "容量满时淘汰链表尾部并同步删除哈希项，覆盖容量为零、更新已有键等边界"], "red_flags": ["只使用数组或单链表却声称所有操作都是 O(1)", "淘汰链表节点后忘记同步哈希表"]}
+    },
+    {
+      "id": "tih-coding-002", "kind": "coding", "topics": ["手撕思路", "链表", "双指针"],
+      "prompt": {"zh": "请口述原地反转单链表：说明指针更新顺序、循环不变量、复杂度，以及空链表和单节点边界。", "en": "Verbally reverse a singly linked list in place. Explain pointer-update order, the loop invariant, complexity, and empty/single-node cases."},
+      "source_id": "tech-interview-handbook", "source_path": "apps/website/contents/algorithms/linked-list.md", "revision": "e1d28e8886c0b6ff3e50da991ce0e895134ddc59", "license": "MIT",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "easy", "suggested_seconds": 120,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "algorithm", "data_structure"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["先保存 next，再把 current.next 指向 previous，最后同步推进 previous 与 current", "说明已反转前缀与未处理后缀的不变量，时间 O(n)、额外空间 O(1)"], "red_flags": ["覆盖 next 后才尝试访问剩余链表", "忽略空链表或声称需要 O(n) 额外空间"]}
+    },
+    {
+      "id": "tih-coding-003", "kind": "coding", "topics": ["手撕思路", "二分查找", "边界"],
+      "prompt": {"zh": "请口述在升序数组中实现二分查找，并明确区间定义、循环条件、指针更新、终止性和复杂度。", "en": "Verbally implement binary search on a sorted array, making the interval convention, loop condition, pointer updates, termination, and complexity explicit."},
+      "source_id": "tech-interview-handbook", "source_path": "apps/website/contents/algorithms/sorting-searching.md", "revision": "e1d28e8886c0b6ff3e50da991ce0e895134ddc59", "license": "MIT",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "easy", "suggested_seconds": 120,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "algorithm", "data_structure"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["选择闭区间或左闭右开区间并让循环条件与左右边界更新保持一致", "每轮严格缩小区间，处理空数组、首尾命中和不存在，时间 O(log n)"], "red_flags": ["混用两种区间定义导致死循环或漏掉端点", "未说明输入有序这一前提"]}
+    },
+    {
+      "id": "tih-coding-004", "kind": "coding", "topics": ["手撕思路", "栈与队列", "摊还复杂度"],
+      "prompt": {"zh": "请口述用两个栈实现队列：说明入队、出队、何时搬运元素、空队列边界和摊还复杂度。", "en": "Verbally implement a queue with two stacks. Explain enqueue, dequeue, when elements move, the empty-queue case, and amortized complexity."},
+      "source_id": "tech-interview-handbook", "source_path": "apps/website/contents/algorithms/stack.md", "revision": "e1d28e8886c0b6ff3e50da991ce0e895134ddc59", "license": "MIT",
+      "authenticity": "licensed_bank", "status": "approved", "difficulty": "easy", "suggested_seconds": 120,
+      "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "algorithm", "data_structure"], "answer_modes": ["voice", "text"],
+      "scoring": {"key_points": ["入队压入输入栈；输出栈为空时才整体搬运，从输出栈弹出队首", "每个元素最多进出两个栈各一次，因此单次最坏 O(n)、摊还 O(1)，空队列需明确定义"], "red_flags": ["每次出队都来回搬运全部元素却声称最坏 O(1)", "两个栈都为空时仍尝试弹出"]}
+    }
+  ]
+}

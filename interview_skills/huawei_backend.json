@@ -6,10 +6,11 @@
   "flow": ["overview_and_study", "project_or_internship", "technical_qa", "coding_thought", "project_ownership", "managerial_behavioral_if_selected", "candidate_questions"],
   "tone": "Formal and orderly; verify project ownership and technical fundamentals before moving to resilience and mobility in combined mode.",
   "topic_weights": {"project": 0.44, "fundamentals": 0.34, "coding_thought": 0.22},
+  "question_topic_priorities": ["手撕思路", "Java", "并发", "数据结构", "操作系统", "计算机网络", "MySQL"],
   "difficulty_ladder": ["technical_fact", "implementation", "coding_edge_cases", "project_ownership", "constraint_and_resilience"],
   "project_followup_rules": ["Verify that the candidate can explain every claimed project component.", "Combine technical questions with one coding-thinking exercise.", "Do not simulate online exams or personality inventories inside the interview."],
   "pressure_policy": {"primary": "depth_and_resilience", "allowed": ["ownership_challenge", "changed_constraints"], "interrupt_only_on_expression_problem": true},
   "hr_focus": ["response to setbacks and criticism", "stability and commitment", "mobility or location constraints", "career and compensation expectations"],
   "language_profiles": {"zh": "Formal but natural Mandarin with standard English technical terms.", "bilingual": "Mandarin-led with at least one short English technical follow-up.", "en": "Formal, natural English only; keep behavioral questions respectful and specific."},
-  "source_refs": ["research-index:nowcoder-enterprise/239", "research-index:0voice/Campus_recruitment_interview_questions", "references/INTERVIEW_SKILL_DISTILLATION.md#huawei"]
+  "source_refs": ["experience-huawei-2022-backend-intern", "experience-huawei-2022-cloud-java", "experience-huawei-2024-cpp-intern", "references/INTERVIEW_SKILL_DISTILLATION.md#huawei"]
 }

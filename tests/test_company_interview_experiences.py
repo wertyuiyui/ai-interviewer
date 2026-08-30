@@ -21,7 +21,14 @@ def test_company_interview_experiences_are_report_only_and_traceable() -> None:
     assert "不绕过登录" in policy["social_media"]
 
     companies = payload["companies"]
-    assert set(companies) == {"bytedance", "meituan", "tencent"}
+    assert set(companies) == {
+        "bytedance",
+        "meituan",
+        "tencent",
+        "alibaba",
+        "baidu",
+        "huawei",
+    }
 
     all_ids: set[str] = set()
     for company in companies.values():

@@ -2,10 +2,13 @@
 
 ## Licensed quick-practice question bank
 
-`questions/real_practice_bank.json` contains short, reviewed interview
-prompts distilled or translated from the pinned revisions below. Each runtime
-record keeps its exact source path, revision, and license. Long upstream
-answers, images, and externally linked material are not redistributed.
+`questions/real_practice_bank.json` and
+`questions/real_practice_bank_extended.json` contain 108 short, reviewed,
+bilingual interview prompts (216 zh/en runtime variants) distilled or
+translated from the pinned revisions below. Each internal runtime record keeps
+its exact source path, revision, and license; the public practice API does not
+expose per-question provenance. Long upstream answers, images, and externally
+linked material are not redistributed.
 
 ### JavaGuide
 
@@ -32,13 +35,14 @@ answers, images, and externally linked material are not redistributed.
 - Reference commit: `e1d28e8886c0b6ff3e50da991ce0e895134ddc59`
 - License: MIT
 - Full license copy: `references/licenses/tech-interview-handbook-MIT.txt`
-- Changes: short behavioral prompts were selected and translated into Chinese;
-  scoring signals were independently summarized.
+- Changes: short behavioral and verbal coding-thought prompts were selected,
+  condensed, and translated into Chinese; scoring signals were independently
+  summarized. Upstream long solutions are not included.
 
 ## ARIS-in-AI-Offer
 
-The optional AI engineering / LLM infrastructure question bank contains
-manually selected and rewritten knowledge points based on
+The optional AI engineering / LLM infrastructure portion contains 12 manually
+selected and rewritten question concepts based on
 [ARIS-in-AI-Offer](https://github.com/wanshuiyin/ARIS-in-AI-Offer).
 
 - Copyright (c) 2026 Ruofeng Yang (杨若峰)

@@ -188,6 +188,171 @@
           "report_takeaway": "项目选型会自然延伸到网络、数据库和缓存基础，并以手撕题检查实现能力。"
         }
       ]
+    },
+    "alibaba": {
+      "display_name": "阿里巴巴",
+      "sample_caveat": "阿里不同事业群、业务线和年份差异明显；以下仅归纳公开个人复盘中的重复信号，不是该公司官方标准。",
+      "trend_summary": [
+        "公开样本往往从项目和实习经历切入，持续追问业务流程、个人贡献、技术选型与困难解决过程。",
+        "Java/JVM、MySQL、网络与分布式场景反复出现，回答原理后常继续追问容量、故障与替代方案。",
+        "技术面之外会关注学习动机、职业规划和实习稳定性，技术与综合表达都需要用具体经历支撑。"
+      ],
+      "report_advice": [
+        "把最强项目整理成端到端链路，并准备数据量扩大、依赖失败和一致性要求变化时的设计调整。",
+        "复习 JVM、MySQL、缓存一致性和网络基础时同时准备生产场景，不只背名词定义。",
+        "综合面用真实选择说明为什么投递该业务、希望学到什么，以及未来一到三年的成长方向。"
+      ],
+      "sources": [
+        {
+          "id": "experience-alibaba-2021-cloud-java",
+          "title": "阿里 Java 后端暑期实习完整面经（已意向）",
+          "url": "https://www.nowcoder.com/discuss/353157752941912064",
+          "platform": "牛客网",
+          "published_at": "2021-03-23",
+          "round": "一面",
+          "role": "阿里云 Java 后端暑期实习",
+          "provenance_type": "first_hand",
+          "outcome": "offer",
+          "signals": ["实习与项目挑战", "JVM GC", "海量数据设计", "职业规划"],
+          "report_takeaway": "样本先核实经历与项目中的困难解决过程，再检查 JVM 和大数据量数据库设计，并在后续轮次讨论职业规划。"
+        },
+        {
+          "id": "experience-alibaba-2023-cloud-compute",
+          "title": "阿里云计算平台事业部一面面经",
+          "url": "https://www.nowcoder.com/discuss/490842568419266560",
+          "platform": "牛客网",
+          "published_at": "2023-05-24",
+          "round": "一面",
+          "role": "阿里云 Java 后端暑期实习",
+          "provenance_type": "first_hand",
+          "outcome": "advanced",
+          "signals": ["HTTP 与 ARP", "TCP 可靠传输", "Linux 排障", "操作系统内存"],
+          "report_takeaway": "该样本的一面覆盖网络、操作系统和 Linux 排障，并会在候选人回答连接过程后继续追问真正的数据可靠传输机制。"
+        },
+        {
+          "id": "experience-alibaba-2024-cloud-third-round",
+          "title": "阿里云暑期实习面经（三面）",
+          "url": "https://www.nowcoder.com/discuss/593036111606198272",
+          "platform": "牛客网",
+          "published_at": "2024-03-01",
+          "round": "一面",
+          "role": "阿里云 Java 后端暑期实习",
+          "provenance_type": "first_hand",
+          "outcome": "unknown",
+          "signals": ["项目创新与难点", "实习业务流程", "海量数据 TopK", "资源约束"],
+          "report_takeaway": "复盘显示项目与实习会被要求讲清实现效果和创新点，场景题则继续增加内存等资源限制检查方案边界。"
+        }
+      ]
+    },
+    "baidu": {
+      "display_name": "百度",
+      "sample_caveat": "百度不同产品线和语言栈的考察差别较大；以下趋势来自公开个人样本，不是该公司官方标准或当前官方题单。",
+      "trend_summary": [
+        "样本通常会用较长时间深挖实习或项目，特别关注压测数据、部署方式、限流降级和个人实现细节。",
+        "网络、MySQL/Redis、语言运行时和系统设计反复出现，并常以算法或口述编码收尾。",
+        "回答技术选型时会继续问替代方案与适用边界，量化指标和验证方法比笼统结论更有说服力。"
+      ],
+      "report_advice": [
+        "为项目中的 QPS、延迟和容量数字准备压测工具、请求模型、基线与瓶颈证据。",
+        "围绕 HTTP/TCP、索引/MVCC、Redis 高可用和所用语言并发机制做场景化串联复习。",
+        "系统设计先说明目标和约束，再拆读写路径、数据模型、热点、容灾和可观测性。"
+      ],
+      "sources": [
+        {
+          "id": "experience-baidu-2025-go-backend",
+          "title": "百度后端开发实习一二面面经分享（已 OC）",
+          "url": "https://www.nowcoder.com/feed/main/detail/e914fab391a34f5fa10d53c926cba111",
+          "platform": "牛客网",
+          "published_at": "2025-06-16",
+          "round": "一面",
+          "role": "Go 后端开发实习",
+          "provenance_type": "first_hand",
+          "outcome": "offer",
+          "signals": ["抢购项目链路", "QPS 与压测", "Go 并发", "熔断限流", "部署方式"],
+          "report_takeaway": "样本花大量时间追问抢购项目的链路、压测与部署证据，并从项目自然延伸到 Go、数据库、容器和手撕题。"
+        },
+        {
+          "id": "experience-baidu-2025-online-backend",
+          "title": "26 届本科百度在线后端 OC 面经",
+          "url": "https://www.nowcoder.com/discuss/706674839175671808",
+          "platform": "牛客网",
+          "published_at": "2025-01-09",
+          "round": "一面",
+          "role": "后端开发实习",
+          "provenance_type": "first_hand",
+          "outcome": "offer",
+          "signals": ["实习内容深挖", "HTTP/2 与 QUIC", "TCP/UDP 场景", "B+树与 MVCC", "Redis 哨兵"],
+          "report_takeaway": "该样本先长时间核实实习内容，再连续检查网络协议、数据库索引/MVCC 与 Redis 高可用，并要求说明适用场景。"
+        },
+        {
+          "id": "experience-baidu-2021-shanghai-java",
+          "title": "百度上海 Java 后端实习面经（已 offer）",
+          "url": "https://www.nowcoder.com/discuss/650737",
+          "platform": "牛客网",
+          "published_at": "2021-04-28",
+          "round": "一面",
+          "role": "Java 后端暑期实习",
+          "provenance_type": "first_hand",
+          "outcome": "offer",
+          "signals": ["线程池与 HashMap", "MySQL 日志与事务", "微博热搜设计", "Redis 故障", "项目难点"],
+          "report_takeaway": "样本同时覆盖 Java/MySQL/Redis 基础、项目困难和微博热搜系统设计，检查面较宽且包含明确的设计取舍。"
+        }
+      ]
+    },
+    "huawei": {
+      "display_name": "华为",
+      "sample_caveat": "华为部门、产品线和招聘批次差异很大，专业面与主管面结构也可能不同；以下只归纳公开个人经历的共同信号，不是该公司官方标准。",
+      "trend_summary": [
+        "专业面通常会复盘机试或安排手撕，再按简历追问项目、课程和语言/系统基础。",
+        "项目追问强调是否真正做过、遇到什么问题、和现有方案相比有什么改进，以及候选人的具体职责。",
+        "主管或综合面明显关注学习状态、团队协作、职业选择、抗压方式与价值观匹配。"
+      ],
+      "report_advice": [
+        "准备机试题复盘：不仅给代码，还要能说明复杂度、边界、失败用例和当时未完成部分的改进。",
+        "逐个项目准备个人贡献、关键实现、困难、验证方式，以及与替代方案相比的优缺点。",
+        "主管面诚实讨论学习、团队、城市/方向选择和职业规划，用真实经历说明价值观，不背口号。"
+      ],
+      "sources": [
+        {
+          "id": "experience-huawei-2022-backend-intern",
+          "title": "华为后端开发实习一面面经",
+          "url": "https://www.nowcoder.com/discuss/353159464268275712",
+          "platform": "牛客网",
+          "published_at": "2022-04-14",
+          "round": "一面",
+          "role": "后端开发暑期实习",
+          "provenance_type": "first_hand",
+          "outcome": "offer",
+          "signals": ["机试复盘", "并发理解", "实习与实验室项目", "技术方向适应"],
+          "report_takeaway": "该专业面先手撕并复盘未完成机试题，再了解并发、实习和实验室项目，也会核实候选人对技术方向调整的接受程度。"
+        },
+        {
+          "id": "experience-huawei-2022-cloud-java",
+          "title": "华为 Java 后台实习面经",
+          "url": "https://www.nowcoder.com/discuss/353156323170787328",
+          "platform": "牛客网",
+          "published_at": "2020-04-15",
+          "round": "一面",
+          "role": "CloudBU Java 后台实习",
+          "provenance_type": "first_hand",
+          "outcome": "offer",
+          "signals": ["项目源码细节", "Java 基础", "二叉树手撕", "职业规划"],
+          "report_takeaway": "样本对项目过滤链路追到源码层次，同时检查 Java 基础和算法；后续轮次继续谈项目与职业规划。"
+        },
+        {
+          "id": "experience-huawei-2024-cpp-intern",
+          "title": "华为实习生软开 C++ 一二面面经",
+          "url": "https://www.nowcoder.com/discuss/650422046727340032",
+          "platform": "牛客网",
+          "published_at": "2024-08-06",
+          "round": "一面",
+          "role": "软件开发实习",
+          "provenance_type": "first_hand",
+          "outcome": "advanced",
+          "signals": ["课程与语言基础", "数据结构算法", "项目创新点", "团队经历", "多任务取舍"],
+          "report_takeaway": "专业面覆盖课程、语言和手撕，主管面则围绕项目改进、非科班动机、团队经历、优缺点和多任务冲突继续了解候选人。"
+        }
+      ]
     }
   }
 }

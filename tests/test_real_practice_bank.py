@@ -2,9 +2,15 @@ import json
 import re
 from pathlib import Path
 
+from app.content import load_real_interview_question_bank
+from app.practice import PracticeService, load_real_question_bank
+
 
 ROOT = Path(__file__).resolve().parents[1]
-BANK_PATH = ROOT / "questions" / "real_practice_bank.json"
+BANK_PATHS = (
+    ROOT / "questions" / "real_practice_bank.json",
+    ROOT / "questions" / "real_practice_bank_extended.json",
+)
 MANIFEST_PATH = ROOT / "resources" / "practice_source_manifest.json"
 
 
@@ -12,17 +18,44 @@ def load_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def test_real_practice_bank_has_reviewed_bilingual_questions() -> None:
-    bank = load_json(BANK_PATH)
-    questions = bank["questions"]
+def load_questions() -> list[dict]:
+    return [
+        question
+        for path in BANK_PATHS
+        for question in load_json(path)["questions"]
+    ]
 
-    assert bank["schema_version"] == "1.0"
-    assert len(questions) >= 60
+
+def test_real_practice_bank_has_reviewed_bilingual_questions() -> None:
+    banks = [load_json(path) for path in BANK_PATHS]
+    questions = load_questions()
+
+    assert all(bank["schema_version"] == "1.0" for bank in banks)
+    assert [len(bank["questions"]) for bank in banks] == [66, 42]
+    assert len(questions) == 108
     assert len({question["id"] for question in questions}) == len(questions)
     assert len({question["prompt"]["zh"] for question in questions}) == len(questions)
     assert len({question["prompt"]["en"] for question in questions}) == len(questions)
 
     for question in questions:
+        assert {
+            "id",
+            "kind",
+            "topics",
+            "prompt",
+            "source_id",
+            "source_path",
+            "revision",
+            "license",
+            "authenticity",
+            "status",
+            "difficulty",
+            "suggested_seconds",
+            "company_tags",
+            "direction_tags",
+            "answer_modes",
+            "scoring",
+        } <= set(question)
         assert re.fullmatch(r"[a-z0-9-]+", question["id"])
         assert question["prompt"]["zh"].strip()
         assert question["prompt"]["en"].strip()
@@ -40,7 +73,7 @@ def test_real_practice_bank_has_reviewed_bilingual_questions() -> None:
 
 
 def test_every_question_matches_a_pinned_permissive_source() -> None:
-    questions = load_json(BANK_PATH)["questions"]
+    questions = load_questions()
     sources = {
         source["id"]: source
         for source in load_json(MANIFEST_PATH)["sources"]
@@ -77,7 +110,7 @@ def test_every_question_matches_a_pinned_permissive_source() -> None:
 
 
 def test_bank_covers_required_practice_domains() -> None:
-    questions = load_json(BANK_PATH)["questions"]
+    questions = load_questions()
     topics = {topic.lower() for question in questions for topic in question["topics"]}
     directions = {
         direction.lower()
@@ -112,7 +145,7 @@ def test_bank_covers_required_practice_domains() -> None:
 def test_bank_does_not_embed_restricted_or_synthetic_sources() -> None:
     serialized = json.dumps(
         {
-            "bank": load_json(BANK_PATH),
+            "banks": [load_json(path) for path in BANK_PATHS],
             "manifest": load_json(MANIFEST_PATH),
         },
         ensure_ascii=False,
@@ -134,6 +167,24 @@ def test_manifest_license_copies_and_notices_are_present() -> None:
     manifest = load_json(MANIFEST_PATH)
     notices = (ROOT / "THIRD_PARTY_NOTICES.md").read_text(encoding="utf-8")
 
+    assert manifest["banks"] == [
+        {
+            "path": "questions/real_practice_bank.json",
+            "concept_count": 66,
+            "runtime_language_variants": 132,
+        },
+        {
+            "path": "questions/real_practice_bank_extended.json",
+            "concept_count": 42,
+            "runtime_language_variants": 84,
+        },
+    ]
+    assert manifest["totals"] == {
+        "concept_count": 108,
+        "runtime_language_variants": 216,
+    }
+    assert all((ROOT / bank["path"]).is_file() for bank in manifest["banks"])
+
     for source in manifest["sources"]:
         license_path = ROOT / source["license_copy"]
         assert license_path.is_file()
@@ -145,3 +196,28 @@ def test_manifest_license_copies_and_notices_are_present() -> None:
             assert "Apache License" in license_text
             assert "Version 2.0" in license_text
         assert source["revision"] in notices
+
+
+def test_production_runtime_loads_both_banks_without_public_provenance() -> None:
+    runtime_questions = load_real_question_bank()
+
+    assert len(runtime_questions) == 216
+    assert {item.language for item in runtime_questions} == {"zh", "en"}
+    assert sum(item.language == "zh" for item in runtime_questions) == 108
+    assert sum(item.language == "en" for item in runtime_questions) == 108
+    assert len({item.id for item in runtime_questions}) == 216
+
+    private_snapshot = runtime_questions[0].snapshot()
+    assert private_snapshot["provenance"]["source_id"]
+    public_snapshot = PracticeService._public_question(private_snapshot)
+    assert set(public_snapshot).isdisjoint(
+        {"provenance", "source_id", "source_path", "revision", "license"}
+    )
+
+    for language in ("zh", "en"):
+        interview_questions = load_real_interview_question_bank(
+            language_mode=language
+        )
+        assert len(interview_questions) == 108
+        assert len({item["bank_id"] for item in interview_questions}) == 108
+        assert {item["language"] for item in interview_questions} == {language}

@@ -1,9 +1,12 @@
 # Company interview skill distillation
 
-These runtime skills were distilled from the research bundle supplied in
-`/root/workspace/weiyi/data`, especially `实习面试资源整理.md` and the interview
-research archive. They describe recurring interview *patterns*, not official
-hiring standards or a promise that every department uses the same process.
+These runtime skills use only the real-question and interview-experience source
+index in `/root/workspace/weiyi/data/实习面试资源整理.md`, plus the individually
+recorded public experience links in `resources/company_interview_experiences.json`.
+The separate product-design recommendation documents in the supplied bundle are
+not runtime evidence. These skills describe recurring interview *patterns*, not
+official hiring standards or a promise that every department uses the same
+process.
 
 Only ByteDance, Meituan, Tencent, Alibaba, Baidu, and Huawei had enough
 company-specific evidence for this release. Companies that appeared only in a
@@ -11,10 +14,9 @@ question-bank index were deliberately not assigned a strong style.
 
 ByteDance, Meituan, and Tencent are marked `high` because their runtime skills
 have multiple concrete first-hand report references. Alibaba, Baidu, and Huawei
-are conservatively marked `medium`: their patterns are supported mainly by
-research indexes and company-page signals, including sources whose text cannot
-be redistributed, so the product applies the patterns without presenting them
-as official or department-universal behavior.
+remain conservatively marked `medium` after adding three traceable public
+experience samples per company: team and batch differences remain too large to
+present the patterns as official or department-universal behavior.
 
 Public UGC was used as a signal and was not copied into the product. The
 research policy follows these constraints:
@@ -48,14 +50,16 @@ represented by the `experience-tencent-*` entries in
 Project technology choices lead into failure cases, quantified results,
 traffic amplification, system thinking, and system-design trade-offs. The
 combined interview uses a formal behavioral checkpoint rather than treating
-HR questions as casual chat.
+HR questions as casual chat. Evidence is represented by the
+`experience-alibaba-*` entries in `resources/company_interview_experiences.json`.
 
 ## Baidu
 
 Fundamentals remain prominent, then move into scenarios and engineering
 practice. Coding questions start relatively accessible but still require
 complexity, edge cases, and test thinking. Behavioral questions focus on
-collaboration and concrete problem handling.
+collaboration and concrete problem handling. Evidence is represented by the
+`experience-baidu-*` entries in `resources/company_interview_experiences.json`.
 
 ## Huawei
 
@@ -64,6 +68,8 @@ product's scope. This product models only the technical and combined interview:
 technical Q&A, coding thought, ownership of projects, and—when combined mode is
 chosen—resilience, response to criticism, mobility, and stability. It does not
 pretend to simulate an online exam or personality inventory.
+Evidence is represented by the `experience-huawei-*` entries in
+`resources/company_interview_experiences.json`.
 
 ## Pure-English profile
 

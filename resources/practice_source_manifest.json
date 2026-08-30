@@ -3,8 +3,24 @@
   "generated_at": "2026-08-30",
   "policy": {
     "allowed_authenticity": "licensed_bank",
-    "content_rule": "Only short, reviewed prompts distilled or translated from the pinned, permissively licensed sources below are included. Long upstream answers are not redistributed.",
-    "runtime_rule": "The application reads static reviewed JSON. It does not crawl, scrape, or fetch question content at runtime."
+    "content_rule": "Both checked-in banks contain only short, reviewed prompts distilled or translated from the pinned, permissively licensed sources below. Long upstream answers are not redistributed.",
+    "runtime_rule": "The application reads the two explicitly listed static reviewed JSON files. It does not crawl, scrape, or fetch question content at runtime."
+  },
+  "banks": [
+    {
+      "path": "questions/real_practice_bank.json",
+      "concept_count": 66,
+      "runtime_language_variants": 132
+    },
+    {
+      "path": "questions/real_practice_bank_extended.json",
+      "concept_count": 42,
+      "runtime_language_variants": 84
+    }
+  ],
+  "totals": {
+    "concept_count": 108,
+    "runtime_language_variants": 216
   },
   "sources": [
     {
