@@ -5,6 +5,7 @@ import {
 const elements = {
   status: $('#projectProfileStatus'),
   name: $('#projectName'),
+  responsibility: $('#projectResponsibility'),
   files: $('#projectFiles'),
   githubUrl: $('#projectGithubUrl'),
   githubAdd: $('#projectGithubAdd'),
@@ -14,27 +15,58 @@ const elements = {
   readyCopy: $('#projectReadyCopy'),
   analyze: $('#projectAnalyzeButton'),
   loading: $('#projectAnalysisLoading'),
+  progressTitle: $('#projectProgressTitle'),
+  progressCopy: $('#projectProgressCopy'),
+  progressSteps: $('#projectProgressSteps'),
+  progressBack: $('#projectProgressBack'),
   analysis: $('#projectAnalysis'),
   analysisName: $('#analysisProjectName'),
   analysisMeta: $('#analysisProjectMeta'),
   analysisSummary: $('#analysisProjectSummary'),
   refresh: $('#projectRefreshAnalysis'),
   architecture: $('#projectArchitecture'),
+  responsibilityPanel: $('#projectResponsibilityPanel'),
+  responsibilityEdit: $('#projectResponsibilityEdit'),
+  responsibilitySave: $('#projectResponsibilitySave'),
+  responsibilitySaveState: $('#projectResponsibilitySaveState'),
+  responsibilityMerge: $('#projectResponsibilityMerge'),
   requestFlow: $('#projectRequestFlow'),
+  interviewIntro: $('#projectInterviewIntro'),
+  interviewIntroCopy: $('#projectInterviewIntroCopy'),
+  flowReviewState: $('#projectFlowReviewState'),
+  flowReviewSummary: $('#projectFlowReviewSummary'),
+  flowIssues: $('#projectFlowIssues'),
+  flowAssumptions: $('#projectFlowAssumptions'),
+  flowToVerify: $('#projectFlowToVerify'),
   technologyChoices: $('#projectTechnologyChoices'),
   risks: $('#projectRisks'),
   improvements: $('#projectImprovements'),
   questions: $('#projectQuestionList'),
+  questionStatus: $('#projectQuestionStatus'),
+  moreQuestions: $('#projectMoreQuestions'),
+  regenerateQuestions: $('#projectRegenerateQuestions'),
 };
 
 const queryProjectId = String(new URLSearchParams(location.search).get('project') || '').trim();
 let profile = { resumes: [], projects: [], selected_project_id: '' };
 let selectedProject = null;
 let querySelectionHandled = false;
+let currentAnalysis = null;
+let currentQuestions = [];
+let questionsBusy = false;
 const projectPracticeTimers = new Map();
 const projectPracticeTicker = window.setInterval(() => {
   projectPracticeTimers.forEach((entry) => updatePracticeTimer(entry));
 }, 1000);
+
+const ANALYSIS_PROGRESS_STAGES = [
+  { id: 'reading', label: '读取项目资料' },
+  { id: 'preparing_context', label: '梳理源码与本人职责' },
+  { id: 'generating', label: '生成架构、链路、介绍与追问' },
+  { id: 'validating', label: '检查链路与输出质量' },
+  { id: 'saving', label: '保存解读结果' },
+];
+let progressStages = [];
 
 function itemId(item) {
   return String(item?.id || item?.project_id || '');
@@ -57,6 +89,90 @@ function setVisible(element, visible) {
   element?.classList.toggle('is-hidden', !visible);
 }
 
+function renderProgressSteps() {
+  elements.progressSteps.replaceChildren();
+  progressStages.forEach((stage) => {
+    const item = document.createElement('li');
+    item.dataset.stage = stage.id;
+    item.dataset.state = stage.state || 'pending';
+    const mark = document.createElement('span');
+    mark.setAttribute('aria-hidden', 'true');
+    mark.textContent = stage.state === 'done' ? '✓' : stage.state === 'error' ? '!' : '·';
+    const copy = document.createElement('span');
+    const title = document.createElement('strong');
+    title.textContent = stage.label;
+    const detail = document.createElement('small');
+    detail.textContent = stage.message || (stage.state === 'done' ? '已完成' : stage.state === 'error' ? '失败' : '等待中');
+    copy.append(title, detail);
+    item.append(mark, copy);
+    elements.progressSteps.append(item);
+  });
+}
+
+function beginProgress(stages, title, copy) {
+  progressStages = stages.map((stage) => ({ ...stage, state: 'pending', message: '' }));
+  elements.progressTitle.textContent = title;
+  elements.progressCopy.textContent = copy;
+  elements.progressBack.classList.add('is-hidden');
+  elements.loading.setAttribute('aria-busy', 'true');
+  renderProgressSteps();
+  setVisible(elements.ready, false);
+  setVisible(elements.analysis, false);
+  setVisible(elements.loading, true);
+}
+
+function updateProgress(stageId, message = '', { complete = false } = {}) {
+  const index = progressStages.findIndex((stage) => stage.id === stageId);
+  if (index < 0) return;
+  progressStages = progressStages.map((stage, stageIndex) => ({
+    ...stage,
+    state: stageIndex < index ? 'done' : stageIndex === index ? (complete ? 'done' : 'active') : 'pending',
+    message: stageIndex === index && message ? message : stage.message,
+  }));
+  const current = progressStages[index];
+  elements.progressTitle.textContent = complete ? `${current.label}完成` : `正在${current.label}…`;
+  if (message) elements.progressCopy.textContent = message;
+  renderProgressSteps();
+}
+
+function completeProgress(
+  message = '操作已完成。',
+  { reused = false, title = '操作完成' } = {},
+) {
+  progressStages = progressStages.map((stage) => ({
+    ...stage,
+    state: 'done',
+    message: reused && stage.state === 'pending' ? '已复用最近解读结果' : stage.message || '已完成',
+  }));
+  elements.progressTitle.textContent = title;
+  elements.progressCopy.textContent = message;
+  elements.loading.setAttribute('aria-busy', 'false');
+  renderProgressSteps();
+}
+
+function failProgress(message) {
+  const activeIndex = Math.max(0, progressStages.findIndex((stage) => stage.state === 'active'));
+  progressStages = progressStages.map((stage, index) => ({
+    ...stage,
+    state: index === activeIndex ? 'error' : stage.state,
+    message: index === activeIndex ? message : stage.message,
+  }));
+  elements.progressTitle.textContent = '这次操作没有完成';
+  elements.progressCopy.textContent = message;
+  elements.loading.setAttribute('aria-busy', 'false');
+  elements.progressBack.classList.remove('is-hidden');
+  renderProgressSteps();
+}
+
+async function readProjectFileList(files) {
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    updateProgress('reading_files', `正在读取文件清单（${index + 1}/${files.length}）：${file.name}`);
+    await file.slice(0, Math.min(file.size, 64 * 1024)).arrayBuffer();
+  }
+  updateProgress('reading_files', `已读取 ${files.length} 个文件的名称、大小和可上传内容。`, { complete: true });
+}
+
 function updateStatus(message = '') {
   elements.status.textContent = message || `${profile.projects.length} 个项目 · 当前设备`;
 }
@@ -65,6 +181,18 @@ function sourceMeta(project) {
   if (project?.source_type === 'github') return 'GitHub 仓库';
   const count = Array.isArray(project?.files) ? project.files.length : 0;
   return `${count || '多'} 个项目文件`;
+}
+
+function projectResponsibilityValue(project = selectedProject) {
+  return String(project?.responsibility || project?.my_responsibility || '').trim();
+}
+
+function renderResponsibilityEditor() {
+  const hasProject = Boolean(selectedProject);
+  setVisible(elements.responsibilityPanel, hasProject);
+  if (!hasProject) return;
+  elements.responsibilityEdit.value = projectResponsibilityValue();
+  elements.responsibilitySaveState.textContent = projectResponsibilityValue() ? '已保存' : '尚未填写';
 }
 
 function renderReady() {
@@ -77,6 +205,7 @@ function renderReady() {
   setVisible(elements.ready, true);
   setVisible(elements.loading, false);
   setVisible(elements.analysis, false);
+  renderResponsibilityEditor();
 }
 
 function createEmptyProjectItem() {
@@ -135,7 +264,7 @@ function renderProjects() {
     const title = document.createElement('strong');
     title.textContent = itemName(project);
     const meta = document.createElement('small');
-    meta.textContent = `${sourceMeta(project)} · ${formatDate(project?.created_at, false)}`;
+    meta.textContent = `${sourceMeta(project)} · ${formatDate(project?.created_at, false)}${projectResponsibilityValue(project) ? ' · 已填写职责' : ''}`;
     copy.append(title, meta);
     label.append(radio, icon, copy);
 
@@ -151,7 +280,12 @@ function renderProjects() {
 }
 
 function chooseLocalProject(project) {
+  const changed = itemId(project) !== itemId(selectedProject);
   selectedProject = project || null;
+  if (changed) {
+    currentAnalysis = null;
+    currentQuestions = [];
+  }
   profile.selected_project_id = itemId(project);
   profile.projects = profile.projects.map((item) => ({ ...item, selected: itemId(item) === profile.selected_project_id }));
   renderProjects();
@@ -200,9 +334,14 @@ async function loadProfile({ preferredProjectId = '' } = {}) {
     const payload = await apiFetch('/api/profile', { timeout: 15_000 });
     profile = normalizeProfile(payload);
     const selectedId = profile.selected_project_id;
-    selectedProject = profile.projects.find((item) => itemId(item) === selectedId)
+    const nextProject = profile.projects.find((item) => itemId(item) === selectedId)
       || profile.projects.find((item) => item?.selected === true)
       || null;
+    if (itemId(nextProject) !== itemId(selectedProject)) {
+      currentAnalysis = null;
+      currentQuestions = [];
+    }
+    selectedProject = nextProject;
     renderProjects();
     renderReady();
     updateStatus();
@@ -215,6 +354,8 @@ async function loadProfile({ preferredProjectId = '' } = {}) {
   } catch (error) {
     profile = { resumes: [], projects: [], selected_project_id: '' };
     selectedProject = null;
+    currentAnalysis = null;
+    currentQuestions = [];
     renderProjects();
     renderReady();
     updateStatus('同步失败，可稍后重试');
@@ -226,20 +367,37 @@ async function uploadProjectFiles() {
   const files = [...(elements.files.files || [])];
   if (!files.length) return;
   elements.files.disabled = true;
-  updateStatus(`正在保存 ${files.length} 个项目文件…`);
+  beginProgress(
+    [
+      { id: 'reading_files', label: '读取本地文件' },
+      { id: 'uploading_files', label: '上传并保存项目' },
+    ],
+    '正在读取本地文件…',
+    '只读取所选文件，不会执行其中的代码。',
+  );
+  updateStatus(`正在读取 ${files.length} 个项目文件…`);
   try {
+    await readProjectFileList(files);
     const data = new FormData();
     data.append('client_id', getClientId());
     data.append('name', elements.name.value.trim() || files[0].name.replace(/\.[^.]+$/, ''));
+    data.append('responsibility', elements.responsibility.value.trim());
     files.forEach((file) => data.append('files', file, file.name));
+    updateProgress('uploading_files', `正在上传并保存 ${files.length} 个文件，完成前请勿关闭页面。`);
+    updateStatus(`正在保存 ${files.length} 个项目文件…`);
     const response = await apiFetch('/api/profile/projects', { method: 'POST', body: data, timeout: 65_000 });
     const project = response?.project || response;
     if (!itemId(project)) throw new Error('服务端没有返回项目编号。');
+    updateProgress('uploading_files', '项目文件和本人职责已保存。', { complete: true });
+    completeProgress('项目已保存，可以开始解读。', { title: '项目保存完成' });
     await loadProfile({ preferredProjectId: itemId(project) });
     elements.name.value = '';
+    elements.responsibility.value = '';
     showToast('项目资料已保存，点击“开始项目解读”继续。', 'success');
   } catch (error) {
-    showToast(error?.message || '项目资料保存失败，请稍后重试。', 'error', 5200);
+    const message = error?.message || '项目资料保存失败，请稍后重试。';
+    failProgress(message);
+    showToast(message, 'error', 5200);
     updateStatus();
   } finally {
     elements.files.disabled = false;
@@ -268,21 +426,33 @@ async function addGithubProject() {
   }
   const repositoryName = new URL(url).pathname.split('/').filter(Boolean)[1].replace(/\.git$/i, '');
   elements.githubAdd.disabled = true;
+  beginProgress(
+    [{ id: 'github_fetch', label: '读取并保存 GitHub 仓库' }],
+    '正在读取 GitHub 仓库…',
+    '服务端只读取公开仓库中受支持的文本与源码文件，不会运行代码。',
+  );
   updateStatus('正在添加 GitHub 项目…');
   try {
+    updateProgress('github_fetch', '正在获取公开仓库的文件清单与受支持源码。');
     const response = await apiFetch('/api/profile/projects/github', {
       method: 'POST', timeout: 35_000, json: {
         client_id: getClientId(), name: elements.name.value.trim() || repositoryName, url,
+        responsibility: elements.responsibility.value.trim(),
       },
     });
     const project = response?.project || response;
     if (!itemId(project)) throw new Error('服务端没有返回项目编号。');
+    updateProgress('github_fetch', '仓库快照和本人职责已保存。', { complete: true });
+    completeProgress('GitHub 项目已保存，可以开始解读。', { title: '项目保存完成' });
     await loadProfile({ preferredProjectId: itemId(project) });
     elements.githubUrl.value = '';
     elements.name.value = '';
+    elements.responsibility.value = '';
     showToast('GitHub 项目已添加，点击“开始项目解读”继续。', 'success');
   } catch (error) {
-    showToast(error?.message || 'GitHub 项目添加失败，请稍后重试。', 'error', 5200);
+    const message = error?.message || 'GitHub 项目添加失败，请稍后重试。';
+    failProgress(message);
+    showToast(message, 'error', 5200);
     updateStatus();
   } finally {
     elements.githubAdd.disabled = false;
@@ -301,6 +471,61 @@ async function deleteProject(project) {
   } catch (error) {
     showToast(error?.message || '项目删除失败，请稍后重试。', 'error', 5200);
   }
+}
+
+async function saveProjectResponsibility({ mergedFromArchitecture = false } = {}) {
+  const id = itemId(selectedProject);
+  if (!id) return;
+  const responsibility = elements.responsibilityEdit.value.trim();
+  elements.responsibilitySave.disabled = true;
+  elements.responsibilityMerge.disabled = true;
+  elements.responsibilitySaveState.textContent = '正在保存…';
+  try {
+    const response = await apiFetch(`/api/profile/projects/${encodeURIComponent(id)}`, {
+      method: 'PATCH', timeout: 15_000, json: { client_id: getClientId(), responsibility },
+    });
+    const canonical = response?.project && typeof response.project === 'object'
+      ? response.project
+      : { ...selectedProject, responsibility };
+    selectedProject = canonical;
+    profile.projects = profile.projects.map((project) => (itemId(project) === id ? canonical : project));
+    currentAnalysis = null;
+    currentQuestions = [];
+    elements.questions.replaceChildren();
+    renderProjects();
+    renderReady();
+    elements.responsibilitySaveState.textContent = responsibility ? '已保存 · 需重新解读' : '已清空 · 需重新解读';
+    showToast(
+      mergedFromArchitecture
+        ? '所选组件已合并到本人职责。请重新解读，以生成对应追问。'
+        : '本人职责已保存。请重新解读，以免继续使用旧职责题。',
+      'success',
+      5200,
+    );
+  } catch (error) {
+    elements.responsibilitySaveState.textContent = '保存失败';
+    showToast(error?.message || '本人职责保存失败，请稍后重试。', 'error', 5200);
+  } finally {
+    elements.responsibilitySave.disabled = false;
+    elements.responsibilityMerge.disabled = false;
+  }
+}
+
+async function mergeSelectedArchitectureResponsibilities() {
+  const selected = [...elements.architecture.querySelectorAll('input[data-responsibility-text]:checked')]
+    .map((input) => input.dataset.responsibilityText?.trim())
+    .filter(Boolean);
+  if (!selected.length) {
+    showToast('请先勾选你确实负责过的架构组件。', 'error');
+    return;
+  }
+  const existing = elements.responsibilityEdit.value.trim();
+  const parts = existing ? existing.split(/\n+/).map((value) => value.trim()).filter(Boolean) : [];
+  selected.forEach((value) => {
+    if (!parts.some((part) => part === value)) parts.push(value);
+  });
+  elements.responsibilityEdit.value = parts.join('\n');
+  await saveProjectResponsibility({ mergedFromArchitecture: true });
 }
 
 function textFromValue(value) {
@@ -344,17 +569,61 @@ function renderList(element, values, fallback) {
   });
 }
 
+function renderFlowReview(value, hasRequestFlow) {
+  const review = value && typeof value === 'object' ? value : {};
+  const status = hasRequestFlow && ['verified', 'partial', 'needs_verification'].includes(review.status)
+    ? review.status
+    : 'needs_verification';
+  const statusLabels = {
+    verified: '已从快照核对',
+    partial: '部分核对',
+    needs_verification: '待核实',
+  };
+  elements.flowReviewState.dataset.state = status;
+  elements.flowReviewState.textContent = statusLabels[status];
+  elements.flowReviewSummary.textContent = textFromValue(review.summary)
+    || (hasRequestFlow
+      ? '已按当前快照梳理链路；仍应由候选人核对实际调用顺序和失败路径。'
+      : '未从当前项目快照验证出完整请求链路，以下内容均需补充证据。');
+  const issues = toArray(review.issues).filter(Boolean);
+  if (!hasRequestFlow) issues.unshift('未从当前项目快照验证出完整请求链路，不能把链路缺失视为分析成功。');
+  renderList(
+    elements.flowIssues,
+    issues,
+    status === 'verified' ? '当前快照未显示明确的链路矛盾。' : '尚未获得足够证据判断链路问题。',
+  );
+  renderList(elements.flowAssumptions, review.assumptions, '未声明额外分析假设。');
+  renderList(
+    elements.flowToVerify,
+    review.to_verify,
+    hasRequestFlow ? '面试前仍建议用入口、数据读写和失败路径逐步核对。' : '补充路由入口、服务调用、数据读写和失败处理的实际证据。',
+  );
+}
+
 function renderArchitecture(value) {
   elements.architecture.replaceChildren();
+  let selectableCount = 0;
   if (Array.isArray(value)) {
     value.filter(Boolean).forEach((entry, index) => {
       const row = document.createElement('div');
-      const title = document.createElement('strong');
-      title.textContent = entry?.name || entry?.component || `模块 ${index + 1}`;
+      const componentName = textFromValue(entry?.name || entry?.component || `模块 ${index + 1}`);
+      const componentResponsibility = textFromValue(entry?.responsibility || entry?.description || entry) || '暂无说明';
+      const title = document.createElement('label');
+      title.className = 'project-component-choice';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.dataset.responsibilityText = `${componentName}：${componentResponsibility}`;
+      checkbox.checked = projectResponsibilityValue().includes(componentName);
+      const titleCopy = document.createElement('strong');
+      titleCopy.textContent = componentName;
+      const choiceCopy = document.createElement('small');
+      choiceCopy.textContent = '标记为我负责';
+      title.append(checkbox, titleCopy, choiceCopy);
       const copy = document.createElement('p');
-      copy.textContent = textFromValue(entry?.responsibility || entry?.description || entry) || '暂无说明';
+      copy.textContent = componentResponsibility;
       row.append(title, copy);
       elements.architecture.append(row);
+      selectableCount += 1;
     });
   } else if (value && typeof value === 'object') {
     Object.entries(value).forEach(([key, detail]) => {
@@ -371,10 +640,34 @@ function renderArchitecture(value) {
     copy.textContent = textFromValue(value) || '当前资料不足以形成完整架构概览，可补充 README 或设计文档后重新解读。';
     elements.architecture.append(copy);
   }
+  elements.responsibilityMerge.classList.toggle('is-hidden', selectableCount === 0);
 }
 
 function practiceStorageKey() {
   return `mock_interview.project_practice.v1.${getClientId()}.${itemId(selectedProject)}`;
+}
+
+function isSkillRuleText(value) {
+  const text = textFromValue(value);
+  return /(请先做自我介绍|听完后服务端|必须另开一题|默认强制\s*[34]\s*层|若深度弱则扩至|当候选人回答|AI\s*必须基于|system\s*prompt|skill\s*规则|元规则)/i.test(text);
+}
+
+function questionFingerprint(value) {
+  return textFromValue(value).toLocaleLowerCase().replace(/[\s，。！？；：,.!?;:'"“”‘’（）()、]/g, '');
+}
+
+function normalizeProjectQuestions(values) {
+  const seen = new Set();
+  return toArray(values).reduce((items, question) => {
+    const source = typeof question === 'object' && question !== null ? question : { question };
+    const prompt = textFromValue(source.question || source.prompt || source.title);
+    const evidence = toArray(source.evidence).map(textFromValue).filter(Boolean);
+    const fingerprint = questionFingerprint(prompt);
+    if (!prompt || !fingerprint || seen.has(fingerprint) || isSkillRuleText(prompt) || evidence.length === 0) return items;
+    seen.add(fingerprint);
+    items.push({ ...source, question: prompt, evidence });
+    return items;
+  }, []);
 }
 
 function readPracticeDrafts(storageKey = practiceStorageKey()) {
@@ -416,18 +709,23 @@ function persistVisiblePracticeEntries() {
   });
 }
 
-function renderQuestions(values) {
+function renderQuestions(values, { append = false } = {}) {
   persistVisiblePracticeEntries();
   projectPracticeTimers.clear();
   elements.questions.replaceChildren();
-  const questions = toArray(values).filter(Boolean);
+  const questions = normalizeProjectQuestions(append ? [...currentQuestions, ...toArray(values)] : values);
+  currentQuestions = questions;
   if (!questions.length) {
     const empty = document.createElement('p');
     empty.className = 'project-question-empty';
-    empty.textContent = '当前资料还不足以生成追问，可补充关键模块和技术决策后重新解读。';
+    empty.textContent = '当前没有带项目依据的可核实追问。可补充关键模块和本人职责后重新解读。';
     elements.questions.append(empty);
+    elements.questionStatus.dataset.state = 'error';
+    elements.questionStatus.textContent = '未展示缺少项目依据或不属于面试题面的内容';
     return;
   }
+  elements.questionStatus.dataset.state = 'done';
+  elements.questionStatus.textContent = `${questions.length} 道围绕当前项目的可核实追问`;
   const drafts = readPracticeDrafts();
   questions.forEach((question, index) => {
     const source = typeof question === 'object' ? question : { question };
@@ -437,11 +735,26 @@ function renderQuestions(values) {
     const number = document.createElement('span');
     number.textContent = String(index + 1).padStart(2, '0');
     const copy = document.createElement('div');
+    const interviewer = document.createElement('small');
+    interviewer.className = 'project-interviewer-label';
+    interviewer.textContent = '面试官 · 项目深挖';
     const title = document.createElement('h4');
     title.textContent = textFromValue(source.question || source.prompt || source.title) || `项目追问 ${index + 1}`;
     const focus = document.createElement('p');
-    focus.textContent = source.focus ? `考察重点：${textFromValue(source.focus)}` : '先讲结论，再用项目中的真实取舍与结果支撑。';
-    copy.append(title, focus);
+    const focusText = textFromValue(source.focus);
+    focus.textContent = focusText && !isSkillRuleText(focusText)
+      ? `考察重点：${focusText}`
+      : '先讲结论，再用项目中的真实取舍与结果支撑。';
+    const relevance = document.createElement('p');
+    relevance.className = 'project-question-relevance';
+    const relevanceText = textFromValue(source.responsibility_relevance);
+    relevance.textContent = relevanceText && !isSkillRuleText(relevanceText)
+      ? `与你的职责相关：${relevanceText}`
+      : '请明确区分本人工作、团队成果和仍待核实的部分。';
+    const evidence = document.createElement('p');
+    evidence.className = 'project-question-evidence';
+    evidence.textContent = `项目依据：${source.evidence.slice(0, 3).join('；')}`;
+    copy.append(interviewer, title, focus, relevance, evidence);
     heading.append(number, copy);
 
     const label = document.createElement('label');
@@ -502,8 +815,10 @@ function renderQuestions(values) {
     const suggestedTitle = document.createElement('strong');
     suggestedTitle.textContent = '参考思路';
     const suggestedCopy = document.createElement('p');
-    suggestedCopy.textContent = textFromValue(source.suggested_answer || source.answer || source.key_points)
-      || '当前未返回参考答案。可以围绕背景、技术取舍、落地过程、量化结果和复盘改进五步组织。';
+    const suggestedText = textFromValue(source.suggested_answer || source.answer || source.key_points);
+    suggestedCopy.textContent = suggestedText && !isSkillRuleText(suggestedText)
+      ? suggestedText
+      : '结合项目依据，按背景、本人职责、技术取舍、落地过程、量化结果和复盘改进组织。';
     suggested.append(suggestedTitle, suggestedCopy);
     reveal.addEventListener('click', () => {
       const hidden = suggested.classList.toggle('is-hidden');
@@ -518,20 +833,113 @@ function renderQuestions(values) {
 
 function renderAnalysis(payload) {
   const analysis = payload?.analysis && typeof payload.analysis === 'object' ? payload.analysis : payload || {};
+  currentAnalysis = analysis;
   elements.analysisName.textContent = itemName(selectedProject);
-  elements.analysisMeta.textContent = `${sourceMeta(selectedProject)} · 匿名 Profile${payload?.cached ? ' · 已复用最近解读' : ''}`;
+  elements.analysisMeta.textContent = `${sourceMeta(selectedProject)} · 匿名 Profile${projectResponsibilityValue() ? ' · 已结合本人职责' : ' · 尚未填写本人职责'}${payload?.cached ? ' · 已复用最近解读' : ''}`;
   elements.analysisSummary.textContent = textFromValue(analysis.project_summary)
     || '以下结论只基于当前保存的项目资料，可补充更多上下文后重新解读。';
   renderArchitecture(analysis.architecture);
-  renderList(elements.requestFlow, analysis.request_flow, '当前资料不足以还原完整请求链路。');
+  const requestFlow = toArray(analysis.request_flow).filter(Boolean);
+  renderList(elements.requestFlow, requestFlow, '未从当前项目快照验证出完整请求链路，需补充入口、调用和数据读写证据。');
+  elements.interviewIntro.textContent = textFromValue(analysis.interview_intro || analysis.interview_introduction)
+    || '当前资料不足，暂未生成可在面试中直接使用的项目介绍。';
+  renderFlowReview(analysis.request_flow_review || analysis.flow_review, requestFlow.length > 0);
   renderList(elements.technologyChoices, analysis.technology_choices, '当前资料未明确说明技术选型依据。');
   renderList(elements.risks, analysis.risks, '暂未识别到明确风险，仍建议准备容量与故障场景。');
   renderList(elements.improvements, analysis.improvements, '可补充压测数据、监控指标与复盘结论。');
   renderQuestions(analysis.interview_questions);
+  renderResponsibilityEditor();
+  elements.moreQuestions.disabled = false;
+  elements.regenerateQuestions.disabled = false;
   setVisible(elements.ready, false);
   setVisible(elements.loading, false);
   setVisible(elements.analysis, true);
   window.scrollTo({ top: Math.max(0, elements.analysis.offsetTop - 90), behavior: 'smooth' });
+}
+
+function analysisStageFromEvent(stage) {
+  if (stage === 'cache_check') return 'reading';
+  return ANALYSIS_PROGRESS_STAGES.some((item) => item.id === stage) ? stage : '';
+}
+
+async function responseErrorMessage(response) {
+  const contentType = response.headers.get('content-type') || '';
+  const payload = contentType.includes('json')
+    ? await response.json().catch(() => null)
+    : await response.text().catch(() => '');
+  return payload?.detail?.message || payload?.error?.message || payload?.detail || payload?.message
+    || `请求失败（${response.status}）`;
+}
+
+async function streamProjectAnalysis(id, { refresh = false } = {}) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 120_000);
+  try {
+    const response = await fetch(`/api/profile/projects/${encodeURIComponent(id)}/analysis/stream`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Profile-Key': getClientId(),
+      },
+      body: JSON.stringify({ client_id: getClientId(), refresh: Boolean(refresh) }),
+      signal: controller.signal,
+    });
+    if ([404, 405].includes(response.status)) {
+      const unsupported = new Error('当前服务端暂不支持流式解读。');
+      unsupported.streamUnsupported = true;
+      throw unsupported;
+    }
+    if (!response.ok) throw new Error(await responseErrorMessage(response));
+    if (!response.body) throw new Error('服务端没有返回可读取的解读进度。');
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result = null;
+    const handleLine = (line) => {
+      if (!line.trim()) return;
+      let event;
+      try { event = JSON.parse(line); } catch { throw new Error('服务端返回了无法识别的解读进度。'); }
+      if (event?.type === 'progress') {
+        const stage = analysisStageFromEvent(String(event.stage || ''));
+        if (stage) updateProgress(stage, textFromValue(event.message));
+      } else if (event?.type === 'complete') {
+        result = event.result;
+      } else if (event?.type === 'error') {
+        throw new Error(event?.error?.message || '项目解读失败。');
+      }
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+      lines.forEach(handleLine);
+      if (done) break;
+    }
+    if (buffer.trim()) handleLine(buffer);
+    if (!result?.analysis) throw new Error('解读流已结束，但没有返回完整分析。');
+    return result;
+  } catch (error) {
+    if (error?.name === 'AbortError') throw new Error('项目解读超时，请检查网络后重试。');
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+async function requestProjectAnalysis(id, { refresh = false } = {}) {
+  try {
+    return await streamProjectAnalysis(id, { refresh });
+  } catch (error) {
+    if (!error?.streamUnsupported) throw error;
+    updateProgress('generating', '当前服务端使用兼容模式，正在生成完整解读。');
+    return apiFetch(`/api/profile/projects/${encodeURIComponent(id)}/analysis`, {
+      method: 'POST', timeout: 90_000, json: { client_id: getClientId(), refresh: Boolean(refresh) },
+    });
+  }
 }
 
 async function analyzeProject({ refresh = false } = {}) {
@@ -539,20 +947,82 @@ async function analyzeProject({ refresh = false } = {}) {
   if (!id) return;
   setButtonBusy(elements.analyze, true, '正在解读项目…');
   elements.refresh.disabled = true;
-  setVisible(elements.ready, false);
-  setVisible(elements.analysis, false);
-  setVisible(elements.loading, true);
+  elements.moreQuestions.disabled = true;
+  elements.regenerateQuestions.disabled = true;
+  beginProgress(
+    ANALYSIS_PROGRESS_STAGES,
+    '正在读取项目资料…',
+    '服务端正在读取已保存的项目快照，完成后才会进入后续步骤。',
+  );
+  updateProgress('reading', '正在读取已保存的文本与源码快照，不会运行项目代码。');
   try {
-    const response = await apiFetch(`/api/profile/projects/${encodeURIComponent(id)}/analysis`, {
-      method: 'POST', timeout: 90_000, json: { client_id: getClientId(), refresh: Boolean(refresh) },
-    });
+    const response = await requestProjectAnalysis(id, { refresh });
+    completeProgress(
+      response?.cached ? '已复用与当前项目及职责一致的最近解读。' : '架构、链路检查、项目介绍和项目追问均已返回。',
+      { reused: Boolean(response?.cached), title: '项目解读完成' },
+    );
     renderAnalysis(response);
   } catch (error) {
-    renderReady();
-    showToast(error?.message || '项目解读失败，请稍后重试。', 'error', 6000);
+    const message = error?.message || '项目解读失败，请稍后重试。';
+    failProgress(message);
+    showToast(message, 'error', 6000);
   } finally {
     setButtonBusy(elements.analyze, false);
     elements.refresh.disabled = false;
+    if (!questionsBusy) {
+      elements.moreQuestions.disabled = false;
+      elements.regenerateQuestions.disabled = false;
+    }
+  }
+}
+
+async function generateProjectQuestions(mode) {
+  const id = itemId(selectedProject);
+  if (!id || questionsBusy || !['more', 'regenerate'].includes(mode)) return;
+  questionsBusy = true;
+  const append = mode === 'more';
+  const beforeCount = currentQuestions.length;
+  elements.moreQuestions.disabled = true;
+  elements.regenerateQuestions.disabled = true;
+  elements.questionStatus.dataset.state = 'loading';
+  elements.questionStatus.textContent = append
+    ? '面试官正在沿当前项目继续追问…'
+    : '面试官正在根据项目与本人职责重新出题…';
+  try {
+    const response = await apiFetch(`/api/profile/projects/${encodeURIComponent(id)}/questions`, {
+      method: 'POST', timeout: 90_000, json: {
+        client_id: getClientId(),
+        mode,
+        count: 3,
+        existing_questions: currentQuestions
+          .map((question) => textFromValue(question.question))
+          .filter(Boolean)
+          .slice(-30),
+      },
+    });
+    const batch = normalizeProjectQuestions(response?.questions || response?.interview_questions);
+    if (!batch.length) throw new Error('服务端没有返回带项目依据且可核实的新题。');
+    renderQuestions(batch, { append });
+    const added = Math.max(0, currentQuestions.length - (append ? beforeCount : 0));
+    if (!added) {
+      elements.questionStatus.dataset.state = 'error';
+      elements.questionStatus.textContent = '没有返回新的、带项目依据且可核实的题目';
+      showToast('这次没有生成可展示的新题，请补充职责或项目证据后重试。', 'error', 5200);
+    } else {
+      elements.questionStatus.dataset.state = 'done';
+      elements.questionStatus.textContent = append
+        ? `已增加 ${added} 道项目追问 · 共 ${currentQuestions.length} 道`
+        : `已重新生成 ${currentQuestions.length} 道项目追问`;
+      showToast(append ? `已增加 ${added} 道项目追问。` : '项目追问已重新生成。', 'success');
+    }
+  } catch (error) {
+    elements.questionStatus.dataset.state = 'error';
+    elements.questionStatus.textContent = error?.message || '题目生成失败，请稍后重试';
+    showToast(error?.message || '题目生成失败，请稍后重试。', 'error', 5200);
+  } finally {
+    questionsBusy = false;
+    elements.moreQuestions.disabled = false;
+    elements.regenerateQuestions.disabled = false;
   }
 }
 
@@ -565,6 +1035,27 @@ elements.githubUrl.addEventListener('keydown', (event) => {
 });
 elements.analyze.addEventListener('click', () => analyzeProject());
 elements.refresh.addEventListener('click', () => analyzeProject({ refresh: true }));
+elements.responsibilitySave.addEventListener('click', () => saveProjectResponsibility());
+elements.responsibilityMerge.addEventListener('click', mergeSelectedArchitectureResponsibilities);
+elements.responsibilityEdit.addEventListener('input', () => {
+  elements.responsibilitySaveState.textContent = '有未保存修改';
+});
+elements.progressBack.addEventListener('click', () => {
+  if (currentAnalysis) renderAnalysis({ analysis: currentAnalysis, cached: true });
+  else renderReady();
+});
+elements.interviewIntroCopy.addEventListener('click', async () => {
+  const value = elements.interviewIntro.textContent.trim();
+  if (!value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    showToast('项目介绍已复制。', 'success');
+  } catch {
+    showToast('浏览器未允许自动复制，请手动选择文本。', 'error');
+  }
+});
+elements.moreQuestions.addEventListener('click', () => generateProjectQuestions('more'));
+elements.regenerateQuestions.addEventListener('click', () => generateProjectQuestions('regenerate'));
 window.addEventListener('pagehide', () => {
   persistVisiblePracticeEntries();
   clearInterval(projectPracticeTicker);

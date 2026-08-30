@@ -309,7 +309,7 @@
     },
     {
       "id": "tih-coding-001", "kind": "coding", "topics": ["手撕思路", "LRU", "数据结构"],
-      "prompt": {"zh": "请口述设计一个 O(1) 的 LRU Cache：说明数据结构、get/put 流程、淘汰规则、复杂度和边界。", "en": "Verbally design an O(1) LRU cache. Explain the data structures, get/put flow, eviction rule, complexity, and edge cases."},
+      "prompt": {"zh": "请实现一个 O(1) 的 LRU Cache（可提交代码或完整伪代码）：写出数据结构、get/put、淘汰逻辑，并说明复杂度和边界。", "en": "Implement an O(1) LRU cache in code or complete pseudocode. Include the data structures, get/put and eviction logic, then state complexity and edge cases."},
       "source_id": "tech-interview-handbook", "source_path": "apps/website/contents/algorithms/hash-table.md", "revision": "e1d28e8886c0b6ff3e50da991ce0e895134ddc59", "license": "MIT",
       "authenticity": "licensed_bank", "status": "approved", "difficulty": "medium", "suggested_seconds": 180,
       "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "algorithm", "data_structure"], "answer_modes": ["voice", "text"],
@@ -317,7 +317,7 @@
     },
     {
       "id": "tih-coding-002", "kind": "coding", "topics": ["手撕思路", "链表", "双指针"],
-      "prompt": {"zh": "请口述原地反转单链表：说明指针更新顺序、循环不变量、复杂度，以及空链表和单节点边界。", "en": "Verbally reverse a singly linked list in place. Explain pointer-update order, the loop invariant, complexity, and empty/single-node cases."},
+      "prompt": {"zh": "请用代码或完整伪代码原地反转单链表，并说明指针更新顺序、循环不变量、复杂度，以及空链表和单节点边界。", "en": "Reverse a singly linked list in place using code or complete pseudocode. Explain pointer-update order, the loop invariant, complexity, and empty/single-node cases."},
       "source_id": "tech-interview-handbook", "source_path": "apps/website/contents/algorithms/linked-list.md", "revision": "e1d28e8886c0b6ff3e50da991ce0e895134ddc59", "license": "MIT",
       "authenticity": "licensed_bank", "status": "approved", "difficulty": "easy", "suggested_seconds": 120,
       "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "algorithm", "data_structure"], "answer_modes": ["voice", "text"],
@@ -325,7 +325,7 @@
     },
     {
       "id": "tih-coding-003", "kind": "coding", "topics": ["手撕思路", "二分查找", "边界"],
-      "prompt": {"zh": "请口述在升序数组中实现二分查找，并明确区间定义、循环条件、指针更新、终止性和复杂度。", "en": "Verbally implement binary search on a sorted array, making the interval convention, loop condition, pointer updates, termination, and complexity explicit."},
+      "prompt": {"zh": "请用代码或完整伪代码在升序数组中实现二分查找，并明确区间定义、循环条件、指针更新、终止性和复杂度。", "en": "Implement binary search on a sorted array using code or complete pseudocode, making the interval convention, loop condition, pointer updates, termination, and complexity explicit."},
       "source_id": "tech-interview-handbook", "source_path": "apps/website/contents/algorithms/sorting-searching.md", "revision": "e1d28e8886c0b6ff3e50da991ce0e895134ddc59", "license": "MIT",
       "authenticity": "licensed_bank", "status": "approved", "difficulty": "easy", "suggested_seconds": 120,
       "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "algorithm", "data_structure"], "answer_modes": ["voice", "text"],
@@ -333,7 +333,7 @@
     },
     {
       "id": "tih-coding-004", "kind": "coding", "topics": ["手撕思路", "栈与队列", "摊还复杂度"],
-      "prompt": {"zh": "请口述用两个栈实现队列：说明入队、出队、何时搬运元素、空队列边界和摊还复杂度。", "en": "Verbally implement a queue with two stacks. Explain enqueue, dequeue, when elements move, the empty-queue case, and amortized complexity."},
+      "prompt": {"zh": "请用代码或完整伪代码通过两个栈实现队列：写出入队、出队和搬运逻辑，并说明空队列边界与摊还复杂度。", "en": "Implement a queue with two stacks using code or complete pseudocode. Include enqueue, dequeue and transfer logic, then explain the empty-queue case and amortized complexity."},
       "source_id": "tech-interview-handbook", "source_path": "apps/website/contents/algorithms/stack.md", "revision": "e1d28e8886c0b6ff3e50da991ce0e895134ddc59", "license": "MIT",
       "authenticity": "licensed_bank", "status": "approved", "difficulty": "easy", "suggested_seconds": 120,
       "company_tags": ["bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei", "global_tech"], "direction_tags": ["backend", "algorithm", "data_structure"], "answer_modes": ["voice", "text"],

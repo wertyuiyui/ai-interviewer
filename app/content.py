@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from functools import lru_cache
 from pathlib import Path
 import re
@@ -361,6 +362,73 @@ def load_style_card(company: str) -> dict[str, Any]:
     return value
 
 
+@lru_cache(maxsize=1)
+def _load_interviewer_core_skill() -> dict[str, Any]:
+    """Load the company-neutral contract shared by every interviewer.
+
+    Company skills express evidence-backed style preferences.  This core skill
+    holds the invariants that must not vary by company, transport, or pressure
+    level.  Keeping it nested also makes that boundary visible to the prompt
+    without duplicating the same policy across six files.
+    """
+
+    path = ROOT_DIR / "interview_skills" / "interviewer_core.json"
+    value = _load_json(str(path))
+    required = {
+        "schema_version",
+        "name",
+        "scope",
+        "role_contract",
+        "input_policy",
+        "phase_invariants",
+        "turn_policy",
+        "adaptive_policy",
+        "evidence_policy",
+        "question_policy",
+        "assessment_policy",
+        "termination_policy",
+        "fairness_policy",
+        "modality_policy",
+        "safety_policy",
+        "provenance_policy",
+    }
+    if not isinstance(value, dict) or not required <= set(value):
+        missing = sorted(required - set(value if isinstance(value, dict) else {}))
+        raise RuntimeError(f"核心面试官 skill 格式错误：{path}，缺少 {missing}")
+    if value.get("name") != "core-interviewer":
+        raise RuntimeError(f"核心面试官 skill 标识不匹配：{path}")
+    if value.get("scope") != "backend-intern-first-round-practice":
+        raise RuntimeError(f"核心面试官 skill 范围不匹配：{path}")
+    if value.get("schema_version") != "1.0":
+        raise RuntimeError(f"核心面试官 skill 版本不支持：{path}")
+    object_keys = required - {"schema_version", "name", "scope", "phase_invariants"}
+    malformed = sorted(key for key in object_keys if not isinstance(value.get(key), dict))
+    if not isinstance(value.get("phase_invariants"), list):
+        malformed.append("phase_invariants")
+    if malformed:
+        raise RuntimeError(f"核心面试官 skill 字段类型错误：{path}，字段 {malformed}")
+    nested_required = {
+        "role_contract": {"goal", "candidate_level", "during_interview", "one_primary_intent_per_turn"},
+        "turn_policy": {"sequence", "permitted_actions", "response_anchor_rule", "context_anchor_rule", "forbidden_output"},
+        "assessment_policy": {"visibility", "evidence_required", "not_observed", "explicit_unknown", "separate_findings", "behavioral_boundary"},
+        "termination_policy": {"server_authority", "signals", "rule"},
+    }
+    incomplete = sorted(
+        key
+        for key, fields in nested_required.items()
+        if not fields <= set(value[key])
+    )
+    if incomplete:
+        raise RuntimeError(f"核心面试官 skill 子结构错误：{path}，字段 {incomplete}")
+    return dict(value)
+
+
+def load_interviewer_core_skill() -> dict[str, Any]:
+    """Return an isolated copy so callers cannot mutate another company skill."""
+
+    return deepcopy(_load_interviewer_core_skill())
+
+
 @lru_cache(maxsize=24)
 def load_interview_skill(company: str) -> dict[str, Any]:
     """Load the versioned company behavior distilled from research material.
@@ -397,6 +465,7 @@ def load_interview_skill(company: str) -> dict[str, Any]:
                 "en": "所有候选人可见内容只使用自然英文",
             },
             "source_refs": [],
+            "interviewer_core": load_interviewer_core_skill(),
         }
     value = _load_json(str(path))
     required = {
@@ -420,7 +489,9 @@ def load_interview_skill(company: str) -> dict[str, Any]:
         raise RuntimeError(f"公司面试 skill 格式错误：{path}，缺少 {missing}")
     if value.get("company") != company:
         raise RuntimeError(f"公司面试 skill 标识不匹配：{path}")
-    return dict(value)
+    compiled = dict(value)
+    compiled["interviewer_core"] = load_interviewer_core_skill()
+    return compiled
 
 
 _QUESTION_TOPIC_ALIASES: dict[str, set[str]] = {

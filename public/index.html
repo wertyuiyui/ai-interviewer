@@ -6,7 +6,7 @@
     <meta name="theme-color" content="#f6f4ef">
     <meta name="description" content="面向中国本科生的大厂后端实习一面 AI 陪练。">
     <title>砺面 · AI 技术面试陪练</title>
-    <link rel="stylesheet" href="/assets/app.css?v=20260830-profile-bank-v2">
+    <link rel="stylesheet" href="/assets/app.css?v=20260830-project-deep-dive-v3">
     <link rel="stylesheet" href="/assets/home-hardware.css?v=20260830-interview-flow">
   </head>
   <body class="home-page">
@@ -18,6 +18,7 @@
       <nav class="header-actions" aria-label="主导航">
         <span class="mode-pill is-loading" id="modePill"><i></i><span>检测服务模式</span></span>
         <a class="text-link" href="/practice">快速刷题</a>
+        <a class="text-link" href="/practice?drill=coding">手撕代码</a>
         <a class="text-link header-project-link" href="/project">项目解读</a>
         <a class="text-link" href="/report?view=history">历史报告 <span aria-hidden="true">↗</span></a>
       </nav>
@@ -94,11 +95,13 @@
                   <input id="profileProjectName" type="text" maxlength="100" placeholder="项目名称（可选）" autocomplete="off">
                   <label class="profile-upload-button" for="profileProjectFiles">上传文件<input id="profileProjectFiles" type="file" accept=".zip,.md,.txt,.json,.yaml,.yml,.toml,.ini,.conf,.py,.java,.go,.js,.ts,.tsx,.jsx,.sql,.xml,.proto,.c,.cc,.cpp,.h,.hpp,.rs,.rb,.php,.kt,.swift,.sh" multiple></label>
                 </div>
+                <label class="profile-project-responsibility" for="profileProjectResponsibility"><span>我负责的 <small>可选</small></span><textarea id="profileProjectResponsibility" rows="2" maxlength="1200" placeholder="例如：订单接口、缓存设计和慢查询治理"></textarea></label>
                 <div class="profile-github-create">
                   <label class="sr-only" for="profileGithubUrl">GitHub 仓库链接</label>
                   <input id="profileGithubUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://github.com/owner/repository">
                   <button id="profileGithubAdd" type="button">添加 GitHub</button>
                 </div>
+                <div class="profile-project-progress is-hidden" id="profileProjectProgress" role="status" aria-live="polite"></div>
                 <ul class="profile-list" id="profileProjectList" aria-live="polite"><li class="profile-empty">还没有项目，可上传多个文件或添加 GitHub 链接。</li></ul>
               </section>
             </div>
@@ -251,6 +254,6 @@
       </section>
     </main>
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-    <script type="module" src="/js/home.js?v=20260830-profile-bank-v2"></script>
+    <script type="module" src="/js/home.js?v=20260830-project-deep-dive-v3"></script>
   </body>
 </html>

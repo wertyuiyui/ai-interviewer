@@ -42,8 +42,10 @@ from .interview_engine import InterviewEngine
 from .practice import (
     PracticeAnswerCreate,
     PracticeHintCreate,
+    PracticeSessionAction,
     PracticeService,
     PracticeSessionCreate,
+    PracticeSkipCreate,
 )
 from .profile import ProfileService
 from .profile_routes import create_profile_router
@@ -435,6 +437,39 @@ async def get_practice_hint(
     request: PracticeHintCreate,
 ) -> dict[str, Any]:
     return await practice_service.hint(session_id, request)
+
+
+@app.post("/api/practice/sessions/{session_id}/skip")
+async def skip_practice_question(
+    session_id: str,
+    request: PracticeSkipCreate,
+) -> dict[str, Any]:
+    return await practice_service.skip(session_id, request)
+
+
+@app.post("/api/practice/sessions/{session_id}/finish")
+async def finish_practice_session(
+    session_id: str,
+    request: PracticeSessionAction,
+) -> dict[str, Any]:
+    return await practice_service.finish(session_id, request)
+
+
+@app.get("/api/practice/mistakes")
+async def practice_mistakes(
+    client_id: str = Query(min_length=8, max_length=128),
+    limit: int = Query(default=100, ge=1, le=200),
+) -> dict[str, Any]:
+    return {"items": await practice_service.mistakes(client_id, limit)}
+
+
+@app.delete("/api/practice/mistakes/{mistake_id}")
+async def delete_practice_mistake(
+    mistake_id: str,
+    client_id: str = Query(min_length=8, max_length=128),
+) -> dict[str, bool]:
+    await practice_service.delete_mistake(mistake_id, client_id)
+    return {"deleted": True}
 
 
 @app.get("/api/practice/history")

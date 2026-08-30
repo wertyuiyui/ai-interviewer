@@ -6,6 +6,7 @@ import { AudioSession } from './audio-session.js?v=20260830-mic-release';
 const query = new URLSearchParams(location.search);
 const reviewInterviewId = String(query.get('review') || query.get('interview') || '').trim();
 const reviewOrdinal = Number(query.get('ordinal'));
+const requestedDrillType = query.get('drill') === 'coding' ? 'coding' : 'general';
 
 const elements = {
   setup: $('#practiceSetup'),
@@ -13,6 +14,10 @@ const elements = {
   formTitle: $('#practiceFormTitle'),
   bankBadge: $('#practiceBankBadge'),
   reviewNotice: $('#reviewNotice'),
+  codingNotice: $('#codingNotice'),
+  drillType: $('#practiceDrillType'),
+  interviewType: $('#practiceInterviewType'),
+  answerModeChoice: $('#practiceAnswerMode'),
   company: $('#practiceCompany'),
   topic: $('#practiceTopic'),
   difficulty: $('#practiceDifficulty'),
@@ -22,6 +27,7 @@ const elements = {
   start: $('#practiceStart'),
   session: $('#practiceSession'),
   progress: $('#practiceProgress'),
+  progressTrack: $('.practice-progress-track'),
   progressFill: $('#practiceProgressFill'),
   sessionLabel: $('#practiceSessionLabel'),
   elapsed: $('#practiceElapsed'),
@@ -29,6 +35,8 @@ const elements = {
   category: $('#questionCategory'),
   questionDifficulty: $('#questionDifficulty'),
   recommended: $('#questionRecommended'),
+  origin: $('#questionOrigin'),
+  source: $('#questionSource'),
   question: $('#questionText'),
   previousAttempt: $('#previousAttempt'),
   previousDeductions: $('#previousDeductions'),
@@ -41,9 +49,11 @@ const elements = {
   recordLevel: $('#recordLevel'),
   recordHint: $('#recordHint'),
   answer: $('#practiceAnswer'),
+  answerLabel: $('#answerInputLabel'),
   hint: $('#practiceHint'),
   hintBox: $('#practiceHintBox'),
   hintText: $('#practiceHintText'),
+  skip: $('#practiceSkip'),
   submit: $('#practiceSubmit'),
   feedback: $('#practiceFeedback'),
   feedbackTitle: $('#feedbackTitle'),
@@ -57,6 +67,8 @@ const elements = {
   complete: $('#practiceComplete'),
   completeSummary: $('#practiceCompleteSummary'),
   again: $('#practiceAgain'),
+  mistakeCount: $('#mistakeBookCount'),
+  mistakeList: $('#mistakeBookList'),
 };
 
 const difficultyLabels = { easy: '基础', medium: '进阶', hard: '高难', discussion: '讨论' };
@@ -79,9 +91,15 @@ let providerTranscript = '';
 let transcriptManuallyEdited = false;
 let attempts = [];
 let voiceTranscriptionAvailable = true;
+let codingQuestionCount = 0;
 
 function selectedValue(name, fallback) {
   return $(`input[name="${name}"]:checked`)?.value || fallback;
+}
+
+function isCodingDrill() {
+  return practiceSession?.drill_type === 'coding'
+    || (!practiceSession && selectedValue('drill_type', requestedDrillType) === 'coding');
 }
 
 function createAudioSession() {
@@ -126,7 +144,7 @@ function renderSessionElapsed() {
 
 function setAnswerMode(nextMode, { focus = true, quiet = false } = {}) {
   const requested = nextMode === 'text' ? 'text' : 'voice';
-  const next = requested === 'voice' && !voiceTranscriptionAvailable ? 'text' : requested;
+  const next = requested === 'voice' && (!voiceTranscriptionAvailable || isCodingDrill()) ? 'text' : requested;
   if (requested === 'voice' && next === 'text' && !quiet) {
     showToast('当前服务模式不提供实时转写，已切换为文字作答。', 'info');
   }
@@ -138,10 +156,14 @@ function setAnswerMode(nextMode, { focus = true, quiet = false } = {}) {
   elements.voiceMode.classList.toggle('is-active', next === 'voice');
   elements.textMode.classList.toggle('is-active', next === 'text');
   setVisible(elements.recorder, next === 'voice');
-  elements.answer.placeholder = next === 'voice'
-    ? '点击开始语音回答，实时转写会出现在这里，也可以手动修正…'
-    : '在这里输入本题回答…';
-  elements.answerStatus.textContent = next === 'voice' ? '准备好后开始录音' : '开始输入后计时';
+  elements.answer.placeholder = isCodingDrill()
+    ? '在这里写代码或完整伪代码；建议在末尾注明时间复杂度、空间复杂度和边界自测…'
+    : next === 'voice'
+      ? '点击开始语音回答，实时转写会出现在这里，也可以手动修正…'
+      : '在这里输入本题回答…';
+  elements.answerStatus.textContent = isCodingDrill()
+    ? '静态代码讲评，不执行或编译代码'
+    : next === 'voice' ? '准备好后开始录音' : '开始输入后计时';
   if (focus && next === 'text') elements.answer.focus();
 }
 
@@ -165,6 +187,12 @@ function configureVoiceAvailability(available, { notify = false } = {}) {
 
 function syncPracticeFilters() {
   if (reviewInterviewId) return;
+  if (selectedValue('drill_type', requestedDrillType) === 'coding') {
+    elements.topic.value = '';
+    elements.topic.disabled = true;
+    elements.difficulty.disabled = false;
+    return;
+  }
   const interviewType = selectedValue('practice_interview_type', 'technical');
   const behavioralTopic = elements.topic.value === 'English behavioral';
   if (interviewType === 'hr') {
@@ -179,9 +207,63 @@ function syncPracticeFilters() {
   if (behavioralTopic) elements.topic.value = '';
 }
 
+function syncDrillType({ resetDifficulty = false } = {}) {
+  if (reviewInterviewId) return;
+  const coding = selectedValue('drill_type', requestedDrillType) === 'coding';
+  const technical = $('input[name="practice_interview_type"][value="technical"]');
+  const setupVoice = $('input[name="answer_mode"][value="voice"]');
+  const setupText = $('input[name="answer_mode"][value="text"]');
+  document.body.classList.toggle('is-coding-drill', coding);
+  setVisible(elements.codingNotice, coding);
+  if (coding) {
+    if (technical) technical.checked = true;
+    document.querySelectorAll('input[name="practice_interview_type"]').forEach((input) => {
+      input.disabled = input.value !== 'technical';
+    });
+    elements.topic.value = '';
+    elements.topic.disabled = true;
+    if (resetDifficulty) elements.difficulty.value = '';
+    if (setupText) setupText.checked = true;
+    if (setupVoice) setupVoice.disabled = true;
+    elements.formTitle.textContent = '手撕代码专项';
+    elements.bankBadge.textContent = `${codingQuestionCount || 4} 道手撕真题`;
+    $('.button-label', elements.start).textContent = '开始手撕';
+    elements.formNote.textContent = '只使用真实授权题库；提交后按正确性、完整性、复杂度和边界做静态讲评。';
+    elements.answerLabel.innerHTML = '代码 / 完整伪代码 <small>不会在服务器执行</small>';
+    setAnswerMode('text', { focus: false, quiet: true });
+  } else {
+    document.querySelectorAll('input[name="practice_interview_type"]').forEach((input) => {
+      input.disabled = false;
+    });
+    if (setupVoice) setupVoice.disabled = !voiceTranscriptionAvailable;
+    elements.formTitle.textContent = '快速刷题';
+    elements.bankBadge.textContent = '练习已就绪';
+    $('.button-label', elements.start).textContent = '开始刷题';
+    elements.formNote.textContent = voiceTranscriptionAvailable
+      ? '每道题都可用语音或文字作答，语音转写可在提交前修正。'
+      : '当前为纯文字模式：不请求麦克风，不会显示实时转写状态。';
+    elements.answerLabel.innerHTML = '回答文字 <small>提交前可手动修正</small>';
+    syncPracticeFilters();
+  }
+}
+
 function currentQuestionNumber() {
   const answered = Number(practiceSession?.answered_questions) || attempts.filter((item) => !item.reattempt).length;
-  return Math.min((Number(practiceSession?.total_questions) || 1), answered + 1);
+  const skipped = Number(practiceSession?.skipped_questions) || 0;
+  const position = answered + skipped + 1;
+  if (practiceSession?.infinite) return position;
+  return Math.min((Number(practiceSession?.total_questions) || 1), position);
+}
+
+function safeSourceUrl(value) {
+  const candidate = String(value || '').trim();
+  if (!candidate) return '';
+  try {
+    const url = new URL(candidate, location.origin);
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+  } catch {
+    return '';
+  }
 }
 
 function renderQuestion(question) {
@@ -196,20 +278,45 @@ function renderQuestion(question) {
   transcriptManuallyEdited = false;
   answerStartedAt = 0;
   elements.answer.value = '';
+  document.body.classList.toggle('is-coding-session', question.kind === 'coding');
   elements.question.textContent = String(question.question || question.prompt || '题目暂时不可用');
   elements.category.textContent = String(question.category || question.topic || '综合');
   elements.questionDifficulty.textContent = difficultyLabels[question.difficulty] || String(question.difficulty || '进阶');
   elements.recommended.textContent = `建议 ${Math.max(15, Number(question.recommended_answer_seconds) || 60)} 秒`;
+  const rawOrigin = String(question.origin || question.source_type || '').toLowerCase();
+  const origin = rawOrigin.includes('ai') ? 'ai' : rawOrigin.includes('review') ? 'review' : rawOrigin.includes('real') ? 'real' : rawOrigin;
+  const badge = String(question.badge || ({ real: '真题', ai: 'AI出题', review: '错题重答' })[origin] || '').replace(/[【】]/g, '').trim();
+  elements.origin.textContent = badge ? `【${badge}】` : '';
+  elements.origin.classList.toggle('is-ai', origin === 'ai');
+  elements.origin.classList.toggle('is-review', origin === 'review');
+  setVisible(elements.origin, Boolean(badge));
+  const source = String(question.source || question.source_label || '').trim();
+  const sourceUrl = safeSourceUrl(question.source_url);
+  elements.source.replaceChildren();
+  if (source) {
+    elements.source.append(document.createTextNode(`题目来源：${source}${question.from_mistake_book ? ' · 错题本优先' : ''}`));
+    if (sourceUrl) {
+      const link = document.createElement('a');
+      link.href = sourceUrl;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = '查看公开来源 ↗';
+      elements.source.append(' · ', link);
+    }
+  }
+  setVisible(elements.source, Boolean(source));
   const total = Math.max(1, Number(practiceSession?.total_questions) || 1);
   const position = currentQuestionNumber();
-  elements.progress.textContent = `第 ${position} / ${total} 题`;
-  elements.progressFill.style.width = `${Math.min(100, position / total * 100)}%`;
+  elements.progress.textContent = practiceSession?.infinite ? `第 ${position} 题 · 无限模式` : `第 ${position} / ${total} 题`;
+  elements.progressTrack.classList.toggle('is-unlimited', Boolean(practiceSession?.infinite));
+  elements.progressFill.style.width = practiceSession?.infinite ? '35%' : `${Math.min(100, position / total * 100)}%`;
   elements.previousDeductions.textContent = toArray(question.previous_deductions).filter(Boolean).join('；');
   setVisible(elements.previousAttempt, Boolean(question.previous_score !== undefined || elements.previousDeductions.textContent));
   setVisible(elements.answerCard, true);
   setVisible(elements.feedback, false);
   setVisible(elements.hintBox, false);
   elements.hint.disabled = false;
+  elements.skip.disabled = false;
   elements.submit.disabled = false;
   elements.record.disabled = false;
   setAnswerMode(answerMode, { focus: false });
@@ -371,8 +478,12 @@ function renderAssessment(assessment = {}) {
   elements.score.textContent = scored ? score.toFixed(1) : '—';
   elements.score.parentElement.classList.toggle('is-unscored', !scored);
   elements.feedbackTitle.textContent = scored ? '评分完成' : '证据不足，本题未评分';
-  resetList(elements.strengths, assessment.strengths, scored ? '本题暂无明确加分点。' : '有效回答不足，暂不判断。');
-  resetList(elements.deductions, assessment.deductions, scored ? '本题没有返回具体扣分点。' : '请先完成一段可评估的回答。');
+  const strengths = toArray(assessment.strengths).map((item) => String(item || '').trim()).filter(Boolean);
+  const misplaced = strengths.filter((item) => /^(未完成|未提及|未回答|未说明|未覆盖|缺少)/.test(item));
+  const validStrengths = strengths.filter((item) => !misplaced.includes(item));
+  const deductions = [...toArray(assessment.deductions), ...misplaced];
+  resetList(elements.strengths, validStrengths, scored ? '本题暂无明确加分点。' : '有效回答不足，暂不判断。');
+  resetList(elements.deductions, deductions, scored ? '本题没有返回具体扣分点。' : '请先完成一段可评估的回答。');
   resetList(elements.keyPoints, assessment.key_points, '回答时先给结论，再说明依据、边界和验证方法。');
   elements.betterAnswer.textContent = String(assessment.better_answer || '暂无改写示范。');
 }
@@ -414,10 +525,31 @@ async function submitAnswer() {
     elements.next.disabled = false;
     reattempting = false;
     elements.feedback.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    void loadMistakes({ quiet: true });
   } catch (error) {
     showToast(error?.message || '本题评分失败，请稍后重试。', 'error', 5200);
   } finally {
     setButtonBusy(elements.submit, false);
+  }
+}
+
+async function skipQuestion() {
+  if (!currentQuestion || !practiceSession?.id || elements.skip.disabled) return;
+  if (recording || sealingRecording) await stopRecording();
+  try {
+    setButtonBusy(elements.skip, true, '跳过中…');
+    const response = await apiFetch(`/api/practice/sessions/${encodeURIComponent(practiceSession.id)}/skip`, {
+      method: 'POST', timeout: 20_000,
+      json: { client_id: getClientId(), question_id: currentQuestion.id },
+    });
+    practiceSession.skipped_questions = Number(response.skipped_questions)
+      || (Number(practiceSession.skipped_questions) || 0) + 1;
+    if (response.done || !response.next_question) completePractice();
+    else renderQuestion(response.next_question);
+  } catch (error) {
+    showToast(error?.message || '暂时无法跳过这道题。', 'error');
+  } finally {
+    setButtonBusy(elements.skip, false);
   }
 }
 
@@ -460,14 +592,41 @@ function completePractice() {
     .map((item) => Number(item?.assessment?.score))
     .filter((score) => Number.isFinite(score));
   const average = scored.length ? scored.reduce((sum, score) => sum + score, 0) / scored.length : null;
+  const skipped = Number(practiceSession?.skipped_questions) || 0;
+  const prefix = practiceSession?.infinite ? '无限练习已手动结束。' : '';
+  const skippedText = skipped ? `，跳过 ${skipped} 题` : '';
   const summary = average === null
-    ? `本组完成 ${attempts.length} 次作答；可评分证据不足，没有生成虚构分数。`
-    : `本组完成 ${attempts.length} 次作答，${scored.length} 次有效评分，平均 ${average.toFixed(1)} 分。`;
+    ? `${prefix}本组完成 ${attempts.length} 次作答${skippedText}；可评分证据不足，没有生成虚构分数。`
+    : `${prefix}本组完成 ${attempts.length} 次作答${skippedText}，${scored.length} 次有效评分，平均 ${average.toFixed(1)} 分。`;
   elements.completeSummary.textContent = summary;
   setVisible(elements.setup, false);
   setVisible(elements.session, false);
   setVisible(elements.complete, true);
   window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function finishPractice() {
+  if (practiceSession?.status === 'completed') {
+    completePractice();
+    return;
+  }
+  if (!practiceSession?.id || elements.exit.disabled) {
+    completePractice();
+    return;
+  }
+  if (recording || sealingRecording) await stopRecording();
+  try {
+    setButtonBusy(elements.exit, true, '结束中…');
+    const response = await apiFetch(`/api/practice/sessions/${encodeURIComponent(practiceSession.id)}/finish`, {
+      method: 'POST', timeout: 20_000, json: { client_id: getClientId() },
+    });
+    practiceSession = { ...practiceSession, ...response };
+    completePractice();
+  } catch (error) {
+    showToast(error?.message || '暂时无法结束本组，请稍后重试。', 'error');
+  } finally {
+    setButtonBusy(elements.exit, false);
+  }
 }
 
 function nextQuestion() {
@@ -484,6 +643,8 @@ async function createPracticeSession(event = null) {
   const reviewMode = Boolean(reviewInterviewId);
   const languageMode = selectedValue('practice_language', 'bilingual');
   const interviewType = selectedValue('practice_interview_type', 'technical');
+  const drillType = reviewMode ? 'general' : selectedValue('drill_type', requestedDrillType);
+  const infinite = elements.count.value === 'unlimited';
   const payload = reviewMode
     ? {
       client_id: getClientId(), mode: 'review', source_interview_id: reviewInterviewId,
@@ -492,8 +653,11 @@ async function createPracticeSession(event = null) {
     }
     : {
       client_id: getClientId(), mode: 'quick', company: elements.company.value,
-      topic: elements.topic.value || null, difficulty: elements.difficulty.value || null,
-      language_mode: languageMode, interview_type: interviewType, count: Number(elements.count.value) || 5,
+      drill_type: drillType,
+      topic: drillType === 'coding' ? null : elements.topic.value || null,
+      difficulty: elements.difficulty.value || null,
+      language_mode: languageMode, interview_type: drillType === 'coding' ? 'technical' : interviewType,
+      count: infinite ? null : Number(elements.count.value) || 5, infinite,
     };
   try {
     setButtonBusy(elements.start, true, reviewMode ? '正在读取错题…' : '正在选题…');
@@ -506,17 +670,98 @@ async function createPracticeSession(event = null) {
     sessionStartedAt = Date.now();
     clearInterval(elapsedTimer);
     elapsedTimer = setInterval(renderSessionElapsed, 500);
-    elements.sessionLabel.textContent = reviewMode ? '面后错题重答' : `${companyLabel(response.company || payload.company)} · 快速刷题`;
+    elements.sessionLabel.textContent = reviewMode
+      ? '面后错题重答'
+      : response.drill_type === 'coding'
+        ? `${companyLabel(response.company || payload.company)} · 手撕代码${response.infinite ? '无限练习' : '专项'}`
+        : `${companyLabel(response.company || payload.company)} · ${response.infinite ? '无限刷题' : '快速刷题'}`;
     setVisible(elements.setup, false);
     setVisible(elements.complete, false);
     setVisible(elements.session, true);
-    answerMode = voiceTranscriptionAvailable ? selectedValue('answer_mode', 'voice') : 'text';
+    answerMode = response.drill_type === 'coding'
+      ? 'text'
+      : voiceTranscriptionAvailable ? selectedValue('answer_mode', 'voice') : 'text';
     renderQuestion(response.current_question);
     renderSessionElapsed();
   } catch (error) {
     showToast(error?.message || '创建练习失败，请稍后重试。', 'error', 5200);
   } finally {
     setButtonBusy(elements.start, false);
+  }
+}
+
+function mistakeQuestionText(mistake) {
+  const question = mistake?.question;
+  if (question && typeof question === 'object') {
+    return String(question.question || question.prompt || question.text || '题目内容暂不可用');
+  }
+  return String(question || mistake?.question_text || '题目内容暂不可用');
+}
+
+function renderMistakes(items) {
+  const mistakes = toArray(items);
+  elements.mistakeList.replaceChildren();
+  elements.mistakeCount.textContent = `${mistakes.length} 题`;
+  if (!mistakes.length) {
+    const empty = document.createElement('li');
+    empty.className = 'practice-mistake-empty';
+    empty.textContent = '还没有错题。完成刷题后，低分题会自动出现在这里。';
+    elements.mistakeList.append(empty);
+    return;
+  }
+  mistakes.forEach((mistake) => {
+    const id = String(mistake?.id || '');
+    const item = document.createElement('li');
+    item.className = 'practice-mistake-item';
+    const copy = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = mistakeQuestionText(mistake);
+    title.title = title.textContent;
+    const meta = document.createElement('small');
+    const hasScore = mistake?.latest_score !== null && mistake?.latest_score !== undefined && mistake?.latest_score !== '';
+    const score = Number(mistake?.latest_score);
+    const deductions = toArray(mistake?.latest_deductions).map((value) => String(value || '').trim()).filter(Boolean);
+    meta.textContent = `${hasScore && Number.isFinite(score) ? `最近 ${score.toFixed(1)} 分` : '最近未评分'} · 已练 ${Math.max(1, Number(mistake?.attempt_count) || 1)} 次${deductions.length ? ` · ${deductions[0]}` : ''}`;
+    copy.append(title, meta);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'practice-mistake-delete';
+    remove.textContent = '删除';
+    remove.setAttribute('aria-label', `从错题本删除：${title.textContent}`);
+    remove.addEventListener('click', () => deleteMistake(id, title.textContent, remove));
+    item.append(copy, remove);
+    elements.mistakeList.append(item);
+  });
+}
+
+async function loadMistakes({ quiet = false } = {}) {
+  try {
+    const response = await apiFetch(`/api/practice/mistakes?client_id=${encodeURIComponent(getClientId())}&limit=100`, {
+      timeout: 12_000,
+    });
+    renderMistakes(response?.items);
+  } catch (error) {
+    if (!quiet) {
+      renderMistakes([]);
+      elements.mistakeCount.textContent = '同步失败';
+      showToast(error?.message || '暂时无法读取错题本。', 'error');
+    }
+  }
+}
+
+async function deleteMistake(id, question, button) {
+  if (!id || !window.confirm(`确定从错题本删除“${question}”吗？`)) return;
+  try {
+    setButtonBusy(button, true, '删除中…');
+    await apiFetch(`/api/practice/mistakes/${encodeURIComponent(id)}?client_id=${encodeURIComponent(getClientId())}`, {
+      method: 'DELETE', timeout: 12_000,
+    });
+    await loadMistakes({ quiet: true });
+    showToast('已从错题本删除。', 'success');
+  } catch (error) {
+    showToast(error?.message || '删除错题失败，请稍后重试。', 'error');
+  } finally {
+    setButtonBusy(button, false);
   }
 }
 
@@ -536,21 +781,27 @@ function populateCompanies(companies) {
 
 async function initialize() {
   const reviewMode = Boolean(reviewInterviewId);
+  const requestedDrill = reviewMode ? 'general' : requestedDrillType;
+  const requestedInput = $(`input[name="drill_type"][value="${requestedDrill}"]`);
+  if (requestedInput) requestedInput.checked = true;
   elements.formTitle.textContent = reviewMode ? '面后错题重答' : '快速刷题';
   $('.button-label', elements.start).textContent = reviewMode ? '开始重答' : '开始刷题';
   setVisible(elements.reviewNotice, reviewMode);
   if (reviewMode) {
     [elements.company, elements.topic, elements.difficulty, elements.count].forEach((element) => { element.disabled = true; });
+    elements.drillType.querySelectorAll('input').forEach((input) => { input.disabled = true; });
   }
+  void loadMistakes();
   try {
     const [config, catalog] = await Promise.all([
       apiFetch('/api/config', { timeout: 12_000 }),
       apiFetch('/api/practice/catalog', { timeout: 12_000 }),
     ]);
+    codingQuestionCount = Number(catalog?.coding_question_count) || 0;
     populateCompanies(catalog?.companies || config?.companies);
     configureVoiceAvailability(normalizeMode(config?.voice_mode) !== 'L3');
+    syncDrillType({ resetDifficulty: requestedDrill === 'coding' });
     syncPracticeFilters();
-    elements.bankBadge.textContent = '练习已就绪';
     elements.start.disabled = false;
     if (reviewMode) await createPracticeSession();
   } catch (error) {
@@ -564,6 +815,9 @@ elements.form.addEventListener('submit', createPracticeSession);
 document.querySelectorAll('input[name="practice_interview_type"]').forEach((input) => {
   input.addEventListener('change', syncPracticeFilters);
 });
+document.querySelectorAll('input[name="drill_type"]').forEach((input) => {
+  input.addEventListener('change', () => syncDrillType({ resetDifficulty: true }));
+});
 elements.voiceMode.addEventListener('click', () => setAnswerMode('voice'));
 elements.textMode.addEventListener('click', () => setAnswerMode('text'));
 elements.record.addEventListener('click', startRecording);
@@ -572,12 +826,16 @@ elements.answer.addEventListener('input', () => {
   if (providerTranscript && elements.answer.value.trim() !== providerTranscript) transcriptManuallyEdited = true;
 });
 elements.hint.addEventListener('click', requestHint);
+elements.skip.addEventListener('click', skipQuestion);
 elements.submit.addEventListener('click', submitAnswer);
 elements.reattempt.addEventListener('click', reattemptQuestion);
 elements.next.addEventListener('click', nextQuestion);
-elements.exit.addEventListener('click', completePractice);
+elements.exit.addEventListener('click', finishPractice);
 elements.again.addEventListener('click', () => {
   const url = new URL('/practice', location.origin);
+  if (practiceSession?.drill_type === 'coding' || requestedDrillType === 'coding') {
+    url.searchParams.set('drill', 'coding');
+  }
   location.assign(url.href);
 });
 window.addEventListener('pagehide', () => {

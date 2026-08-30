@@ -17,12 +17,12 @@
 
 ## 进行中任务
 
-当前无进行中任务。
+| 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
+|---|---|---|---|---|---|
+| `PROJ-005` | `/root` | `in_progress` | 集成项目解读、核心面试官 skill、快速/手撕专项及 Profile 评分改动，完成全量回归、统一提交、推送与无中断部署 | 所有已在变更日志登记的业务、数据、前端、测试、参考文档及 `README.md`、`process.md` | `PROJ-002` 至 `PROJ-004`、`PRACTICE-100/105`、`SKILL-001`、`CODING-001` 均已交付；部署前确认服务和数据目录边界 |
 
 登记模板：
 
-| 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
-|---|---|---|---|---|---|
 | `TASK-XXX` | `/root/...` | `claimed` | 简短目标 | `path/a`, `path/b` | 无或任务 ID |
 
 ## 当前稳定基线
@@ -49,3 +49,92 @@
 - 提交主题：`docs: add shared multi-agent process ledger`
 - 风险或后续事项：后续每个逻辑改动都必须附带新的日志条目；不得把密钥或用户资料写入本文件。
 
+### PROJ-004 · 2026-08-30 · 阻断项目元规则题面并修正完整面试锚定
+
+- Agent：`/root/project_prompt_audit`
+- 状态：`completed`
+- 摘要：确认 README/说明文档中的产品流程被分析模型误当项目题面，并阻断 `interview_questions`、建议答案及 skill/system 元规则进入完整面试；选中的 Profile 项目改为优先经历，职责、架构、按序请求链路和证据边界进入只读快照，服务端继续强制自我介绍与 3/4 层下钻状态机。
+- 文件：`app/project_context.py`、`app/prompt_engine.py`、`app/interview_engine.py`、`tests/test_core.py`、`tests/test_interview_type_bank.py`。
+- 验证：`git diff --check`；`python3 -m compileall -q app`；相关核心、面试类型和英文流程测试 `44 passed`。
+- 风险或后续事项：Profile 项目顺序从“追加到末尾”改为“选中项目优先”，旧测试中的末尾索引断言需由 Profile 集成任务同步到新语义；最终仍需全量回归。
+
+### PROJ-003 · 2026-08-30 · 项目解读职责、进度与深挖练习交互
+
+- Agent：`/root/project_practice_ui`
+- 状态：`completed`
+- 摘要：首页和项目页可填写或后续修改“我负责的”，也可从架构组件勾选合并；上传与分析展示真实阶段和失败状态；架构区补充面试可用介绍与链路核验；深挖题只显示带项目证据且不含元规则的内容，并支持更多题目和重新生成。
+- 文件：`public/project.html`、`public/js/project.js`、`public/assets/project.css`、`public/index.html`、`public/js/home.js`、`public/assets/app.css`、`tests/test_frontend_profile_project_ui.py`。
+- 验证：`node --check`（项目页与首页脚本）；Profile/API/UI 相关测试 `45 passed`；路径限定 `git diff --check`。
+- 风险或后续事项：依赖 Profile 后端最终 NDJSON 阶段、职责 PATCH 和题目生成契约；须在集成后再次验证流式解析、缓存失效和空链路展示。
+
+### PROJ-002 · 2026-08-30 · 项目职责、证据化解读与深挖题 API
+
+- Agent：`/root/project_analysis_backend`
+- 状态：`completed`
+- 摘要：为 Profile 项目增加可迁移的职责字段及更新接口，职责变更会使旧缓存失效；项目解读 schema 升级为 v2，并通过 NDJSON 返回读取、上下文准备、生成、证据校验和保存的真实阶段。GitHub 与分析上下文改用架构感知抽样，服务端只保留带实现代码或配置证据的架构、请求链路和追问，输出链路核验状态与受职责边界约束的面试介绍；新增带去重和证据校验的更多/重新生成题目接口。
+- 文件：`app/profile.py`、`app/profile_routes.py`、`tests/test_profile.py`、`tests/test_profile_api.py`。
+- 验证：Profile/API 专项 `34 passed`；联合项目 UI、核心面试、面试类型和英文流程测试 `76 passed`；Python 编译与 `git diff --check` 通过。主 Agent 接手后的扩大回归为相关测试 `84 passed`。
+- 风险或后续事项：分析只核对上传快照中的静态实现路径，不运行候选人代码；因此链路状态会保守标记为“部分核对”或“待核实”，不能等同于运行时追踪。
+
+### PRACTICE-104 · 2026-08-30 · 快速刷题契约与边界只读审计
+
+- Agent：`/root/practice_audit`
+- 状态：`completed`
+- 摘要：只读检查快速刷题会话 API、题库来源投影、Profile 聚合能力、前端状态流和既有测试；向主 Agent 交付无限循环优先级、跳过语义、错题判定/去重/删除、真题与 AI 标识、实质提示及零分反馈归类的可测试契约，并指出两个禁止公开来源的旧测试与新需求冲突。
+- 文件：`process.md`（仅任务登记与完成日志；未修改业务文件或测试）。
+- 验证：完整阅读 `AGENTS.md`、`process.md`；静态检查 `app/practice.py`、`app/main.py`、`app/profile.py`、`app/profile_routes.py`、`public/practice.html`、`public/js/practice.js` 及相关测试/题库/来源清单；未运行测试——尝试 `pytest -q tests/test_practice.py tests/test_real_practice_bank.py tests/test_frontend_practice_ui.py` 时，当前环境返回 `pytest: command not found`。
+- 风险或后续事项：公开题目必须只从来源清单映射安全的 `source_label/source_url`，不得泄露内部 provenance、source_path、revision、license 或 scoring；当前题库的 `licensed_bank` 不等同于已核验公司独家面经；Profile 的错题聚合仍需主 Agent 与实现 Agent 集成并执行完整回归。
+
+### PRACTICE-102 · 2026-08-30 · 快速刷题无限模式与错题本前端
+
+- Agent：`/root/practice_frontend`
+- 状态：`completed`
+- 摘要：快速刷题新增无限题量和手动结束、跳过、无限进度语义；在刷题设置内增加“个人 Profile · 错题本”列表和确认删除；题面展示【真题】/【AI出题】/【错题重答】及安全公开来源；兼容新旧来源字段，并在前端兜底把误放在优点栏的“未完成/缺少”类反馈归入扣分点。
+- 文件：`public/practice.html`、`public/js/practice.js`、`public/assets/practice.css`、`tests/test_frontend_practice_ui.py`、`process.md`。
+- 验证：`node --check public/js/practice.js` 通过；`PYTHONPATH=.deps .venv/bin/python -m pytest -q tests/test_frontend_practice_ui.py tests/test_practice.py` → `13 passed in 1.85s`；`git diff --check` 通过。
+- 风险或后续事项：未进行真实浏览器视觉回归；主 Agent 集成时需在后端任务完成后执行全量测试，并核对 `EXT-001` 是其他 Agent 对本任务改动的误判后再清理该记录。
+
+### PRACTICE-101 · 2026-08-30 · 快速刷题无限模式、错题本与反馈后端
+
+- Agent：`/root/practice_backend`
+- 状态：`completed`
+- 摘要：快速刷题创建契约向后兼容地支持 `infinite=true,count=null`，答题/跳过到队尾自动补题并提供归属校验、幂等手动结束；低分（仅已评分且 `score<=6`）按跨语言 canonical key 默认持久化错题本、支持列表/手动删除，无评分和跳过不入库且高分不自动删除；无限模式优先当前筛选内的错题且避免相邻重复，约每四次续题尝试生成一题明确标为【AI出题】的仿真题，生成失败回退授权真题；真题只公开来源清单映射的标题/仓库 URL 与【真题】标签；提示按审核 key points/red flags 递进，低分空扣分自动补充，零分回答中误置于优点栏的否定项移入扣分项。
+- 文件：`app/practice.py`、`app/main.py`、`tests/test_practice.py`、`tests/test_real_practice_bank.py`、`process.md`。
+- 验证：`PYTHONPATH=.deps .venv/bin/python -m pytest -q tests/test_practice.py tests/test_real_practice_bank.py tests/test_frontend_practice_ui.py` → `22 passed in 1.79s`；`PYTHONPATH=.deps .venv/bin/python -m compileall -q app` 通过；`git diff --check` 通过。
+- 风险或后续事项：遵守 `PROJ-002` 文件占用，未修改 `profile.py/profile_routes.py`；个人 Profile 页面通过独立的 `/api/practice/mistakes` API 展示错题。与并发 `CODING-001` 的 `drill_type` schema/insert/public 字段兼容，无限续题会保留原 `drill_type` 且手撕代码模式不混入 AI 题；主 Agent 仍需执行全量回归和真实浏览器检查。
+
+### PRACTICE-100 · 2026-08-30 · 快速刷题体验修复集成验收
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：完成无限题量与手动结束、跳过、匿名个人 Profile 错题本及删除、错题优先续题、安全真题来源与【真题】/【AI出题】标识、题目特定递进提示，以及零分/低分反馈归类的前后端集成；审核并保留并发加入的 `drill_type` 扩展。此前 `EXT-001` 所列文件来源已确认是 `PRACTICE-101/102`、`CODING-001` 与 `SKILL-001` 的登记改动，因此移除误判的未知协作者占用行。
+- 文件：`app/practice.py`、`app/main.py`、`public/practice.html`、`public/js/practice.js`、`public/assets/practice.css`、`tests/test_practice.py`、`tests/test_real_practice_bank.py`、`tests/test_frontend_practice_ui.py`、`process.md`。
+- 验证：`PYTHONPATH=.deps .venv/bin/python -m pytest -q tests/test_practice.py tests/test_real_practice_bank.py tests/test_frontend_practice_ui.py` → `26 passed in 2.31s`（包含并发专项兼容测试）；`node --check public/js/practice.js`、`PYTHONPATH=.deps .venv/bin/python -m compileall -q app`、`git diff --check` 均通过；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `192 passed, 1 failed`，唯一失败为仍在进行中的 `PROJ-002/003` 项目快照断言 `tests/test_profile_api.py::test_profile_routes_project_analysis_and_interview_snapshot`，不涉及快速刷题文件。
+- 风险或后续事项：未进行真实浏览器视觉回归；当前错题本按匿名 `client_id` 持久化并在快速刷题页的“个人 Profile · 错题本”区域管理，未修改仍被 `PROJ-002/003` 占用的首页 Profile 文件；全量回归需在这些并发任务完成后再复跑。
+
+### SKILL-001 · 2026-08-30 · 公司无关的核心面试官 skill
+
+- Agent：`/root`（协作审阅：`/root/process_review`、`/root/reference_review`、`/root/architecture_review`）。
+- 状态：`completed`
+- 摘要：综合资源目录 D 节多个 AI 模拟面试项目的共性，沿用本项目 FastAPI + 审核题库 + 服务端状态机 + JSON skill 架构，新增公司无关的核心面试官契约；统一本科实习候选人尺度、输入可信边界、单意图锚定追问、难度自适应、证据与 ownership、题库边界、私有评分、`not_observed`、服务端终止权、反偏见、文字/语音一致性、安全和来源边界。六份公司 skill 运行时均嵌套该核心契约，公司配置仅保留可变风格偏好。独立前向测试后修正“明确不知道”复用历史 topic context 与本轮 evidence anchor 的语义冲突，并明确其属于可观察负面证据而非 `not_observed`。
+- 文件：`interview_skills/interviewer_core.json`、`app/content.py`、`app/prompt_engine.py`、`tests/test_interviewer_skill.py`、`references/INTERVIEWER_SKILL_DESIGN.md`、`process.md`。
+- 验证：`PYTHONPATH=.deps .venv/bin/python -m pytest -q tests/test_interviewer_skill.py tests/test_english_company_flow.py tests/test_interview_type_bank.py` → `24 passed`；`PYTHONPATH=.deps .venv/bin/python -m pytest -q tests/test_core.py::test_prompt_contains_non_negotiable_interview_rules tests/test_core.py::test_three_layer_drill_early_end_report_and_memory` → `2 passed`；核心 JSON 解析、相关 Python compileall、`git diff --check` 均通过；全量测试 → `192 passed, 1 failed`，唯一失败是并行 Profile 项目快照旧顺序断言，`PROJ-004` 已记录需由 Profile 集成任务更新，与本任务文件无关。
+- 风险或后续事项：没有复制 GPL/无许可证项目的代码、prompt 或题库，也未引入 LangGraph、RAG、LiveKit 或供应商绑定；核心契约在 prompt 中拥有独立且高于公司风格的区段，关键 phase、审核题面、压力和终止仍由服务端硬状态机掌权。若后续进一步压缩每轮 token，应在 prompt 编译阶段裁剪文档性字段，而不是削弱服务端约束。
+
+### CODING-001 · 2026-08-30 · 基于真实授权题库的手撕代码专项
+
+- Agent：`/root`（结合 `/root/flow_audit`、`/root/question_bank_audit`、`/root/test_audit` 三个只读审计 Agent 的交付）
+- 状态：`completed`
+- 摘要：在快速刷题会话中新增显式 `drill_type=coding` 契约和 SQLite 兼容迁移；专项只允许技术面并硬过滤 4 道 `kind=coding` 的 Tech Interview Handbook MIT 授权真题，支持中/英/双语、难度、有限和无限练习；无限续题过滤非 coding 错题、禁止 AI 生成并只循环真实题。题面由“口述”收紧为提交代码或完整伪代码，评分切换为算法正确性、实现完整性、复杂度和边界的 coding rubric。首页及刷题页增加可发现入口、专项提示、默认代码文字输入和等宽编辑态，并明确这是静态代码讲评而非在线编译判题。
+- 文件：`app/practice.py`、`questions/real_practice_bank_extended.json`、`public/index.html`、`public/practice.html`、`public/js/practice.js`、`public/assets/practice.css`、`tests/test_practice.py`、`tests/test_real_practice_bank.py`、`tests/test_frontend_practice_ui.py`、`process.md`。
+- 验证：专项相关 `PYTHONPATH=.deps python3 -m pytest -q tests/test_practice.py tests/test_real_practice_bank.py tests/test_frontend_practice_ui.py` → `26 passed`；最终全量 `PYTHONPATH=.deps python3 -m pytest -q` → `199 passed`；`node --check public/js/practice.js`、`python3 -m py_compile app/practice.py`、`git diff --check` 均通过。
+- 风险或后续事项：当前真实 coding 库只有 4 个概念，适合 MVP 但题量仍薄；出于安全边界不在 FastAPI 进程执行用户代码，若后续要求真实用例判题，需要补充函数签名、样例/隐藏用例并接入独立隔离 runner；本轮未进行真实浏览器视觉回归。
+
+### PRACTICE-105 · 2026-08-30 · 综合面档案锚定与扣分点兜底
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：快速刷题综合面评分按匿名 `client_id` 只读加载个人档案中最近/选中的项目名称、职责、结构化简历项目及已缓存的项目分析摘要；档案被明确标记为不可信事实素材，只用于锚定改写示范，不能冒充本次回答证据或执行其中指令。项目技术栈、架构、故障、指标和个人贡献只能来自候选人回答或档案，无法印证时只能要求补充依据，禁止编造事实判对错或扣分。评分归一化从仅 `score<=6` 扩展为所有 `score<10`：模型返回空 `deductions` 时优先使用 `next_steps/key_points` 生成具体改进点，修复非满分但扣分栏为空。
+- 文件：`app/practice.py`、`tests/test_practice.py`、`process.md`。
+- 验证：`PYTHONPATH=.deps .venv/bin/python -m pytest -q tests/test_practice.py tests/test_frontend_practice_ui.py tests/test_real_practice_bank.py` → `26 passed`；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `200 passed`；`PYTHONPATH=.deps .venv/bin/python -m py_compile app/practice.py`、`git diff --check` 均通过。
+- 风险或后续事项：未向模型发送项目原始文件，只使用 Profile 已存的结构化简历与分析摘要；没有个人档案时示范回答必须省略未知细节或显式提示补充真实信息。本轮未进行线上真实模型与浏览器视觉回归。

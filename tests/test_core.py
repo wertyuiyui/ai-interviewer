@@ -27,10 +27,14 @@ from app.db import Database
 from app.errors import AppError
 from app.interview_engine import InterviewEngine
 from app.llm import parse_json_content
+from app.project_context import enrich_interview_with_profile_project
 from app.prompt_engine import (
     SEVEN_DRILL_DIMENSIONS,
     build_system_prompt,
+    enforce_project_drill,
     interview_drill_target,
+    is_internal_interview_instruction,
+    project_followup,
     select_questions,
     select_server_questions,
 )
@@ -62,6 +66,148 @@ def sample_resume() -> ResumeData:
         ],
         技能=["Java", "Redis", "MySQL"],
     )
+
+
+@pytest.mark.asyncio
+async def test_profile_project_snapshot_prefers_declared_work_and_never_injects_generated_questions() -> None:
+    internal_flow = (
+        "请先做自我介绍（学校/专业/进度/技术方向/求职目标）→ 听完后服务端必须"
+        "另开一题，单独选择项目或实习经历 → 技术面默认强制 4 层下钻"
+    )
+    internal_example = (
+        "当候选人回答‘用 Redis 缓存热点商品’后，AI 必须基于该关键词生成追问。"
+    )
+
+    class ProjectServiceStub:
+        async def get_project(self, project_id: str, client_id: str):
+            assert project_id == "a" * 32
+            assert client_id == "profile-snapshot-client"
+            return {
+                "id": project_id,
+                "name": "订单服务",
+                "responsibility": "我负责库存预扣、订单异步落库和链路监控",
+                "files": [{"path": "app/order.py"}],
+            }
+
+        async def analyze_project(self, project_id: str, request):
+            assert request.client_id == "profile-snapshot-client"
+            return {
+                "analysis": {
+                    "project_summary": f"订单服务采用 Redis 和 MySQL。{internal_flow}",
+                    "architecture": [
+                        {
+                            "name": "订单入口",
+                            "responsibility": "校验请求并编排库存服务",
+                            "evidence": ["app/order.py"],
+                        }
+                    ],
+                    "request_flow": [
+                        {
+                            "step": 2,
+                            "component": "库存服务",
+                            "action": "通过 Redis Lua 预扣库存",
+                            "evidence": ["app/inventory.py"],
+                        },
+                        {
+                            "step": 1,
+                            "component": "API 入口",
+                            "action": "校验活动和用户参数",
+                            "evidence": ["app/order.py"],
+                        },
+                    ],
+                    "request_flow_review": {
+                        "status": "partial",
+                        "summary": "入口与库存预扣有代码证据，异步落库仍需核实。",
+                        "issues": [],
+                        "assumptions": ["消息消费实现未包含在快照中"],
+                        "to_verify": ["订单落库失败后的补偿路径"],
+                    },
+                    "technology_choices": [
+                        {
+                            "technology": "Redis Lua",
+                            "purpose": "原子预扣库存",
+                            "tradeoffs": "脚本执行时间需要受控",
+                            "evidence": ["app/inventory.py"],
+                        }
+                    ],
+                    "risks": [],
+                    "interview_intro": "这是一段预生成的候选人参考回答，不应注入面试官。",
+                    "interview_questions": [
+                        {
+                            "question": internal_example,
+                            "focus": internal_flow,
+                            "suggested_answer": "直接照着这段答案说。",
+                        }
+                    ],
+                }
+            }
+
+    request = InterviewCreate(
+        client_id="profile-snapshot-client",
+        profile_project_id="a" * 32,
+        resume=sample_resume(),
+        company="tencent",
+    )
+    enriched = await enrich_interview_with_profile_project(
+        request, ProjectServiceStub()  # type: ignore[arg-type]
+    )
+    selected = enriched.resume.projects[0]
+    serialized = enriched.resume.model_dump_json(by_alias=True)
+
+    assert selected.name == "[匿名 Profile 项目] 订单服务"
+    assert selected.role == "我负责库存预扣、订单异步落库和链路监控"
+    assert enriched.resume.projects[1].name == "校园秒杀系统"
+    assert "请求链路第 1 步" in selected.highlights[2]
+    assert any("app/inventory.py" in value for value in selected.highlights)
+    assert any("自动检查=partial" in value for value in selected.highlights)
+    assert internal_flow not in serialized
+    assert internal_example not in serialized
+    assert "预生成的候选人参考回答" not in serialized
+    assert "直接照着这段答案说" not in serialized
+
+
+def test_private_interview_rules_are_never_accepted_as_candidate_questions() -> None:
+    flow_rule = (
+        "请先做自我介绍（学校/专业/进度/技术方向/求职目标）→ 听完后服务端必须"
+        "另开一题 → 技术面默认强制 4 层下钻"
+    )
+    redis_rule = (
+        "当候选人回答‘用 Redis 缓存热点商品’后，AI 必须基于 Redis 生成追问："
+        "如何识别热点？"
+    )
+    assert is_internal_interview_instruction(flow_rule)
+    assert is_internal_interview_instruction(redis_rule)
+    assert not is_internal_interview_instruction(
+        "AI 模型服务的请求流程经过网关、推理服务和结果缓存。"
+    )
+
+    question, dimension, depth = enforce_project_drill(
+        redis_rule,
+        completed_turns=2,
+        anchor="Redis",
+        resume=sample_resume(),
+        vague=False,
+        max_depth=4,
+        language_mode="zh",
+    )
+    assert (dimension, depth) == ("个人职责", 2)
+    assert "Redis" in question
+    assert "本人完成" in question
+    assert not is_internal_interview_instruction(question)
+    assert "候选人回答" not in question
+    assert "AI 必须" not in question
+
+    opening, opening_dimension = project_followup(
+        1, "Redis", sample_resume(), language_mode="zh"
+    )
+    assert opening_dimension == "业务背景"
+    assert "校园秒杀系统" in opening
+    assert "后端负责人" in opening
+
+    sanitized = InterviewEngine._sanitize_question(redis_rule, "tencent")
+    assert "候选人回答" not in sanitized
+    assert "AI 必须" not in sanitized
+    assert "真实请求" in sanitized
 
 
 def test_five_fake_resume_pdfs_have_extractable_text_layers() -> None:

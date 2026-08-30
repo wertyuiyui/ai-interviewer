@@ -24,8 +24,10 @@ const profileStatus = $('#profileStatus');
 const profileResumeFiles = $('#profileResumeFiles');
 const profileProjectFiles = $('#profileProjectFiles');
 const profileProjectName = $('#profileProjectName');
+const profileProjectResponsibility = $('#profileProjectResponsibility');
 const profileGithubUrl = $('#profileGithubUrl');
 const profileGithubAdd = $('#profileGithubAdd');
+const profileProjectProgress = $('#profileProjectProgress');
 const hardwareTest = createHardwareTest();
 
 let resumeMode = 'pdf';
@@ -126,6 +128,21 @@ function profileItemName(item, fallback) {
 function updateProfileStatus(message = '') {
   if (!profileStatus) return;
   profileStatus.textContent = message || `${profile.resumes.length} 份简历 · ${profile.projects.length} 个项目 · 当前设备`;
+}
+
+function updateProfileProjectProgress(state, message) {
+  if (!profileProjectProgress) return;
+  profileProjectProgress.dataset.state = state;
+  profileProjectProgress.textContent = message;
+  profileProjectProgress.classList.toggle('is-hidden', !message);
+}
+
+async function readProfileProjectFileList(files) {
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    updateProfileProjectProgress('reading', `正在读取文件清单（${index + 1}/${files.length}）：${file.name}`);
+    await file.slice(0, Math.min(file.size, 64 * 1024)).arrayBuffer();
+  }
 }
 
 function createProfileEmpty(message) {
@@ -258,6 +275,7 @@ function renderProfileProjects() {
     meta.textContent = project?.source_type === 'github'
       ? 'GitHub 仓库 · 可进入项目解读'
       : `${fileCount || '多'} 个文件 · 可进入项目解读`;
+    if (String(project?.responsibility || '').trim()) meta.textContent += ' · 已填写本人职责';
     copy.append(title, meta);
     label.append(radio, icon, copy);
     const remove = document.createElement('button');
@@ -344,19 +362,26 @@ async function uploadProfileProject() {
   const files = [...(profileProjectFiles?.files || [])];
   if (!files.length) return;
   profileProjectFiles.disabled = true;
+  updateProfileProjectProgress('reading', '正在读取所选项目文件…');
   updateProfileStatus(`正在保存项目的 ${files.length} 个文件…`);
   try {
+    await readProfileProjectFileList(files);
     const data = new FormData();
     data.append('client_id', getClientId());
     data.append('name', profileProjectName.value.trim() || files[0].name.replace(/\.[^.]+$/, ''));
+    data.append('responsibility', profileProjectResponsibility.value.trim());
     files.forEach((file) => data.append('files', file, file.name));
+    updateProfileProjectProgress('saving', `已读取 ${files.length} 个文件，正在上传并保存项目…`);
     const response = await apiFetch('/api/profile/projects', { method: 'POST', body: data, timeout: 65_000 });
     const project = response?.project || response;
     await loadProfile();
     if (profileItemId(project)) await selectProfileProject(project, { quiet: true });
     profileProjectName.value = '';
+    profileProjectResponsibility.value = '';
+    updateProfileProjectProgress('done', '项目文件与本人职责已保存，可以进入项目解读。');
     showToast('项目文件已保存，可以进入项目解读。', 'success');
   } catch (error) {
+    updateProfileProjectProgress('error', error?.message || '项目文件保存失败，请稍后重试。');
     showToast(error?.message || '项目文件保存失败，请稍后重试。', 'error', 5200);
     updateProfileStatus();
   } finally {
@@ -381,6 +406,7 @@ async function addGithubProject() {
     return;
   }
   profileGithubAdd.disabled = true;
+  updateProfileProjectProgress('reading', '正在读取公开 GitHub 仓库…');
   updateProfileStatus('正在添加 GitHub 项目…');
   try {
     const response = await apiFetch('/api/profile/projects/github', {
@@ -388,6 +414,7 @@ async function addGithubProject() {
         client_id: getClientId(),
         name: profileProjectName.value.trim() || repositoryName,
         url,
+        responsibility: profileProjectResponsibility.value.trim(),
       },
     });
     const project = response?.project || response;
@@ -395,8 +422,11 @@ async function addGithubProject() {
     if (profileItemId(project)) await selectProfileProject(project, { quiet: true });
     profileGithubUrl.value = '';
     profileProjectName.value = '';
+    profileProjectResponsibility.value = '';
+    updateProfileProjectProgress('done', 'GitHub 项目与本人职责已保存，可以进入项目解读。');
     showToast('GitHub 项目已添加，可以开始解读。', 'success');
   } catch (error) {
+    updateProfileProjectProgress('error', error?.message || 'GitHub 项目添加失败，请稍后重试。');
     showToast(error?.message || 'GitHub 项目添加失败，请稍后重试。', 'error', 5200);
     updateProfileStatus();
   } finally {

@@ -4,9 +4,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f6f4ef">
-    <meta name="description" content="面向后端实习面试的快速练习，支持技术面、综合面以及语音与文字单题作答。">
+    <meta name="description" content="面向后端实习面试的快速练习，支持综合刷题、真实题库手撕代码专项以及语音与文字作答。">
     <title>快速刷题 · 砺面</title>
     <link rel="stylesheet" href="/assets/app.css?v=20260830-profile-bank-v2">
+    <link rel="stylesheet" href="/assets/practice.css?v=20260830-infinite-practice">
   </head>
   <body class="practice-page">
     <header class="site-header practice-header">
@@ -45,6 +46,19 @@
             <p>会保留原题与原扣分点，新的回答单独评分，不覆盖原报告。</p>
           </div>
 
+          <div class="practice-coding-notice is-hidden" id="codingNotice">
+            <strong>手撕代码 · 真实题库专项</strong>
+            <p>只抽取已审核、可追溯的 coding 题。请提交代码或完整伪代码；这里做静态讲评，不会冒充在线编译判题。</p>
+          </div>
+
+          <fieldset class="practice-choice practice-drill-type" id="practiceDrillType">
+            <legend>训练类型</legend>
+            <div class="segmented" role="radiogroup" aria-label="训练类型">
+              <label><input type="radio" name="drill_type" value="general" checked><span>综合刷题</span></label>
+              <label><input type="radio" name="drill_type" value="coding"><span>手撕代码</span></label>
+            </div>
+          </fieldset>
+
           <label class="practice-field" for="practiceCompany">
             <span>目标公司</span>
             <select id="practiceCompany" required><option value="bytedance">字节跳动</option></select>
@@ -81,10 +95,20 @@
               <option value="5" selected>5 题</option>
               <option value="10">10 题</option>
               <option value="20">20 题</option>
+              <option value="unlimited">无限模式 · 手动结束</option>
             </select>
           </label>
 
-          <fieldset class="practice-choice practice-interview-type">
+          <section class="practice-mistake-book" aria-labelledby="mistakeBookTitle">
+            <header>
+              <div><span>个人 Profile</span><h3 id="mistakeBookTitle">错题本</h3></div>
+              <span class="practice-mistake-count" id="mistakeBookCount">正在同步…</span>
+            </header>
+            <p>答错的题会自动保存；无限模式会优先循环练习。你可以随时手动删除。</p>
+            <ul id="mistakeBookList" aria-live="polite"><li class="practice-mistake-empty">正在读取当前设备的错题本…</li></ul>
+          </section>
+
+          <fieldset class="practice-choice practice-interview-type" id="practiceInterviewType">
             <legend>面试类型</legend>
             <div class="segmented" role="radiogroup" aria-label="快速刷题面试类型">
               <label><input type="radio" name="practice_interview_type" value="technical" checked><span>技术面</span></label>
@@ -93,7 +117,7 @@
             </div>
           </fieldset>
 
-          <fieldset class="practice-choice">
+          <fieldset class="practice-choice" id="practiceLanguageMode">
             <legend>题目语言</legend>
             <div class="segmented" role="radiogroup" aria-label="题目语言">
               <label><input type="radio" name="practice_language" value="zh"><span>中文</span></label>
@@ -101,7 +125,7 @@
               <label><input type="radio" name="practice_language" value="en"><span>纯英文</span></label>
             </div>
           </fieldset>
-          <fieldset class="practice-choice">
+          <fieldset class="practice-choice" id="practiceAnswerMode">
             <legend>默认作答方式</legend>
             <div class="segmented" role="radiogroup" aria-label="默认作答方式">
               <label><input type="radio" name="answer_mode" value="voice" checked><span>语音作答</span></label>
@@ -122,7 +146,8 @@
         <div class="practice-progress-track" aria-hidden="true"><i id="practiceProgressFill"></i></div>
 
         <article class="practice-question-card">
-          <div class="practice-question-meta"><span id="questionCategory">综合</span><span id="questionDifficulty">进阶</span><span id="questionRecommended">建议 60 秒</span></div>
+          <div class="practice-question-meta"><span id="questionCategory">综合</span><span id="questionDifficulty">进阶</span><span id="questionRecommended">建议 60 秒</span><span class="question-origin is-hidden" id="questionOrigin">【真题】</span></div>
+          <p class="practice-question-source is-hidden" id="questionSource"></p>
           <h1 id="questionText">正在读取题目…</h1>
           <div class="previous-attempt is-hidden" id="previousAttempt">
             <strong>上次扣分点</strong><p id="previousDeductions"></p>
@@ -145,12 +170,15 @@
           </div>
 
           <label class="practice-answer-input" for="practiceAnswer">
-            <span>回答文字 <small>提交前可手动修正</small></span>
+            <span id="answerInputLabel">回答文字 <small>提交前可手动修正</small></span>
             <textarea id="practiceAnswer" rows="8" maxlength="10000" placeholder="点击开始语音回答，或切换到文字输入…"></textarea>
           </label>
           <div class="practice-answer-footer">
             <button class="secondary-button" id="practiceHint" type="button">给我一个提示</button>
-            <button class="primary-button practice-submit" id="practiceSubmit" type="button"><span class="button-label">提交本题</span><span aria-hidden="true">→</span></button>
+            <div class="practice-answer-actions">
+              <button class="secondary-button" id="practiceSkip" type="button">跳过</button>
+              <button class="primary-button practice-submit" id="practiceSubmit" type="button"><span class="button-label">提交本题</span><span aria-hidden="true">→</span></button>
+            </div>
           </div>
           <div class="practice-hint-box is-hidden" id="practiceHintBox"><strong>提示</strong><p id="practiceHintText"></p></div>
         </section>

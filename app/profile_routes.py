@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+import json
 import time
 from collections import defaultdict, deque
 from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import APIRouter, File, Form, Header, Request, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 from .config import Settings
@@ -19,7 +21,9 @@ from .profile import (
     ProfileGitHubProjectCreate,
     ProfileProjectAnalysisRequest,
     ProfileProjectCreate,
+    ProfileProjectQuestionsRequest,
     ProfileProjectSelection,
+    ProfileProjectUpdate,
     ProfileResumeCreate,
     ProfileService,
     ProjectUpload,
@@ -225,6 +229,7 @@ def create_profile_router(
         http_request: Request,
         client_id: str = Form(min_length=8, max_length=128),
         name: str = Form(min_length=1, max_length=120),
+        responsibility: str = Form(default="", max_length=4_000),
         files: list[UploadFile] = File(...),
         profile_key: str = Header(
             alias="X-Profile-Key", min_length=24, max_length=128
@@ -257,7 +262,11 @@ def create_profile_router(
                 )
             uploads.append(upload)
         try:
-            project_request = ProfileProjectCreate(client_id=client_id, name=name)
+            project_request = ProfileProjectCreate(
+                client_id=client_id,
+                name=name,
+                responsibility=responsibility,
+            )
         except ValidationError as exc:
             raise _model_validation_error(exc) from exc
         project = await service_provider().create_uploaded_project(project_request, uploads)
@@ -313,6 +322,25 @@ def create_profile_router(
         _verify_profile_key(profile_key, request.client_id)
         return await service_provider().select_project(project_id, request)
 
+    @router.patch("/projects/{project_id}")
+    async def update_project(
+        project_id: str,
+        request: ProfileProjectUpdate,
+        http_request: Request,
+        profile_key: str = Header(
+            alias="X-Profile-Key", min_length=24, max_length=128
+        ),
+    ) -> dict[str, Any]:
+        _verify_profile_key(profile_key, request.client_id)
+        await require_budget(
+            http_request,
+            action="profile-project-update",
+            client_id=request.client_id,
+            host_limit=120,
+            client_limit=60,
+        )
+        return {"project": await service_provider().update_project(project_id, request)}
+
     @router.post("/projects/{project_id}/analysis")
     async def analyze_project(
         project_id: str,
@@ -331,6 +359,111 @@ def create_profile_router(
             client_limit=10,
         )
         return await service_provider().analyze_project(project_id, request)
+
+    @router.post("/projects/{project_id}/analysis/stream")
+    async def analyze_project_stream(
+        project_id: str,
+        request: ProfileProjectAnalysisRequest,
+        http_request: Request,
+        profile_key: str = Header(
+            alias="X-Profile-Key", min_length=24, max_length=128
+        ),
+    ) -> StreamingResponse:
+        _verify_profile_key(profile_key, request.client_id)
+        await require_budget(
+            http_request,
+            action="profile-analysis",
+            client_id=request.client_id,
+            host_limit=20,
+            client_limit=10,
+        )
+
+        async def events():
+            queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue(maxsize=16)
+
+            async def emit(event: dict[str, Any]) -> None:
+                await queue.put(event)
+
+            async def produce() -> None:
+                try:
+                    result = await service_provider().analyze_project(
+                        project_id,
+                        request,
+                        progress=emit,
+                    )
+                except AppError as exc:
+                    await queue.put(
+                        {
+                            "type": "error",
+                            "error": {
+                                "code": exc.code,
+                                "message": exc.message,
+                                "details": exc.details,
+                            },
+                        }
+                    )
+                except Exception:
+                    await queue.put(
+                        {
+                            "type": "error",
+                            "error": {
+                                "code": "PROJECT_ANALYSIS_FAILED",
+                                "message": "项目解读失败，请稍后重试",
+                                "details": {},
+                            },
+                        }
+                    )
+                else:
+                    await queue.put(
+                        {
+                            "type": "complete",
+                            "progress": 100,
+                            "result": result,
+                        }
+                    )
+                finally:
+                    await queue.put(None)
+
+            task = asyncio.create_task(produce())
+            try:
+                while True:
+                    event = await queue.get()
+                    if event is None:
+                        break
+                    yield json.dumps(event, ensure_ascii=False) + "\n"
+            finally:
+                # Do not cancel a paid model call merely because a browser tab
+                # closed.  Let it finish and populate the cache for the retry.
+                if task.done():
+                    task.result()
+
+        return StreamingResponse(
+            events(),
+            media_type="application/x-ndjson",
+            headers={
+                "Cache-Control": "no-store",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @router.post("/projects/{project_id}/questions")
+    async def generate_project_questions(
+        project_id: str,
+        request: ProfileProjectQuestionsRequest,
+        http_request: Request,
+        profile_key: str = Header(
+            alias="X-Profile-Key", min_length=24, max_length=128
+        ),
+    ) -> dict[str, Any]:
+        _verify_profile_key(profile_key, request.client_id)
+        await require_budget(
+            http_request,
+            action="profile-project-questions",
+            client_id=request.client_id,
+            host_limit=20,
+            client_limit=10,
+        )
+        return await service_provider().generate_project_questions(project_id, request)
 
     @router.delete("/projects/{project_id}")
     async def delete_project(

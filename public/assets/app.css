@@ -124,6 +124,14 @@ svg { display: block; fill: none; stroke: currentColor; stroke-linecap: round; s
 .profile-project-create input, .profile-github-create input { min-width: 0; height: 30px; padding: 0 8px; border: 1px solid #dfe3e9; border-radius: 7px; outline: none; background: #fbfcfd; font-size: 8px; }
 .profile-project-create input:focus, .profile-github-create input:focus { border-color: #88a8e9; box-shadow: 0 0 0 3px rgba(53,110,234,.07); }
 .profile-github-create button:disabled { opacity: .55; cursor: wait; }
+.profile-project-responsibility { margin-top: 8px; display: block; }
+.profile-project-responsibility > span { display: block; margin-bottom: 5px; color: #667488; font-size: 8px; font-weight: 700; }
+.profile-project-responsibility > span small { color: #9aa2ad; font-size: 7px; font-weight: 500; }
+.profile-project-responsibility textarea { width: 100%; min-height: 48px; padding: 8px; resize: vertical; border: 1px solid #dfe3e9; border-radius: 7px; outline: none; background: #fbfcfd; font-size: 8px; line-height: 1.55; }
+.profile-project-responsibility textarea:focus { border-color: #88a8e9; box-shadow: 0 0 0 3px rgba(53,110,234,.07); }
+.profile-project-progress { margin-top: 8px; padding: 7px 9px; border: 1px solid #dbe3ef; border-radius: 7px; color: #4c678f; background: #f3f7fd; font-size: 8px; line-height: 1.55; }
+.profile-project-progress[data-state="done"] { color: #39715b; border-color: #d0e5db; background: #eff8f4; }
+.profile-project-progress[data-state="error"] { color: #a34f4a; border-color: #edceca; background: #fff4f2; }
 .profile-list { max-height: 178px; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; list-style: none; }
 .profile-list-item { min-width: 0; padding: 7px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; align-items: center; border: 1px solid #e5e7e9; border-radius: 8px; background: #fafaf8; }
 .profile-list-item.is-selected { border-color: #9db7e9; background: #f1f5ff; }

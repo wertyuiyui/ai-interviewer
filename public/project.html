@@ -6,8 +6,8 @@
     <meta name="theme-color" content="#f6f4ef">
     <meta name="description" content="上传项目资料或添加 GitHub 仓库，梳理架构、技术选型与面试追问。">
     <title>项目解读 · 砺面</title>
-    <link rel="stylesheet" href="/assets/app.css?v=20260830-profile-bank-v2">
-    <link rel="stylesheet" href="/assets/project.css?v=20260830-profile-bank-v2">
+    <link rel="stylesheet" href="/assets/app.css?v=20260830-project-deep-dive-v3">
+    <link rel="stylesheet" href="/assets/project.css?v=20260830-project-deep-dive-v3">
   </head>
   <body class="project-page">
     <header class="site-header project-header">
@@ -46,6 +46,12 @@
             <small>可一次选择同一项目的多个文件。</small>
           </div>
 
+          <div class="project-add-block project-responsibility-create">
+            <label for="projectResponsibility">我负责的 <small>可选</small></label>
+            <textarea id="projectResponsibility" rows="3" maxlength="1200" placeholder="例如：负责订单接口、Redis 缓存和慢查询治理；压测与部署由其他同学负责。"></textarea>
+            <small>会用于区分团队成果和你的个人贡献，并据此生成深挖问题。</small>
+          </div>
+
           <div class="project-add-block">
             <label for="projectGithubUrl">添加 GitHub 仓库</label>
             <div class="project-github-row">
@@ -57,6 +63,15 @@
           <ul class="project-asset-list" id="projectAssetList" aria-live="polite">
             <li class="project-list-empty">还没有项目，先上传资料或添加 GitHub。</li>
           </ul>
+
+          <section class="project-responsibility-editor is-hidden" id="projectResponsibilityPanel" aria-labelledby="projectResponsibilityTitle">
+            <header><strong id="projectResponsibilityTitle">当前项目 · 我负责的</strong><span id="projectResponsibilitySaveState" role="status" aria-live="polite"></span></header>
+            <textarea id="projectResponsibilityEdit" rows="4" maxlength="1200" placeholder="补充你实际负责的模块、技术决策和结果；不确定的部分可以明确说明。"></textarea>
+            <div class="project-responsibility-actions">
+              <small>架构生成后，还可以勾选组件合并到这里。</small>
+              <button id="projectResponsibilitySave" type="button">保存职责</button>
+            </div>
+          </section>
         </aside>
 
         <section class="project-workspace" aria-label="项目解读工作区">
@@ -67,8 +82,12 @@
             <button class="primary-button project-analyze-button" id="projectAnalyzeButton" type="button" disabled><span class="button-label">开始项目解读</span><span aria-hidden="true">→</span></button>
           </div>
 
-          <div class="project-analysis-loading is-hidden" id="projectAnalysisLoading" role="status" aria-live="polite">
-            <span></span><h2>正在读懂这个项目…</h2><p>正在整理模块边界、请求链路与可能被追问的技术决策。</p>
+          <div class="project-analysis-loading is-hidden" id="projectAnalysisLoading" role="status" aria-live="polite" aria-busy="true">
+            <span class="project-loading-spinner" aria-hidden="true"></span>
+            <h2 id="projectProgressTitle">正在读取项目资料…</h2>
+            <p id="projectProgressCopy">服务端正在读取已保存的项目快照，完成后才会进入后续步骤。</p>
+            <ol class="project-progress-steps" id="projectProgressSteps" aria-label="项目解读进度"></ol>
+            <button class="project-progress-back is-hidden" id="projectProgressBack" type="button">返回项目</button>
           </div>
 
           <div class="project-analysis is-hidden" id="projectAnalysis">
@@ -80,8 +99,21 @@
             <section class="project-analysis-section project-architecture" aria-labelledby="architectureTitle">
               <header><span>01</span><div><h3 id="architectureTitle">架构与请求链路</h3><p>先形成一段能在面试中讲清楚的全局叙述。</p></div></header>
               <div class="project-architecture-grid">
-                <article><h4>架构概览</h4><div id="projectArchitecture"></div></article>
+                <article><h4>架构概览</h4><p class="project-component-help">勾选你确实负责过的组件，可合并到“我负责的”。</p><div id="projectArchitecture"></div><button class="project-component-merge is-hidden" id="projectResponsibilityMerge" type="button">合并所选组件到我的职责</button></article>
                 <article><h4>核心请求链路</h4><ol id="projectRequestFlow"></ol></article>
+              </div>
+              <article class="project-interview-intro">
+                <header><div><span>面试可用</span><h4>项目介绍</h4></div><button id="projectInterviewIntroCopy" type="button">复制</button></header>
+                <p id="projectInterviewIntro">当前资料不足，暂未生成可在面试中使用的项目介绍。</p>
+              </article>
+              <div class="project-flow-review" id="projectFlowReview">
+                <header><h4>请求链路检查</h4><span id="projectFlowReviewState">待核实</span></header>
+                <p id="projectFlowReviewSummary">当前资料不足，尚未完成请求链路核对。</p>
+                <div>
+                  <article><h5>发现的问题</h5><ul id="projectFlowIssues"></ul></article>
+                  <article><h5>分析假设</h5><ul id="projectFlowAssumptions"></ul></article>
+                  <article><h5>面试前待核实</h5><ul id="projectFlowToVerify"></ul></article>
+                </div>
               </div>
             </section>
 
@@ -95,8 +127,12 @@
             </section>
 
             <section class="project-analysis-section project-question-section" aria-labelledby="projectQuestionsTitle">
-              <header><span>03</span><div><h3 id="projectQuestionsTitle">项目深挖练习</h3><p>先自己组织答案，再展开参考思路进行对照。</p></div></header>
+              <header><span>03</span><div><h3 id="projectQuestionsTitle">项目深挖练习</h3><p>面试官会围绕当前项目和你的实际职责逐层追问。先自己作答，再展开参考思路。</p></div></header>
               <div class="project-question-list" id="projectQuestionList"></div>
+              <div class="project-question-toolbar">
+                <span id="projectQuestionStatus" role="status" aria-live="polite"></span>
+                <div><button id="projectMoreQuestions" type="button">更多题目</button><button id="projectRegenerateQuestions" type="button">重新生成</button></div>
+              </div>
             </section>
           </div>
         </section>
@@ -104,6 +140,6 @@
     </main>
 
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-    <script type="module" src="/js/project.js?v=20260830-profile-bank-v2"></script>
+    <script type="module" src="/js/project.js?v=20260830-project-deep-dive-v3"></script>
   </body>
 </html>

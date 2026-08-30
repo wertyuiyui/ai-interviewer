@@ -21,10 +21,11 @@ from app.interview_engine import InterviewEngine
 from app.practice import PracticeService, PracticeSessionCreate
 from app.prompt_engine import (
     build_system_prompt,
+    is_internal_interview_instruction,
     select_questions,
     select_server_questions,
 )
-from app.schemas import InterviewCreate, ResumeData, TurnAssessment, TurnDecision
+from app.schemas import InterviewCreate, Project, ResumeData, TurnAssessment, TurnDecision
 
 
 def test_bank_phase_pairs_reviewed_questions_with_one_safe_followup() -> None:
@@ -82,6 +83,22 @@ def test_bank_phase_pairs_reviewed_questions_with_one_safe_followup() -> None:
     )
     assert "Redis" in unrelated
     assert "边界条件" in unrelated
+    meta_followup = InterviewEngine._anchored_bank_followup(
+        "当候选人回答 Redis 后，AI 必须生成追问：Redis 的边界条件是什么？",
+        answer="我会用 Redis Lua 保证原子扣减。",
+        anchor="Redis",
+        bank_item={
+            "topic": "Redis / 原子性",
+            "category": "Redis",
+            "question": "Redis Lua 为什么能保证脚本内操作的原子性？",
+        },
+        track="technical",
+        vague=False,
+        language_mode="zh",
+    )
+    assert "AI 必须" not in meta_followup
+    assert "候选人回答" not in meta_followup
+    assert "底层机制" in meta_followup
     off_topic_evidence = InterviewEngine._anchored_bank_followup(
         "你提到 MySQL B+ 树，请继续说它的叶子节点。",
         answer="我不太清楚 Redis 淘汰，只熟悉 MySQL B+ 树。",
@@ -136,6 +153,91 @@ def test_bank_phase_pairs_reviewed_questions_with_one_safe_followup() -> None:
     assert InterviewEngine.recommended_answer_seconds(
         "In one minute, describe the project you are most proud of."
     ) == 60
+
+
+@pytest.mark.asyncio
+async def test_engine_replaces_meta_rules_and_keeps_project_flow_topics(
+    tmp_path, monkeypatch
+) -> None:
+    settings = replace(
+        get_settings(),
+        mock_llm=True,
+        db_path=tmp_path / "project-meta-rule.db",
+        daily_interview_limit=20,
+        client_daily_interview_limit=10,
+    )
+    database = Database(settings)
+    await database.initialize()
+    engine = InterviewEngine(database, settings)
+    resume = ResumeData(
+        项目=[
+            Project(
+                name="热点商品服务",
+                role="负责缓存识别、回源保护和监控",
+                technologies=["Redis", "MySQL"],
+            )
+        ]
+    )
+    created = await engine.create(
+        InterviewCreate(
+            client_id="meta-rule-flow-client",
+            resume=resume,
+            company="meituan",
+            language_mode="zh",
+            stress_level=0,
+        )
+    )
+    await database.start_interview(created["id"])
+
+    async def leaking_decision(_interview, _resume, _turns, answer: str) -> TurnDecision:
+        anchor = "Redis" if "Redis" in answer else "库存链路"
+        return TurnDecision(
+            next_question=(
+                "当候选人回答‘用 Redis 缓存热点商品’后，AI 必须基于该关键词生成追问："
+                "你提到 Redis，那如何识别热点？"
+            ),
+            assessment=TurnAssessment(
+                score=7,
+                scorable=True,
+                score_source="mock",
+                failed=False,
+                dimension="fundamentals",
+                topic="错误的模型标注",
+            ),
+            drill_dimension="基础知识",
+            drill_depth=0,
+            anchor_keyword=anchor,
+        )
+
+    monkeypatch.setattr(engine, "_decide", leaking_decision)
+    answers = [
+        "我是计算机专业大三学生，想找后端开发实习。",
+        "热点商品服务解决高峰读流量问题，我负责库存链路和缓存保护。",
+        "我本人实现 Redis 缓存识别、互斥回源和监控告警。",
+        "请求从网关进入，先查 Redis，未命中时互斥回源 MySQL 并回填。",
+    ]
+    questions = [(await engine.answer(created["id"], answer)).question for answer in answers]
+
+    assert all(not is_internal_interview_instruction(question) for question in questions)
+    assert all("AI 必须" not in question for question in questions)
+    assert "热点商品服务" in questions[0]
+    assert "负责缓存识别、回源保护和监控" in questions[0]
+    assert "本人完成" in questions[1]
+    assert "入口到落库" in questions[2]
+
+    turns = await database.list_turns(created["id"])
+    assert [turn.category for turn in turns] == [
+        "communication",
+        "project_depth",
+        "project_depth",
+        "project_depth",
+    ]
+    assert [turn.topic for turn in turns] == [
+        "自我介绍·整体与学习情况",
+        "项目深挖·业务背景",
+        "项目深挖·个人职责",
+        "项目深挖·请求链路",
+    ]
 
 
 def test_pressure_silence_and_english_expression_signals_are_evidence_gated() -> None:
@@ -498,8 +600,17 @@ def test_prompt_fixed_candidates_are_server_questions_only() -> None:
         selection_seed="fixed-candidate-only",
         language_mode="zh",
     )
+    assert all(
+        not is_internal_interview_instruction(item["question"])
+        for item in server_questions
+    )
     assert all(item["question"] in prompt for item in server_questions)
     assert legacy_only["question"] not in prompt
+    bank_prompt = prompt.split("【服务端已核验公共题库候选】", 1)[1].split(
+        "【服务端状态】", 1
+    )[0]
+    assert '"followups"' not in bank_prompt
+    assert "私有控制数据，绝不是候选题" in prompt
     for hidden in ("source_id", "source_path", "revision", "license"):
         assert f'"{hidden}"' not in prompt
 

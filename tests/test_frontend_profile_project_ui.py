@@ -28,6 +28,8 @@ def test_anonymous_profile_supports_multiple_resume_and_project_assets() -> None
         "profileResumeFiles",
         "profileResumeList",
         "profileProjectFiles",
+        "profileProjectResponsibility",
+        "profileProjectProgress",
         "profileGithubUrl",
         "profileGithubAdd",
         "profileProjectList",
@@ -45,6 +47,10 @@ def test_anonymous_profile_supports_multiple_resume_and_project_assets() -> None
     assert "apiFetch('/api/resumes/parse'" not in script
     assert "apiFetch('/api/profile/projects'" in script
     assert "apiFetch('/api/profile/projects/github'" in script
+    assert "data.append('responsibility', profileProjectResponsibility.value.trim())" in script
+    assert "responsibility: profileProjectResponsibility.value.trim()" in script
+    assert "readProfileProjectFileList(files)" in script
+    assert "updateProfileProjectProgress('error'" in script
     assert "/selection`" in script
     assert "method: 'DELETE'" in script
     assert "getStructuredResume(selected)" in script
@@ -78,15 +84,29 @@ def test_project_interpretation_page_uses_profile_analysis_contract() -> None:
 
     for element_id in (
         "projectFiles",
+        "projectResponsibility",
+        "projectResponsibilityPanel",
+        "projectResponsibilityEdit",
+        "projectResponsibilitySave",
         "projectGithubUrl",
         "projectAssetList",
         "projectAnalyzeButton",
         "projectArchitecture",
         "projectRequestFlow",
+        "projectInterviewIntro",
+        "projectFlowReviewState",
+        "projectFlowReviewSummary",
+        "projectFlowIssues",
+        "projectFlowAssumptions",
+        "projectFlowToVerify",
         "projectTechnologyChoices",
         "projectRisks",
         "projectImprovements",
         "projectQuestionList",
+        "projectQuestionStatus",
+        "projectMoreQuestions",
+        "projectRegenerateQuestions",
+        "projectProgressSteps",
     ):
         assert f'id="{element_id}"' in page
 
@@ -97,6 +117,26 @@ def test_project_interpretation_page_uses_profile_analysis_contract() -> None:
     assert "/selection`" in script
     assert "/analysis`" in script
     assert "refresh: Boolean(refresh)" in script
+    assert "data.append('responsibility', elements.responsibility.value.trim())" in script
+    assert "responsibility: elements.responsibility.value.trim()" in script
+    assert "method: 'PATCH'" in script and "responsibility" in script
+    assert "/analysis/stream`" in script
+    assert "response.body.getReader()" in script
+    assert "event?.type === 'progress'" in script
+    assert "ANALYSIS_PROGRESS_STAGES" in script
+    assert "%" not in page
+    assert "analysis.interview_intro" in script
+    assert "analysis.request_flow_review" in script
+    assert "未从当前项目快照验证出完整请求链路" in script
+    assert "input[data-responsibility-text]:checked" in script
+    assert "/questions`" in script
+    assert "generateProjectQuestions('more')" in script
+    assert "generateProjectQuestions('regenerate')" in script
+    assert "questionsBusy" in script
+    assert "questionFingerprint" in script
+    assert "evidence.length === 0" in script
+    assert "project-question-evidence" in script
+    assert "isSkillRuleText" in script
     assert "source.suggested_answer" in script
     assert "展开参考思路" in script
     assert "不使用项目" in script
@@ -107,6 +147,9 @@ def test_project_interpretation_page_uses_profile_analysis_contract() -> None:
     assert "完成回答" in script
     assert "formatSeconds(elapsedPracticeSeconds" in script
     assert "@media (max-width: 720px)" in style
+    assert ".project-progress-steps" in style
+    assert ".project-flow-review" in style
+    assert ".project-question-toolbar" in style
 
 
 def test_quick_practice_does_not_display_question_bank_source_copy() -> None:

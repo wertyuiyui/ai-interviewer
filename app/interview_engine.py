@@ -24,6 +24,7 @@ from .prompt_engine import (
     extract_anchor_keyword,
     initial_question,
     interview_drill_target,
+    is_internal_interview_instruction,
     is_vague_answer,
     select_questions,
     select_server_questions,
@@ -744,6 +745,8 @@ class InterviewEngine:
                 theme_markers.add(marker)
 
         proposed = str(candidate or "").strip()
+        if is_internal_interview_instruction(proposed):
+            proposed = ""
         answer_anchored = bool(
             proposed
             and clean_anchor
@@ -1187,6 +1190,13 @@ class InterviewEngine:
         question: str, company: str, *, language_mode: str = "bilingual"
     ) -> str:
         question = re.sub(r"```.*?```", "", question, flags=re.S)
+        if is_internal_interview_instruction(question):
+            question = (
+                "In the project you just described, walk me through one real request "
+                "across the part you personally implemented."
+                if language_mode == "en"
+                else "结合你刚才介绍的项目，请沿着一次真实请求说明你本人负责部分的完整处理链路。"
+            )
         if language_mode == "en":
             question = re.sub(
                 r"^(?:(?:okay|great|very good|thank you(?: for sharing)?|"

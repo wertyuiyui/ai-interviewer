@@ -1,0 +1,197 @@
+.practice-coding-notice {
+  grid-column: 1 / -1;
+  padding: 13px 15px;
+  border: 1px solid #bed9cd;
+  border-radius: 11px;
+  color: #245b49;
+  background: #f0faf6;
+}
+
+.practice-coding-notice strong { font-size: 10px; }
+
+.practice-coding-notice p {
+  margin: 5px 0 0;
+  color: #617c72;
+  font-size: 8px;
+  line-height: 1.65;
+}
+
+.practice-drill-type { grid-column: 1 / -1; }
+.practice-drill-type .segmented label { flex: 1; }
+.practice-drill-type .segmented span { text-align: center; }
+
+.is-coding-drill label[for="practiceTopic"],
+.is-coding-drill #practiceInterviewType,
+.is-coding-drill #practiceAnswerMode { display: none; }
+
+.is-coding-session .answer-mode-switch { display: none; }
+
+.is-coding-session .practice-answer-input textarea {
+  min-height: 330px;
+  tab-size: 2;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre;
+}
+
+.is-coding-session .practice-question-card h1 { font-size: clamp(20px, 2.6vw, 28px); }
+
+.practice-mistake-book {
+  grid-column: 1 / -1;
+  padding: 15px;
+  border: 1px solid #dfe3eb;
+  border-radius: 12px;
+  background: #f8f9fc;
+}
+
+.practice-mistake-book > header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.practice-mistake-book > header span,
+.practice-mistake-book > header h3 {
+  display: block;
+}
+
+.practice-mistake-book > header div > span {
+  color: #8792a2;
+  font-size: 8px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.practice-mistake-book h3 {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.practice-mistake-count {
+  color: #56709d;
+  font-size: 8px;
+}
+
+.practice-mistake-book > p {
+  margin: 8px 0 0;
+  color: #7a8493;
+  font-size: 8px;
+  line-height: 1.65;
+}
+
+.practice-mistake-book ul {
+  max-height: 210px;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.practice-mistake-item {
+  padding: 10px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 10px;
+  align-items: start;
+  border: 1px solid #e1e4e9;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.practice-mistake-item strong,
+.practice-mistake-item small {
+  display: block;
+}
+
+.practice-mistake-item strong {
+  overflow: hidden;
+  font-size: 9px;
+  line-height: 1.55;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.practice-mistake-item small {
+  margin-top: 4px;
+  color: #8a94a2;
+  font-size: 7px;
+  line-height: 1.5;
+}
+
+.practice-mistake-delete {
+  padding: 4px 2px;
+  color: #976e70;
+  background: transparent;
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.practice-mistake-delete:hover { color: var(--red); }
+.practice-mistake-delete:disabled { opacity: .5; cursor: wait; }
+
+.practice-mistake-empty {
+  padding: 14px 10px;
+  color: #9099a6;
+  border: 1px dashed #dde1e7;
+  border-radius: 9px;
+  font-size: 8px;
+  text-align: center;
+}
+
+.practice-progress-track.is-unlimited i {
+  width: 35% !important;
+  animation: practice-unlimited-progress 1.5s ease-in-out infinite alternate;
+}
+
+.question-origin {
+  color: #8b5b25 !important;
+  background: #fff2dc !important;
+  font-weight: 750;
+}
+
+.question-origin.is-ai {
+  color: #4e5797 !important;
+  background: #eeefff !important;
+}
+
+.question-origin.is-review {
+  color: #7b4d4d !important;
+  background: #fff0ee !important;
+}
+
+.practice-question-source {
+  margin: 13px 0 -7px;
+  color: #8b939d;
+  font-size: 8px;
+}
+
+.practice-question-source a {
+  color: #4569a7;
+  text-decoration: none;
+}
+
+.practice-question-source a:hover { text-decoration: underline; }
+
+.practice-answer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@keyframes practice-unlimited-progress {
+  from { transform: translateX(-15%); }
+  to { transform: translateX(200%); }
+}
+
+@media (max-width: 720px) {
+  .practice-coding-notice, .practice-drill-type { grid-column: auto; }
+  .is-coding-session .practice-answer-input textarea { min-height: 280px; }
+  .practice-mistake-book { grid-column: auto; }
+  .practice-answer-actions { width: 100%; flex-direction: column; }
+  .practice-answer-actions button { width: 100%; }
+}

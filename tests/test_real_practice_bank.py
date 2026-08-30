@@ -142,6 +142,22 @@ def test_bank_covers_required_practice_domains() -> None:
     assert by_source["tech-interview-handbook"] >= 8
 
 
+def test_coding_drill_questions_are_real_licensed_and_request_implementation() -> None:
+    coding = [question for question in load_questions() if question["kind"] == "coding"]
+
+    assert [question["id"] for question in coding] == [
+        "tih-coding-001",
+        "tih-coding-002",
+        "tih-coding-003",
+        "tih-coding-004",
+    ]
+    assert all(question["source_id"] == "tech-interview-handbook" for question in coding)
+    assert all(question["license"] == "MIT" for question in coding)
+    assert all(question["authenticity"] == "licensed_bank" for question in coding)
+    assert all("代码或完整伪代码" in question["prompt"]["zh"] for question in coding)
+    assert all("code or complete pseudocode" in question["prompt"]["en"] for question in coding)
+
+
 def test_bank_does_not_embed_restricted_or_synthetic_sources() -> None:
     serialized = json.dumps(
         {
@@ -213,6 +229,15 @@ def test_production_runtime_loads_both_banks_without_public_provenance() -> None
     assert set(public_snapshot).isdisjoint(
         {"provenance", "source_id", "source_path", "revision", "license"}
     )
+    assert public_snapshot["source_type"] == "real"
+    assert public_snapshot["origin_label"] == "真题"
+    assert public_snapshot["source_label"] in {
+        "JavaGuide",
+        "interview-go",
+        "Tech Interview Handbook",
+        "ARIS-in-AI-Offer",
+    }
+    assert public_snapshot["source_url"].startswith("https://github.com/")
 
     for language in ("zh", "en"):
         interview_questions = load_real_interview_question_bank(

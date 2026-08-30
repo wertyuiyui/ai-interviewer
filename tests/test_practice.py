@@ -7,6 +7,7 @@ import sqlite3
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 import app.main as main_module
 from app.config import get_settings
@@ -15,9 +16,12 @@ from app.errors import AppError, LLMError
 from app.interview_engine import InterviewEngine
 from app.practice import (
     PracticeAnswerCreate,
+    PracticeAssessment,
     PracticeHintCreate,
+    PracticeSessionAction,
     PracticeService,
     PracticeSessionCreate,
+    PracticeSkipCreate,
     load_real_question_bank,
 )
 from app.schemas import InterviewCreate, InterviewTurn, ResumeData
@@ -102,6 +106,8 @@ async def test_real_bank_quick_drill_hint_and_repeated_voice_answer(
     assert "source_ids" not in question
     assert "provenance" not in question
     assert "followups" not in question
+    assert question["origin_label"] == "真题"
+    assert question["source_type"] == "real"
 
     hint = await service.hint(
         created["id"],
@@ -233,6 +239,88 @@ def test_production_quick_drill_company_changes_priority_without_claiming_exclus
     ]
 
 
+@pytest.mark.asyncio
+async def test_coding_drill_uses_only_reviewed_real_questions_even_when_infinite(
+    tmp_path,
+) -> None:
+    settings = replace(
+        get_settings(), mock_llm=True, db_path=tmp_path / "coding-practice.db"
+    )
+    database = Database(settings)
+    await database.initialize()
+    service = PracticeService(database, settings)
+    await service.initialize()
+
+    catalog = await service.catalog()
+    assert catalog["coding_question_count"] == 4
+    coding_catalog = next(
+        item for item in catalog["drill_types"] if item["id"] == "coding"
+    )
+    assert coding_catalog["question_count"] == 4
+    assert coding_catalog["judge_mode"] == "review"
+
+    request = PracticeSessionCreate(
+        client_id="coding-drill-client-001",
+        drill_type="coding",
+        interview_type="technical",
+        language_mode="bilingual",
+        difficulty=None,
+        count=None,
+        infinite=True,
+    )
+    selected = service._quick_questions(request, "coding-selection-seed")
+    assert len(selected) == 4
+    assert all(item["kind"] == "coding" for item in selected)
+    assert all(item["origin"] == "real" for item in selected)
+
+    session = await service.create_session(request)
+    assert session["drill_type"] == "coding"
+    for _ in range(7):
+        question = session["current_question"]
+        assert question["kind"] == "coding"
+        assert question["origin"] == "real"
+        result = await service.submit_answer(
+            session["id"],
+            PracticeAnswerCreate(
+                client_id="coding-drill-client-001",
+                question_id=question["id"],
+                answer=(
+                    "def solve(value):\n"
+                    "    # 展示核心状态更新、空输入边界，并在最后说明时间和空间复杂度\n"
+                    "    return value\n"
+                    "时间复杂度按题目要求分析，额外空间只保留必要状态。"
+                ),
+                input_mode="text",
+            ),
+        )
+        assert result["assessment"]["status"] == "scored"
+        session = await service.get_session(
+            session["id"], "coding-drill-client-001"
+        )
+
+    assert all(
+        attempt["question"]["kind"] == "coding"
+        and attempt["question"]["origin"] == "real"
+        for attempt in session["attempts"]
+    )
+
+
+def test_coding_drill_rejects_review_and_hr_modes() -> None:
+    with pytest.raises(ValidationError, match="只支持快速刷题"):
+        PracticeSessionCreate(
+            client_id="coding-invalid-client-001",
+            drill_type="coding",
+            mode="review",
+            source_interview_id="interview-001",
+        )
+    with pytest.raises(ValidationError, match="只支持技术面"):
+        PracticeSessionCreate(
+            client_id="coding-invalid-client-002",
+            drill_type="coding",
+            interview_type="hr",
+        )
+
+
 def test_combined_quick_drill_keeps_behavioral_share_with_technical_filters(
     tmp_path,
 ) -> None:
@@ -354,11 +442,66 @@ async def test_mixed_practice_uses_question_specific_behavioral_and_technical_ru
         db_path=tmp_path / "rubric.db",
     )
     recorder = RecordingAssessmentClient()
+    database = Database(settings)
+    await database.initialize()
+
+    def seed_profile(connection: sqlite3.Connection) -> None:
+        connection.executescript(
+            """
+            CREATE TABLE profile_projects (
+                id TEXT PRIMARY KEY, client_id TEXT NOT NULL, name TEXT NOT NULL,
+                responsibility TEXT NOT NULL, selected INTEGER NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE profile_resumes (
+                client_id TEXT NOT NULL, name TEXT NOT NULL,
+                parsed_resume_json TEXT NOT NULL, created_at TEXT NOT NULL
+            );
+            """
+        )
+        connection.execute(
+            "INSERT INTO profile_projects VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "profile-project-001",
+                "practice-profile-001",
+                "订单服务",
+                "负责库存扣减链路和 Redis 缓存一致性",
+                1,
+                "2026-08-30T00:00:00Z",
+            ),
+        )
+        connection.execute(
+            "INSERT INTO profile_resumes VALUES (?, ?, ?, ?)",
+            (
+                "practice-profile-001",
+                "后端实习简历",
+                json.dumps(
+                    {
+                        "项目": [
+                            {
+                                "name": "订单服务",
+                                "role": "后端开发",
+                                "technologies": ["Java", "Redis", "MySQL"],
+                                "highlights": ["实现库存扣减与缓存失效"],
+                                "metrics": [],
+                            }
+                        ],
+                        "实习经历": [],
+                        "技能": ["Java", "Redis"],
+                    },
+                    ensure_ascii=False,
+                ),
+                "2026-08-30T00:00:00Z",
+            ),
+        )
+        connection.commit()
+
+    await database._run(seed_profile)
     service = PracticeService(
-        Database(settings), settings, client=recorder  # type: ignore[arg-type]
+        database, settings, client=recorder  # type: ignore[arg-type]
     )
 
-    await service._assess(
+    behavioral_assessment = await service._assess(
         question={
             "id": "behavioral-in-mixed",
             "kind": "behavioral",
@@ -370,6 +513,7 @@ async def test_mixed_practice_uses_question_specific_behavioral_and_technical_ru
         language_mode="zh",
         company="bytedance",
         interview_type="technical_hr",
+        client_id="practice-profile-001",
     )
     behavioral_messages, _ = recorder.calls[-1]
     behavioral_system = behavioral_messages[0]["content"]
@@ -378,7 +522,17 @@ async def test_mixed_practice_uses_question_specific_behavioral_and_technical_ru
     assert "STAR 证据的具体性" in behavioral_system
     assert "价值观、选择逻辑与目标公司/岗位契合度" in behavioral_system
     assert "不得因具体数值本身扣分" in behavioral_system
+    assert "绝不虚构看似真实的技术实现" in behavioral_system
     assert "- 正确性 40%" not in behavioral_system
+    assert behavioral_payload["profile_grounding"]["available"] is True
+    assert behavioral_payload["profile_grounding"]["selected_project"] == {
+        "name": "订单服务",
+        "responsibility": "负责库存扣减链路和 Redis 缓存一致性",
+    }
+    assert behavioral_payload["profile_grounding"]["resumes"][0]["projects"][0][
+        "technologies"
+    ] == ["Java", "Redis", "MySQL"]
+    assert behavioral_assessment.deductions == ["仍需具体补充：补充细节"]
 
     await service._assess(
         question={
@@ -400,6 +554,7 @@ async def test_mixed_practice_uses_question_specific_behavioral_and_technical_ru
     assert "- 正确性 40%" in technical_system
     assert "原理与深度 30%" in technical_system
     assert "STAR 证据的具体性" not in technical_system
+    assert technical_payload["profile_grounding"] == {"available": False}
 
     # Category classification keeps legacy/persisted pure-HR questions on the
     # behavioral rubric even when they do not carry a `kind` field.
@@ -459,6 +614,139 @@ async def test_scoring_outage_is_unscored_never_default_five(tmp_path) -> None:
     assert assessment["status"] == "unscored"
     assert assessment["evidence"] == []
     assert assessment["key_points"] == []
+    assert await service.mistakes("practice-unscored-001") == []
+
+
+def test_zero_score_moves_negative_strengths_to_deductions() -> None:
+    assessment = PracticeAssessment.model_validate(
+        {
+            "score": 0,
+            "scorable": True,
+            "status": "scored",
+            "evidence": [],
+            "strengths": ["未完成核心机制说明", "没有给出任何边界条件"],
+            "deductions": [],
+            "better_answer": "先解释核心机制，再给出边界条件。",
+            "key_points": ["核心机制"],
+            "next_steps": [],
+        }
+    )
+
+    assert assessment.strengths == []
+    assert assessment.deductions == ["未完成核心机制说明", "没有给出任何边界条件"]
+
+
+@pytest.mark.asyncio
+async def test_infinite_skip_finish_and_mistake_book_lifecycle(tmp_path) -> None:
+    question_dir = tmp_path / "questions"
+    write_bank(question_dir)
+    settings = replace(get_settings(), mock_llm=True, db_path=tmp_path / "infinite.db")
+    database = Database(settings)
+    await database.initialize()
+    service = PracticeService(database, settings, question_dir=question_dir)
+    await service.initialize()
+
+    finite = await service.create_session(
+        PracticeSessionCreate(
+            client_id="practice-mistake-001",
+            company="bytedance",
+            language_mode="zh",
+            count=1,
+        )
+    )
+    low = await service.submit_answer(
+        finite["id"],
+        PracticeAnswerCreate(
+            client_id="practice-mistake-001",
+            question_id=finite["current_question"]["id"],
+            answer="不知道。",
+        ),
+    )
+    assert low["assessment"]["score"] <= 6
+    mistakes = await service.mistakes("practice-mistake-001")
+    assert len(mistakes) == 1
+    assert mistakes[0]["latest_deductions"]
+
+    infinite = await service.create_session(
+        PracticeSessionCreate(
+            client_id="practice-mistake-001",
+            company="bytedance",
+            language_mode="zh",
+            count=None,
+            infinite=True,
+        )
+    )
+    assert infinite["infinite"] is True
+    assert infinite["total_questions"] is None
+    assert infinite["current_question"]["from_mistake_book"] is True
+    skipped = await service.skip(
+        infinite["id"],
+        PracticeSkipCreate(
+            client_id="practice-mistake-001",
+            question_id=infinite["current_question"]["id"],
+        ),
+    )
+    assert skipped["done"] is False
+    assert skipped["next_question"] is not None
+    assert len(await service.mistakes("practice-mistake-001")) == 1
+
+    finished = await service.finish(
+        infinite["id"], PracticeSessionAction(client_id="practice-mistake-001")
+    )
+    assert finished["status"] == "completed"
+    # Manual finish is deliberately idempotent.
+    assert (
+        await service.finish(
+            infinite["id"], PracticeSessionAction(client_id="practice-mistake-001")
+        )
+    )["status"] == "completed"
+    with pytest.raises(AppError) as caught:
+        await service.skip(
+            infinite["id"],
+            PracticeSkipCreate(
+                client_id="practice-mistake-001",
+                question_id=skipped["next_question"]["id"],
+            ),
+        )
+    assert caught.value.code == "PRACTICE_FINISHED"
+
+    await service.delete_mistake(mistakes[0]["id"], "practice-mistake-001")
+    assert await service.mistakes("practice-mistake-001") == []
+
+
+@pytest.mark.asyncio
+async def test_infinite_mode_periodically_appends_explicit_ai_question(tmp_path) -> None:
+    settings = replace(get_settings(), mock_llm=True, db_path=tmp_path / "infinite-ai.db")
+    database = Database(settings)
+    await database.initialize()
+    service = PracticeService(database, settings)
+    await service.initialize()
+    session = await service.create_session(
+        PracticeSessionCreate(
+            client_id="practice-infinite-ai-001",
+            language_mode="zh",
+            count=1,
+            infinite=True,
+        )
+    )
+    question = session["current_question"]
+    result = None
+    for _ in range(4):
+        result = await service.submit_answer(
+            session["id"],
+            PracticeAnswerCreate(
+                client_id="practice-infinite-ai-001",
+                question_id=question["id"],
+                answer="我会说明核心机制、请求链路、故障边界、观测指标以及方案取舍。",
+            ),
+        )
+        assert result["done"] is False
+        question = result["next_question"]
+    assert result is not None
+    assert question["origin_label"] == "AI出题"
+    assert question["source_type"] == "ai"
+    assert question["source_label"] == "AI 仿真生成"
+    assert "source_url" not in question
 
 
 @pytest.mark.asyncio
@@ -545,6 +833,20 @@ async def test_practice_rest_api_contract(tmp_path, monkeypatch) -> None:
         )
         assert history.status_code == 200
         assert history.json()["items"][0]["id"] == payload["id"]
+
+        mistakes = await client.get(
+            "/api/practice/mistakes",
+            params={"client_id": "practice-api-client"},
+        )
+        assert mistakes.status_code == 200
+        assert len(mistakes.json()["items"]) == 1
+        mistake_id = mistakes.json()["items"][0]["id"]
+        deleted = await client.delete(
+            f"/api/practice/mistakes/{mistake_id}",
+            params={"client_id": "practice-api-client"},
+        )
+        assert deleted.status_code == 200
+        assert deleted.json() == {"deleted": True}
 
 
 def test_practice_voice_route_requires_session_ownership() -> None:

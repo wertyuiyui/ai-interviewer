@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 import httpx
@@ -90,18 +91,25 @@ async def test_profile_routes_project_analysis_and_interview_snapshot(
 
         project_response = await client.post(
             "/api/profile/projects",
-            data={"client_id": client_id, "name": "订单服务"},
+            data={
+                "client_id": client_id,
+                "name": "订单服务",
+                "responsibility": "负责订单入口、幂等校验和失败补偿",
+            },
             files=[
                 ("files", ("README.md", "# 订单服务\n处理创建订单请求。", "text/markdown")),
                 ("files", ("main.py", "def create_order():\n    return True\n", "text/x-python")),
+                ("files", ("db.py", "def save_order():\n    return True\n", "text/x-python")),
             ],
         )
         assert project_response.status_code == 201
         project = project_response.json()["project"]
         assert {item["path"] for item in project["files"]} == {
             "README.md",
+            "db.py",
             "main.py",
         }
+        assert project["responsibility"] == "负责订单入口、幂等校验和失败补偿"
 
         selected = await client.patch(
             f"/api/profile/projects/{project['id']}/selection",
@@ -110,12 +118,90 @@ async def test_profile_routes_project_analysis_and_interview_snapshot(
         assert selected.status_code == 200
         assert selected.json()["selected_project_id"] == project["id"]
 
-        analyzed = await client.post(
+        async with client.stream(
+            "POST",
+            f"/api/profile/projects/{project['id']}/analysis/stream",
+            json={"client_id": client_id, "refresh": True},
+        ) as analyzed:
+            assert analyzed.status_code == 200
+            assert analyzed.headers["content-type"].startswith("application/x-ndjson")
+            analysis_events = [
+                json.loads(line) async for line in analyzed.aiter_lines() if line
+            ]
+        assert analysis_events[0] == {
+            "type": "progress",
+            "stage": "reading",
+            "progress": 10,
+            "message": "正在读取项目文件",
+        }
+        assert analysis_events[-1]["type"] == "complete"
+        assert analysis_events[-1]["progress"] == 100
+        analysis = analysis_events[-1]["result"]["analysis"]
+        assert analysis["interview_questions"]
+        assert analysis["interview_intro"]
+        assert analysis["request_flow_review"]["status"] in {
+            "verified",
+            "partial",
+            "needs_verification",
+        }
+        assert all(item["evidence"] for item in analysis["interview_questions"])
+        assert [
+            event["progress"] for event in analysis_events if event["type"] == "progress"
+        ] == sorted(
+            event["progress"]
+            for event in analysis_events
+            if event["type"] == "progress"
+        )
+
+        updated = await client.patch(
+            f"/api/profile/projects/{project['id']}",
+            json={
+                "client_id": client_id,
+                "responsibility": "负责库存预占与订单失败补偿",
+            },
+        )
+        assert updated.status_code == 200
+        assert updated.json()["project"]["responsibility"] == "负责库存预占与订单失败补偿"
+
+        analyzed_after_update = await client.post(
             f"/api/profile/projects/{project['id']}/analysis",
             json={"client_id": client_id, "refresh": False},
         )
-        assert analyzed.status_code == 200
-        assert analyzed.json()["analysis"]["interview_questions"]
+        assert analyzed_after_update.status_code == 200
+        analysis = analyzed_after_update.json()["analysis"]
+        assert "库存预占与订单失败补偿" in analysis["interview_intro"]
+
+        more_questions = await client.post(
+            f"/api/profile/projects/{project['id']}/questions",
+            json={
+                "client_id": client_id,
+                "mode": "more",
+                "existing_questions": [
+                    item["question"] for item in analysis["interview_questions"]
+                ],
+                "count": 3,
+            },
+        )
+        assert more_questions.status_code == 200
+        more_payload = more_questions.json()
+        assert more_payload["mode"] == "more"
+        assert more_payload["generated_count"] == 3
+        assert all(item["evidence"] for item in more_payload["questions"])
+
+        regenerated = await client.post(
+            f"/api/profile/projects/{project['id']}/questions",
+            json={
+                "client_id": client_id,
+                "mode": "regenerate",
+                "existing_questions": [
+                    item["question"] for item in more_payload["questions"]
+                ],
+                "count": 3,
+            },
+        )
+        assert regenerated.status_code == 200
+        assert regenerated.json()["mode"] == "regenerate"
+        assert regenerated.json()["generated_count"] == 3
 
         unauthorized = await client.post(
             f"/api/profile/projects/{project['id']}/analysis",
@@ -123,6 +209,23 @@ async def test_profile_routes_project_analysis_and_interview_snapshot(
                 headers={"X-Profile-Key": "different-client-0000001"},
         )
         assert unauthorized.status_code == 404
+
+        missing_stream = await client.post(
+            "/api/profile/projects/missing-project/analysis/stream",
+            json={"client_id": client_id, "refresh": False},
+        )
+        missing_events = [
+            json.loads(line) for line in missing_stream.text.splitlines() if line
+        ]
+        assert missing_stream.status_code == 200
+        assert missing_events[-1] == {
+            "type": "error",
+            "error": {
+                "code": "PROFILE_PROJECT_NOT_FOUND",
+                "message": "项目不存在",
+                "details": {},
+            },
+        }
 
         project_without_capability = await client.post(
             "/api/interviews",
@@ -158,10 +261,14 @@ async def test_profile_routes_project_analysis_and_interview_snapshot(
         assert created.status_code == 201
         assert created.json()["profile_project_id"] == project["id"]
         stored = await database.get_interview(created.json()["id"])
-        uploaded = stored["resume"]["项目"][-1]
+        uploaded = stored["resume"]["项目"][0]
         assert uploaded["name"].startswith("[匿名 Profile 项目]")
-        assert any("项目材料建议追问" in item for item in uploaded["highlights"])
+        assert uploaded["role"] == "负责库存预占与订单失败补偿"
+        assert any("架构模块" in item for item in uploaded["highlights"])
+        assert any("请求链路" in item for item in uploaded["highlights"])
         assert all("建议回答" not in item for item in uploaded["highlights"])
+        assert all("system prompt" not in item for item in uploaded["highlights"])
+        assert all("服务端必须" not in item for item in uploaded["highlights"])
 
         github = await client.post(
             "/api/profile/projects/github",
@@ -169,6 +276,7 @@ async def test_profile_routes_project_analysis_and_interview_snapshot(
                 "client_id": client_id,
                 "name": "Go 网关",
                 "url": "https://github.com/example/gateway",
+                "responsibility": "负责限流与链路追踪",
             },
         )
         assert github.status_code == 201
@@ -176,6 +284,7 @@ async def test_profile_routes_project_analysis_and_interview_snapshot(
             "README.md",
             "cmd/server.go",
         }
+        assert github.json()["project"]["responsibility"] == "负责限流与链路追踪"
 
         deleted = await client.delete(
             f"/api/profile/projects/{project['id']}",
