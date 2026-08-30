@@ -39,6 +39,15 @@
 
 ## 变更日志
 
+### INTERVIEW-006 · 2026-08-30 · 面试退出不留档
+
+- Agent：`/root`；只读审计：`/root/profile_exit_audit`。
+- 状态：`completed`。
+- 摘要：面试操作区新增直接【退出】，与会生成报告的“提前结束面试”明确区分。退出会停止麦克风、音频和重连，不发送 `interview.end`，而是复用已有带匿名设备归属校验的单场删除 API，级联删除本场问答后清除浏览器当前场次并返回首页；因此不生成报告、不进入 Profile 历史或弱项记忆，也不占当日场次。选错简历弹窗的退出同样改用该语义。只有 32 位小写十六进制场次 ID 才可发起删除，避免空值或 `.` 等路径归一化误命中“清空全部历史”；删除失败时留页并要求重试，不假称已舍弃。
+- 实际文件：`public/interview.html`、`public/js/interview.js`、`tests/test_api.py`、`tests/test_frontend_interview_controls.py`、`tests/test_frontend_audio_ui.py`、`process.md`。
+- 验证：退出/API/音频专项 `13 passed`；扩大 API/面试/Profile 专项 `25 passed`；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `256 passed`；`node --check public/js/interview.js`、`git diff --check` 通过。测试覆盖跨设备删除被拒绝、active 场次及已有 turn 级联删除、历史/弱项/当日额度为空、选错简历复用和非法 ID 拦截。
+- 风险或后续：退出按用户要求为不可恢复舍弃；低概率的“删除已提交但响应丢失”会留页提示重试，不会自动跳转。未进行真实浏览器像素回归；移动端操作区已有换行规则。
+
 ### DEPLOY-017 · 2026-08-30 · 简历识别稳定性修复生产发布
 
 - Agent：`/root`。

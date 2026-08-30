@@ -93,7 +93,7 @@ def test_interviewer_voice_playback_toggle_is_local_only() -> None:
 def test_interview_script_cache_busts_answer_controls() -> None:
     html = (ROOT / "public" / "interview.html").read_text(encoding="utf-8")
     script = (ROOT / "public" / "js" / "interview.js").read_text(encoding="utf-8")
-    assert "/js/interview.js?v=20260830-stage-flow-v1" in html
+    assert "/js/interview.js?v=20260830-exit-v1" in html
     assert "/assets/app.css?v=20260830-stage-flow-v1" in html
     assert 'id="unknownButton"' in html
     assert 'id="advanceStageButton"' in html
@@ -125,6 +125,27 @@ def test_resume_mismatch_can_exit_to_home_and_clear_selected_session() -> None:
     exit_block = script.split("function exitForResumeMismatch()", 1)[1].split(
         "function handleCaptureState", 1
     )[0]
-    assert "setCurrentSession(null)" in exit_block
-    assert "type: 'interview.end'" in exit_block
-    assert "location.assign('/')" in exit_block
+    assert "discardInterview()" in exit_block
+    assert "interview.end" not in exit_block
+
+
+def test_exit_discards_interview_without_profile_history() -> None:
+    html = (ROOT / "public" / "interview.html").read_text(encoding="utf-8")
+    script = (ROOT / "public" / "js" / "interview.js").read_text(encoding="utf-8")
+
+    assert 'id="exitButton"' in html
+    assert "不生成报告" in html
+    assert "不计入个人档案" in html
+    discard = script.split("async function discardInterview()", 1)[1].split(
+        "function submitText", 1
+    )[0]
+    assert "setCurrentSession(null)" in discard
+    assert "/api/history/${encodeURIComponent(sessionId)}" in discard
+    assert "method: 'DELETE'" in discard
+    assert "type: 'interview.end'" not in discard
+    assert "if (!/^[a-f0-9]{32}$/.test(sessionId))" in discard
+    assert discard.index("/^[a-f0-9]{32}$/") < discard.index("await apiFetch")
+    assert discard.index("await apiFetch") < discard.rindex("setCurrentSession(null)")
+    assert "未能舍弃本场" in discard
+    assert "location.replace('/')" in discard
+    assert "elements.exitButton.addEventListener('click', discardInterview)" in script

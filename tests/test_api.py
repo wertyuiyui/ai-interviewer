@@ -189,6 +189,61 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
 
 
 @pytest.mark.asyncio
+async def test_active_interview_can_be_discarded_without_history_or_quota(
+    tmp_path, monkeypatch
+) -> None:
+    settings = replace(
+        get_settings(),
+        mock_llm=True,
+        voice_mode="L3",
+        db_path=tmp_path / "discard-interview.db",
+        daily_interview_limit=20,
+        client_daily_interview_limit=5,
+    )
+    database = Database(settings)
+    await database.initialize()
+    engine = InterviewEngine(database, settings)
+    monkeypatch.setattr(main_module, "db", database)
+    monkeypatch.setattr(main_module, "interview_engine", engine)
+    client_id = "discard-client-001"
+    created = await engine.create(
+        InterviewCreate(
+            client_id=client_id,
+            company="bytedance",
+            resume=ResumeData(
+                项目=[Project(name="订单服务", technologies=["Java", "MySQL"])]
+            ),
+        )
+    )
+    await database.start_interview(created["id"])
+    await engine.answer(created["id"], "我负责订单链路和事务边界。")
+    assert await database.interview_count_today(client_id) == 1
+
+    transport = httpx.ASGITransport(app=main_module.app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as client:
+        rejected = await client.delete(
+            f"/api/history/{created['id']}",
+            params={"client_id": "another-client-001"},
+        )
+        assert rejected.status_code == 404
+        assert await database.get_interview(created["id"]) is not None
+        discarded = await client.delete(
+            f"/api/history/{created['id']}", params={"client_id": client_id}
+        )
+        assert discarded.status_code == 200
+        assert discarded.json() == {"deleted": True}
+        assert (await client.get(f"/api/interviews/{created['id']}")).status_code == 404
+        history = await client.get("/api/history", params={"client_id": client_id})
+        assert history.json() == {"items": [], "weak_topics": []}
+
+    assert await database.get_interview(created["id"]) is None
+    assert await database.list_turns(created["id"]) == []
+    assert await database.interview_count_today(client_id) == 0
+
+
+@pytest.mark.asyncio
 async def test_cancelled_accepted_text_answer_is_preserved_without_fake_score(
     tmp_path, monkeypatch
 ) -> None:

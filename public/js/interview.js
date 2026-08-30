@@ -26,6 +26,7 @@ const elements = {
   endMessage: $('#endMessage'),
   endOverlay: $('#endOverlay'),
   endTitle: $('#endTitle'),
+  exitButton: $('#exitButton'),
   hintButton: $('#hintButton'),
   hintMeta: $('#hintMeta'),
   hintPanel: $('#hintPanel'),
@@ -1098,15 +1099,7 @@ function maybeShowResumeMismatch(event = {}) {
 }
 
 function exitForResumeMismatch() {
-  intentionallyClosed = true;
-  phase = 'ending';
-  setCurrentSession(null);
-  sendJson({ type: 'interview.end', reason: 'manual' });
-  disableMicrophoneCapture({ explicit: true, notify: true });
-  invalidateAudioPlayback();
-  socket?.close();
-  audio?.close();
-  location.assign('/');
+  discardInterview();
 }
 
 function handleCaptureState(event = {}) {
@@ -1434,6 +1427,7 @@ function handleEnded(event = {}) {
   elements.messageInput.disabled = true;
   elements.send.disabled = true;
   elements.endButton.disabled = true;
+  elements.exitButton.disabled = true;
   elements.hintButton.disabled = true;
   clearInterval(answerClockTimer);
   answerClockTimer = 0;
@@ -1869,6 +1863,7 @@ async function finishInterview(reason = 'manual') {
   elements.messageInput.disabled = true;
   elements.send.disabled = true;
   elements.endButton.disabled = true;
+  elements.exitButton.disabled = true;
   elements.hintButton.disabled = true;
   clearInterval(answerClockTimer);
   answerClockTimer = 0;
@@ -1908,6 +1903,53 @@ async function finishInterview(reason = 'manual') {
     showToast(error.message, 'error');
     setTimeout(() => location.assign(`/report?session=${encodeURIComponent(sessionId)}`), 1600);
   }
+}
+
+async function discardInterview() {
+  if (['ending', 'ended'].includes(phase)) return;
+  if (!/^[a-f0-9]{32}$/.test(sessionId)) {
+    setCurrentSession(null);
+    location.replace('/');
+    return;
+  }
+  intentionallyClosed = true;
+  localFinishSent = true;
+  phase = 'ending';
+  clearTimeout(reconnectTimer);
+  clearInterval(heartbeatTimer);
+  clearInterval(timerInterval);
+  clearInterval(captureWatchdogTimer);
+  clearInterval(answerClockTimer);
+  expectCandidateAudio(false);
+  elements.messageInput.disabled = true;
+  elements.send.disabled = true;
+  elements.endButton.disabled = true;
+  elements.exitButton.disabled = true;
+  elements.hintButton.disabled = true;
+  elements.unknownButton.disabled = true;
+  elements.advanceStageButton.disabled = true;
+  setConnection('warning', '正在退出');
+  disableMicrophoneCapture({ explicit: true, notify: true });
+  invalidateAudioPlayback();
+  socket?.close();
+  const exitingAudio = audio;
+  audio = null;
+  exitingAudio?.close();
+  try {
+    await apiFetch(`/api/history/${encodeURIComponent(sessionId)}?client_id=${encodeURIComponent(getClientId())}`, {
+      method: 'DELETE',
+      timeout: 5_000,
+    });
+  } catch (error) {
+    console.warn('[interview.exit] discard failed', error);
+    phase = 'error';
+    elements.exitButton.disabled = false;
+    setConnection('error', '退出失败');
+    showToast('未能舍弃本场，请点击“退出”重试。', 'error', 6000);
+    return;
+  }
+  setCurrentSession(null);
+  location.replace('/');
 }
 
 function submitText(event) {
@@ -2104,6 +2146,7 @@ elements.rawCaptureToggle.addEventListener('change', switchMicrophoneDevice);
 elements.hintButton.addEventListener('click', requestHint);
 elements.unknownButton.addEventListener('click', submitUnknown);
 elements.advanceStageButton.addEventListener('click', advanceInterviewStage);
+elements.exitButton.addEventListener('click', discardInterview);
 $('#closeHint').addEventListener('click', () => elements.hintPanel.classList.add('is-hidden'));
 elements.endButton.addEventListener('click', () => {
   if (typeof elements.endDialog.showModal === 'function') elements.endDialog.showModal();
