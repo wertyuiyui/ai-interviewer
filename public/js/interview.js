@@ -16,6 +16,7 @@ const elements = {
   avatar: $('#avatarScene'),
   answerTimeGuide: $('#answerTimeGuide'),
   answerTimeValue: $('#answerTimeValue'),
+  advanceStageButton: $('#advanceStageButton'),
   company: $('#companyChip'),
   connection: $('#connectionState'),
   endButton: $('#endButton'),
@@ -56,6 +57,7 @@ const elements = {
   send: $('#sendButton'),
   startAnswer: $('#startAnswerButton'),
   stageHint: $('#stageHint'),
+  stageList: $('#interviewStageList'),
   stageTitle: $('#stageTitle'),
   stress: $('#stressChip'),
   stressLabel: $('#stressLabel'),
@@ -132,6 +134,7 @@ let interviewerAudioStreamActive = false;
 let interviewerAudioSuppressedUntilStreamEnd = false;
 let hintLoading = false;
 let resumeMismatchPrompted = false;
+let interviewStage = null;
 const hintedQuestions = new Map();
 const partialTurns = new Map();
 const candidateTurns = new Map();
@@ -151,7 +154,29 @@ function updateHintAvailability() {
   const answerOpen = ['ready', 'answering'].includes(answerState);
   elements.hintButton.disabled = phase !== 'live' || !answerOpen || answerPending || !questionReady || !currentQuestion || hintLoading || level >= 2;
   elements.unknownButton.disabled = phase !== 'live' || !answerOpen || answerPending || !questionReady || !currentQuestion;
+  const canAdvance = Boolean(interviewStage?.can_skip && interviewStage?.next_stage);
+  elements.advanceStageButton.classList.toggle('is-hidden', !canAdvance);
+  elements.advanceStageButton.disabled = !canAdvance || phase !== 'live' || answerPending || answerState !== 'ready' || !questionReady;
+  elements.advanceStageButton.textContent = canAdvance
+    ? `直接进入${interviewStage.next_stage.label}`
+    : '直接进入下一阶段';
   if (!hintLoading) $('.button-label', elements.hintButton).textContent = level >= 2 ? '本题已提示' : (level === 1 ? '进一步提示' : '给我一点提示');
+}
+
+function renderInterviewStage(value) {
+  if (!value || !Array.isArray(value.stages) || !value.stages.length) return;
+  interviewStage = value;
+  elements.stageList.replaceChildren(...value.stages.map((stage, index) => {
+    const item = document.createElement('li');
+    item.className = `is-${stage.status || 'upcoming'}`;
+    const number = document.createElement('span');
+    number.textContent = stage.status === 'completed' ? '✓' : stage.status === 'skipped' ? '↷' : String(index + 1);
+    const label = document.createElement('strong');
+    label.textContent = stage.label || stage.id;
+    item.append(number, label);
+    return item;
+  }));
+  updateHintAvailability();
 }
 
 function inferRecommendedAnswerSeconds(text = '') {
@@ -315,7 +340,7 @@ function startCurrentAnswer() {
   setStage('listening', '正在听你回答', '回答计时已开始；讲完后请点击“结束回答”。');
 }
 
-function finishCurrentAnswer({ allowEmpty = false } = {}) {
+function finishCurrentAnswer({ allowEmpty = false, controlIntent = '' } = {}) {
   if (phase !== 'live' || answerState !== 'answering' || answerPending) return;
   const text = elements.messageInput.value.trim();
   if (!allowEmpty && !text && voiceMode === 'L3') {
@@ -330,6 +355,7 @@ function finishCurrentAnswer({ allowEmpty = false } = {}) {
   const elapsedMs = Math.round(currentAnswerElapsedMs());
   setAnswerState('sealing', { elapsedMs });
   const payload = { type: 'answer.end', elapsed_ms: elapsedMs };
+  if (controlIntent) payload.control_intent = controlIntent;
   if (text) payload.text = text;
   if (!sendJson(payload)) {
     setAnswerState('answering', { elapsedMs });
@@ -1447,6 +1473,7 @@ function handleServerEvent(event) {
       syncAudioUplink();
       if (event.mode || event.voice_mode) setMode(event.mode || event.voice_mode, true);
       if (event.session && typeof event.session === 'object') interview = { ...interview, ...event.session };
+      renderInterviewStage(event.stage || event.session?.stage);
       syncTimer(event.session || event);
       setLive();
       {
@@ -1513,6 +1540,7 @@ function handleServerEvent(event) {
       break;
     case 'interviewer.text.done':
       {
+        renderInterviewStage(event.stage);
         maybeShowResumeMismatch(event);
         const interjection = isPressureInterjection(event);
         const messageId = interviewerMessageId(event);
@@ -1540,6 +1568,9 @@ function handleServerEvent(event) {
           }
         }
       }
+      break;
+    case 'interview.stage.changed':
+      renderInterviewStage(event.stage);
       break;
     case 'interviewer.text.corrected':
     case 'interviewer.text.sync':
@@ -1887,6 +1918,21 @@ function submitText(event) {
   finishCurrentAnswer();
 }
 
+function advanceInterviewStage() {
+  if (!interviewStage?.can_skip || !interviewStage.next_stage || elements.advanceStageButton.disabled) return;
+  const currentLabel = interviewStage.current?.label || '当前阶段';
+  const nextLabel = interviewStage.next_stage.label;
+  if (!window.confirm(`将跳过剩余${currentLabel}，直接进入${nextLabel}。是否继续？`)) return;
+  elements.advanceStageButton.disabled = true;
+  questionReady = false;
+  invalidateAudioPlayback();
+  sendJson({
+    type: 'interview.stage.advance',
+    expected_revision: interviewStage.revision,
+  });
+  setStage('thinking', '正在切换面试阶段', `下一阶段：${nextLabel}`);
+}
+
 function submitUnknown() {
   if (phase !== 'live' || answerPending || !['ready', 'answering'].includes(answerState)) return;
   if (answerState === 'ready') startCurrentAnswer();
@@ -1894,7 +1940,7 @@ function submitUnknown() {
   elements.messageInput.value = interview?.language_mode === 'en'
     ? "I don't know, please move on"
     : '我不知道，请继续下一题';
-  finishCurrentAnswer();
+  finishCurrentAnswer({ controlIntent: 'unknown' });
 }
 
 async function toggleMicrophone() {
@@ -1995,9 +2041,10 @@ async function initialize() {
 
   const company = interview?.company || storedSession?.company || 'bytedance';
   const specialization = String(interview?.specialization || storedSession?.specialization || '通用后端').trim();
-  const interviewType = (interview?.interview_type || storedSession?.interview_type) === 'technical_hr'
+  const interviewTypeValue = interview?.interview_type || storedSession?.interview_type;
+  const interviewType = interviewTypeValue === 'technical_hr'
     ? '技术 / 综合面'
-    : '技术面';
+    : interviewTypeValue === 'hr' ? '综合面' : '技术面';
   const stressLevel = getStressLevel();
   elements.company.textContent = `${companyLabel(company)} · ${specialization} · ${interviewType}`;
   elements.stress.classList.toggle('is-hidden', stressLevel === 0);
@@ -2056,6 +2103,7 @@ elements.microphoneSelect.addEventListener('change', switchMicrophoneDevice);
 elements.rawCaptureToggle.addEventListener('change', switchMicrophoneDevice);
 elements.hintButton.addEventListener('click', requestHint);
 elements.unknownButton.addEventListener('click', submitUnknown);
+elements.advanceStageButton.addEventListener('click', advanceInterviewStage);
 $('#closeHint').addEventListener('click', () => elements.hintPanel.classList.add('is-hidden'));
 elements.endButton.addEventListener('click', () => {
   if (typeof elements.endDialog.showModal === 'function') elements.endDialog.showModal();

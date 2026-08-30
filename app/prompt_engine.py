@@ -432,6 +432,30 @@ def select_server_questions(
         )[:limit]
     else:
         selected = technical[:limit]
+    # Every technical flow has an explicit coding stage. Keep that stage tied
+    # to the same reviewed bank even when company ranking and a short duration
+    # would otherwise place all coding records beyond the shortlist.
+    coding_checkpoint = next(
+        (item for item in technical if item.get("kind") == "coding"), None
+    )
+    if (
+        normalized_type != "hr"
+        and coding_checkpoint is not None
+        and not any(item.get("kind") == "coding" for item in selected)
+    ):
+        replace_at = next(
+            (
+                index
+                for index in range(len(selected) - 1, -1, -1)
+                if selected[index].get("kind")
+                not in {"behavioral", "ai_engineering"}
+            ),
+            None,
+        )
+        if replace_at is None:
+            selected.append(coding_checkpoint)
+        else:
+            selected[replace_at] = coding_checkpoint
     if language_mode == "bilingual":
         return _bilingualize_selected_questions(selected, company)
     return selected
@@ -829,9 +853,8 @@ def build_system_prompt(
             "项目深挖 → 已核验基础题 → 真实行为题 → 反问"
         )
         project_rule = (
-            f"必须围绕简历项目或实习工作按七维下钻至少 3 层：{' / '.join(SEVEN_DRILL_DIMENSIONS)}。"
-            f"本场服务端要求完成 {drill_target} 层项目下钻。抓住候选人上一答中的技术词、"
-            "数字或因果结论作为 anchor_keyword，再问下一层。"
+            f"项目阶段最多覆盖 {drill_target} 个有效深挖点，可从这些维度中按回答择优：{' / '.join(SEVEN_DRILL_DIMENSIONS)}。"
+            "回答提供新的具体事实时再自然追深；部分或模糊回答最多澄清一次，明确不会则关闭当前项目话题并进入下一阶段。"
         )
         hr_behavior_rule = (
             "综合环节只使用下方服务端给出的已核验行为题；结合本科实习候选人的真实经历"
@@ -846,9 +869,8 @@ def build_system_prompt(
             "项目深挖 → 已核验基础题 → 反问"
         )
         project_rule = (
-            f"必须围绕简历项目或实习工作按七维下钻至少 3 层：{' / '.join(SEVEN_DRILL_DIMENSIONS)}。"
-            f"本场服务端要求完成 {drill_target} 层项目下钻。抓住候选人上一答中的技术词、"
-            "数字或因果结论作为 anchor_keyword，再问下一层。"
+            f"项目阶段最多覆盖 {drill_target} 个有效深挖点，可从这些维度中按回答择优：{' / '.join(SEVEN_DRILL_DIMENSIONS)}。"
+            "回答提供新的具体事实时再自然追深；部分或模糊回答最多澄清一次，明确不会则关闭当前项目话题并进入下一阶段。"
         )
         hr_behavior_rule = "本场是技术面，不主动进入价值观、人生规划或薪酬期待等综合面环节。"
         intro_rule = "第一题自我介绍只了解整体和学习状况；听完后另开一题选择项目或实习经历，再进入技术下钻。"

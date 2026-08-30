@@ -104,8 +104,8 @@ async def test_core_contract_matches_real_anchor_and_termination_behavior(tmp_pa
     assert unknown.breakdown_streak == 0
     turns = await database.list_turns(created["id"])
     assert turns[-1].answer == "不知道"
-    assert turns[-1].anchor_keyword == "秒杀服务"
-    assert "不知道" not in turns[-1].anchor_keyword
+    assert turns[-1].anchor_keyword == ""
+    assert unknown.stage["current"]["id"] == "fundamentals"
     assert all(term not in unknown.question for term in ("参考答案", "得分", "扣分", "policy"))
 
     failed_again = await engine.answer(created["id"], "不会")

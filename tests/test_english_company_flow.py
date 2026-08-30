@@ -218,9 +218,14 @@ async def test_mock_combined_interview_keeps_every_candidate_question_english(
         "I would first inspect p99 latency by dependency, trace one slow request, and compare Redis misses, pool wait time, and database execution plans.",
         "I would define p99 over five-minute windows, compare it with the pre-release baseline, and validate the change under the same traffic distribution.",
         "If traffic grew tenfold, the database connection pool and hot keys would fail first, so I would add admission control, shard hot state, and degrade noncritical reads.",
+        "I would explain the mechanism, state the boundary conditions, and validate the claim with a controlled experiment.",
+        "For the coding problem I would define the invariant first, then implement it and test empty and extreme inputs.",
         "I would state the delivery constraint, compare evidence with the team, run a small experiment, and own the result even if my first proposal was rejected.",
+        "The result was a documented decision and a smaller rollout; I would review both the outcome and how I communicated the trade-off.",
         "In five years I want to own reliable backend services, and this internship lets me test that plan through real delivery and feedback.",
         "This semester I track shipped milestones, load-test results, and mentor feedback, then revise the plan at the end of each month.",
+        "I would benchmark comparable internships and the city, then give a range while weighing mentorship and responsibility.",
+        "My evidence would include the role scope and total package, and I would explain which parts are flexible.",
     ]
     questions: list[str] = []
     for answer in answers:
@@ -228,7 +233,7 @@ async def test_mock_combined_interview_keeps_every_candidate_question_english(
         questions.append(result.question)
         assert not re.search(r"[\u3400-\u9fff]", result.question)
         assert not result.ended
-    assert [questions[index] for index in (5, 7, 9)] == [
+    assert [questions[index] for index in (8, 10, 12)] == [
         item["question"] for item in load_hr_question_bank("baidu", "en")
     ]
     assert any("compensation expectations" in question.lower() for question in questions)

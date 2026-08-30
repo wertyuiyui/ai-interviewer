@@ -1746,6 +1746,7 @@ class BrowserVoiceSession:
                 resume_consistency=getattr(result, "resume_consistency", "supported"),
                 resume_mismatch_reason=getattr(result, "resume_mismatch_reason", ""),
                 resume_selection_warning=getattr(result, "resume_selection_warning", False),
+                stage=getattr(result, "stage", {}),
                 recommended_answer_seconds=getattr(
                     result,
                     "recommended_answer_seconds",
@@ -1821,6 +1822,7 @@ class BrowserVoiceSession:
                 resume_consistency=getattr(result, "resume_consistency", "supported"),
                 resume_mismatch_reason=getattr(result, "resume_mismatch_reason", ""),
                 resume_selection_warning=getattr(result, "resume_selection_warning", False),
+                stage=getattr(result, "stage", {}),
                 recommended_answer_seconds=getattr(
                     result,
                     "recommended_answer_seconds",

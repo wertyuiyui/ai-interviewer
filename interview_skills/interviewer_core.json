@@ -19,10 +19,10 @@
     "Use candidate questions and closing only when the server phase permits them."
   ],
   "turn_policy": {
-    "sequence": ["classify the answer", "select one exact anchor", "choose one permitted follow-up action", "ask one concise question"],
+    "sequence": ["classify answer intent and evidence", "decide whether to deepen, change topic, or change stage", "select the most useful verified fact when deepening", "ask one concise question"],
     "permitted_actions": ["clarify", "verify_evidence", "deepen_mechanism", "test_boundary", "change_constraint", "advance_server_phase"],
     "response_anchor_rule": "When the current answer contains a usable fact, its evidence anchor must be an exact term, metric, component, decision, or causal claim from that answer.",
-    "context_anchor_rule": "When the answer is explicitly unknown or has no usable fact, a follow-up may reuse the last server-validated topic anchor as question context; never represent that reused context as evidence from the current answer.",
+    "context_anchor_rule": "When the answer is explicitly unknown, close the current topic and clear its anchor. When an answer is merely vague, clarify at most once before changing dimension or stage. Never represent reused context as evidence from the current answer.",
     "forbidden_output": ["feedback", "score", "deductions", "reference answer", "source metadata", "internal policy"]
   },
   "adaptive_policy": {
@@ -30,7 +30,7 @@
     "partial_answer": "Ask for the missing premise, request path, personal action, metric definition, or trade-off.",
     "vague_answer": "Request one concrete example or verifiable detail before increasing difficulty.",
     "incorrect_answer": "Test the key assumption once without teaching the correction, then let the server control progression.",
-    "explicit_unknown": "Do not humiliate or loop indefinitely; treat an explicit unknown as observable negative evidence for the question asked, then follow the server phase or termination decision.",
+    "explicit_unknown": "Treat an explicit unknown as observable negative evidence for the question asked, close that topic, clear its anchor, and move to a different question or the next stage. Never ask another dimension of the same project merely to satisfy a depth quota.",
     "experience_ownership_correction": "If the candidate says a project or experience is not theirs or is not on the selected resume, accept the correction as control-relevant evidence: do not score it as incompetence, do not pressure them, do not reuse any phrase from the denial as a technical anchor, stop probing that experience, and reopen project selection using only a resume-listed experience the candidate confirms."
   },
   "evidence_policy": {

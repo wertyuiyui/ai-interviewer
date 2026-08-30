@@ -1071,6 +1071,7 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                 await send(
                     "interviewer.text.done",
                     text=interview["last_question"],
+                    stage=interview_engine.stage_snapshot(interview),
                     recommended_answer_seconds=interview_engine.recommended_answer_seconds(
                         str(interview["last_question"])
                     ),
@@ -1130,6 +1131,7 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                     await send("error", code="NOT_READY", message="请先开始面试")
                     continue
                 text = str(event.get("text") or "").strip()
+                control_intent = str(event.get("control_intent") or "").strip()
                 try:
                     if voice_session:
                         await voice_session.handle_answer_end(text)
@@ -1174,6 +1176,7 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                                 interview_id=interview_id,
                                 answer=text,
                                 answer_duration_seconds=duration,
+                                control_intent=control_intent,
                                 send=send,
                                 stop_event=ending,
                                 on_end=finalize,
@@ -1282,6 +1285,51 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                         message="转写修正参数不正确",
                         recoverable=True,
                     )
+            elif event_type == "interview.stage.advance":
+                if not ready:
+                    await send("error", code="NOT_READY", message="请先开始面试")
+                    continue
+                lock = session_locks.setdefault(interview_id, asyncio.Lock())
+                if lock.locked() or any(not task.done() for task in answer_tasks):
+                    await send(
+                        "error",
+                        code="ANSWER_IN_PROGRESS",
+                        message="当前回答仍在处理中，请稍候再切换阶段",
+                        recoverable=True,
+                    )
+                    continue
+                try:
+                    expected = event.get("expected_revision")
+                    advanced = await interview_engine.advance_stage(
+                        interview_id,
+                        expected_revision=int(expected) if expected is not None else None,
+                    )
+                    await send(
+                        "interview.stage.changed",
+                        stage=advanced["stage"],
+                        reason="user_skip",
+                    )
+                    await send(
+                        "interviewer.text.done",
+                        text=advanced["question"],
+                        stage=advanced["stage"],
+                        recommended_answer_seconds=interview_engine.recommended_answer_seconds(
+                            advanced["question"]
+                        ),
+                    )
+                    if voice_session:
+                        await voice_session.announce(
+                            advanced["question"], cancel_current=True
+                        )
+                    await send("answer.state.changed", state="idle")
+                    await send("interviewer.state", state="listening")
+                except (AppError, ValueError, TypeError) as exc:
+                    await send(
+                        "error",
+                        code=exc.code if isinstance(exc, AppError) else "INVALID_STAGE",
+                        message=exc.message if isinstance(exc, AppError) else "阶段参数不正确",
+                        recoverable=True,
+                    )
             elif event_type == "interview.end":
                 reason = str(event.get("reason") or "manual")
                 if not ending.is_set() and not ended.is_set():
@@ -1355,6 +1403,7 @@ async def _handle_text_answer(
     interview_id: str,
     answer: str,
     answer_duration_seconds: float | None = None,
+    control_intent: str = "",
     send: Any,
     stop_event: asyncio.Event,
     on_end: Any,
@@ -1381,6 +1430,7 @@ async def _handle_text_answer(
                 answer,
                 input_mode="text",
                 answer_duration_seconds=answer_duration_seconds,
+                control_intent=control_intent,
             )
             persisted = True
         except asyncio.CancelledError:
@@ -1440,6 +1490,7 @@ async def _handle_text_answer(
             resume_consistency=result.resume_consistency,
             resume_mismatch_reason=result.resume_mismatch_reason,
             resume_selection_warning=result.resume_selection_warning,
+            stage=result.stage,
         )
         if result.ended:
             await on_end(result.end_reason or "poor_performance")
@@ -1516,11 +1567,14 @@ def _public_interview(interview: dict[str, Any]) -> dict[str, Any]:
             "remaining_seconds",
             "ended_at",
             "end_reason",
+            "stage_state",
         )
     }
     result["recommended_answer_seconds"] = interview_engine.recommended_answer_seconds(
         str(interview.get("last_question") or "")
     )
+    result["stage"] = interview_engine.stage_snapshot(interview)
+    result.pop("stage_state", None)
     return result
 
 

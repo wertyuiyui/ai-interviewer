@@ -280,7 +280,8 @@ def test_prompt_contains_non_negotiable_interview_rules() -> None:
         weak_topics=["Redis"],
     )
     assert all(dimension in prompt for dimension in SEVEN_DRILL_DIMENSIONS)
-    assert "至少 3 层" in prompt
+    assert "最多覆盖" in prompt
+    assert "按回答择优" in prompt
     assert "绝不点评" in prompt
     assert "施压的主要方式是更难、更深" in prompt
     assert "不能因为压力等级或轮次自动选择" in prompt
@@ -596,7 +597,10 @@ async def test_combined_interview_separates_intro_and_covers_hr_topics(tmp_path)
         "库存设计和 Redis Lua 脚本是我本人完成的，团队同学负责前端和部署。",
         "请求先到网关，再校验活动状态，用 Lua 原子预扣库存，最后异步写入 MySQL。",
         "我会先确认超时发生在哪一段，再结合日志、指标和链路追踪缩小范围。",
-        "链路追踪会先按 trace id 串起网关、服务和数据库耗时，再用分位数验证瓶颈。",
+        "我会先说明结论，再从协议机制、失败边界和可观测指标回答这道基础题。",
+        "具体机制需要结合状态变化分析，并用对照实验验证，不凭单次日志下结论。",
+        "边界条件包括并发、超时和资源上限，我会分别设计用例验证。",
+        "手撕时我先说明数据结构和循环不变量，再写代码并覆盖空输入、重复值和极端规模。",
         "我看重腾讯业务场景和工程环境，也希望后端能力能在真实用户规模下接受验证。",
         "我调研了团队方向并和学长交流，再按岗位要求补项目，面试反馈可以验证匹配度。",
         "我选择后端是因为喜欢系统问题，未来五年想补齐并发、存储和工程化能力。",
@@ -614,10 +618,10 @@ async def test_combined_interview_separates_intro_and_covers_hr_topics(tmp_path)
     assert "单独聊一段经历" in questions[0]
     assert "价值观" not in questions[0]
     expected_hr = load_hr_question_bank("tencent")
-    assert [questions[index] for index in (5, 7, 9)] == [
+    assert [questions[index] for index in (8, 10, 12)] == [
         item["question"] for item in expected_hr
     ]
-    assert all("证据" in questions[index] for index in (6, 8, 10))
+    assert all("证据" in questions[index] for index in (9, 11, 13))
     reviewed = select_server_questions(
         "tencent",
         [],
@@ -627,17 +631,19 @@ async def test_combined_interview_separates_intro_and_covers_hr_topics(tmp_path)
         language_mode="zh",
         interview_type="technical_hr",
     )
-    reviewed_technical = [
-        item for item in reviewed if item.get("kind") != "behavioral"
+    reviewed_fundamentals = [
+        item for item in reviewed if item.get("kind") not in {"behavioral", "coding"}
     ]
-    assert questions[3] == reviewed_technical[0]["question"]
-    assert questions[11] == reviewed_technical[1]["question"]
+    reviewed_coding = [item for item in reviewed if item.get("kind") == "coding"]
+    assert questions[3] == reviewed_fundamentals[0]["question"]
+    assert questions[5] == reviewed_fundamentals[1]["question"]
+    assert questions[7] == reviewed_coding[0]["question"]
 
     turns = await db.list_turns(created["id"])
     assert turns[0].category == "communication"
     assert turns[0].topic == "自我介绍·整体与学习情况"
     assert [turn.drill_depth for turn in turns[1:4]] == [1, 2, 3]
-    assert [turn.topic for turn in turns[6:12]] == [
+    assert [turn.topic for turn in turns[9:15]] == [
         "综合面·价值观与公司契合",
         "综合面·价值观与公司契合",
         "综合面·人生规划与选择",
@@ -645,7 +651,8 @@ async def test_combined_interview_separates_intro_and_covers_hr_topics(tmp_path)
         "综合面·薪酬期待",
         "综合面·薪酬期待",
     ]
-    assert [turn.drill_depth for turn in turns[4:12]] == [0, 1, 0, 1, 0, 1, 0, 1]
+    assert [turn.drill_depth for turn in turns[4:8]] == [0, 1, 0, 1]
+    assert [turn.drill_depth for turn in turns[9:15]] == [0, 1, 0, 1, 0, 1]
 
     await db.finish_interview(created["id"], "manual")
     history = await ReportEngine(db, settings).generate(created["id"])
@@ -1239,7 +1246,7 @@ async def test_three_layer_drill_early_end_report_and_memory(tmp_path) -> None:
         "请求链路",
     }
     assert any("Redis" in question or "QPS" in question for question in questions[1:])
-    coding = await engine.answer(
+    first_bank = await engine.answer(
         normal["id"],
         "选择 Redis Lua 是因为脚本原子执行，数据库悲观锁在峰值流量下竞争更重。",
     )
@@ -1250,8 +1257,13 @@ async def test_three_layer_drill_early_end_report_and_memory(tmp_path) -> None:
         "通用后端",
         selection_seed=normal["id"],
     )
-    assert coding.question == reviewed_questions[0]["question"]
-    assert reviewed_questions[0]["authenticity"] == "licensed_bank"
+    reviewed_fundamentals = [
+        item
+        for item in reviewed_questions
+        if item.get("kind") not in {"behavioral", "coding"}
+    ]
+    assert first_bank.question == reviewed_fundamentals[0]["question"]
+    assert reviewed_fundamentals[0]["authenticity"] == "licensed_bank"
     turns = await db.list_turns(normal["id"])
     assert turns[-1].drill_depth == 4
     assert turns[-1].category == "project_depth"
@@ -1309,7 +1321,7 @@ async def test_three_layer_drill_early_end_report_and_memory(tmp_path) -> None:
     assert project_depth_target(second["weak_topics"]) == 6
     second_row = await db.get_interview(second["id"])
     assert second_row is not None
-    assert "完成 6 层项目下钻" in second_row["system_prompt"]
+    assert "最多覆盖 6 个有效深挖点" in second_row["system_prompt"]
     if "Redis" in second["weak_topics"]:
         weighted = select_questions("meituan", second["weak_topics"], 15)
         baseline = select_questions("meituan", [], 15)

@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS interviews (
     status TEXT NOT NULL DEFAULT 'created',
     breakdown_streak INTEGER NOT NULL DEFAULT 0,
     last_question TEXT NOT NULL DEFAULT '',
+    stage_state_json TEXT NOT NULL DEFAULT '{}',
     hint_events_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     started_at REAL,
@@ -257,6 +258,11 @@ class Database:
                     "ALTER TABLE interviews ADD COLUMN hint_events_json TEXT "
                     "NOT NULL DEFAULT '[]'"
                 )
+            if "stage_state_json" not in columns:
+                connection.execute(
+                    "ALTER TABLE interviews ADD COLUMN stage_state_json TEXT "
+                    "NOT NULL DEFAULT '{}'"
+                )
             turn_columns = {
                 str(row["name"])
                 for row in connection.execute(
@@ -302,6 +308,7 @@ class Database:
         weak_topics: list[str],
         system_prompt: str,
         initial_question: str,
+        stage_state: dict[str, Any] | None = None,
     ) -> None:
         values = (
             interview_id,
@@ -323,6 +330,7 @@ class Database:
             json.dumps(weak_topics, ensure_ascii=False),
             system_prompt,
             initial_question,
+            json.dumps(stage_state or {}, ensure_ascii=False),
             _utc_iso(),
         )
 
@@ -333,8 +341,9 @@ class Database:
                     id, client_id, company, role, interview_type, specialization,
                     language_mode, stress, stress_level, duration_minutes,
                     memory_enabled, voice_mode, resume_json, style_json,
-                    weak_topics_json, system_prompt, last_question, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    weak_topics_json, system_prompt, last_question,
+                    stage_state_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 values,
             )
@@ -387,6 +396,7 @@ class Database:
         interview_id: str,
         turn: InterviewTurn,
         next_question: str,
+        stage_state: dict[str, Any] | None = None,
     ) -> int:
         def operation(connection: sqlite3.Connection) -> int:
             connection.execute(
@@ -433,15 +443,47 @@ class Database:
             connection.execute(
                 """
                 UPDATE interviews
-                SET breakdown_streak = ?, last_question = ?
+                SET breakdown_streak = ?, last_question = ?,
+                    stage_state_json = COALESCE(?, stage_state_json)
                 WHERE id = ?
                 """,
-                (streak, next_question, interview_id),
+                (
+                    streak,
+                    next_question,
+                    json.dumps(stage_state, ensure_ascii=False)
+                    if stage_state is not None
+                    else None,
+                    interview_id,
+                ),
             )
             connection.commit()
             return streak
 
         return await self._run(operation)
+
+    async def set_interview_stage(
+        self,
+        interview_id: str,
+        *,
+        stage_state: dict[str, Any],
+        question: str,
+    ) -> None:
+        def operation(connection: sqlite3.Connection) -> None:
+            connection.execute(
+                """
+                UPDATE interviews
+                SET stage_state_json = ?, last_question = ?
+                WHERE id = ? AND status IN ('created', 'active')
+                """,
+                (
+                    json.dumps(stage_state, ensure_ascii=False),
+                    question.strip(),
+                    interview_id,
+                ),
+            )
+            connection.commit()
+
+        await self._run(operation)
 
     async def correct_turn_answer(
         self,
@@ -990,6 +1032,11 @@ class Database:
         data["resume"] = json.loads(data.pop("resume_json"))
         data["style"] = json.loads(data.pop("style_json"))
         data["weak_topics"] = json.loads(data.pop("weak_topics_json"))
+        try:
+            stage_state = json.loads(data.pop("stage_state_json", "{}") or "{}")
+        except (TypeError, ValueError, json.JSONDecodeError):
+            stage_state = {}
+        data["stage_state"] = stage_state if isinstance(stage_state, dict) else {}
         try:
             hint_events = json.loads(data.pop("hint_events_json", "[]") or "[]")
         except (TypeError, ValueError, json.JSONDecodeError):

@@ -26,6 +26,7 @@ from .prompt_engine import (
     interview_drill_target,
     is_internal_interview_instruction,
     is_vague_answer,
+    project_followup,
     select_questions,
     select_server_questions,
 )
@@ -51,6 +52,7 @@ class EngineResult:
     resume_consistency: str
     resume_mismatch_reason: str
     resume_selection_warning: bool
+    stage: dict[str, Any]
     turn: InterviewTurn
 
 
@@ -70,6 +72,26 @@ class _BankPhase:
     answered_track: str = ""
     answered_index: int = -1
     answered_followup: bool = False
+
+
+STAGE_LABELS = {
+    "self_intro": "自我介绍",
+    "project_deep_dive": "项目深挖",
+    "fundamentals": "基础与场景题",
+    "coding": "手撕代码",
+    "behavioral": "综合交流",
+    "candidate_questions": "反问",
+}
+
+
+def interview_stage_plan(interview_type: str) -> list[str]:
+    normalized = "technical_hr" if interview_type == "tech_hr" else interview_type
+    if normalized == "hr":
+        return ["self_intro", "behavioral", "candidate_questions"]
+    plan = ["self_intro", "project_deep_dive", "fundamentals", "coding"]
+    if normalized == "technical_hr":
+        plan.append("behavioral")
+    return [*plan, "candidate_questions"]
 
 
 class InterviewEngine:
@@ -134,6 +156,13 @@ class InterviewEngine:
         effective_voice_mode = (
             "L3" if request.answer_mode == "text" else self.settings.voice_mode
         )
+        stage_state = {
+            "plan": interview_stage_plan(request.interview_type),
+            "index": 0,
+            "turn_count": 0,
+            "revision": 1,
+            "history": [],
+        }
         await self.db.create_interview(
             interview_id=interview_id,
             client_id=request.client_id,
@@ -152,6 +181,7 @@ class InterviewEngine:
             weak_topics=weak_topics,
             system_prompt=prompt,
             initial_question=first_question,
+            stage_state=stage_state,
         )
         return {
             "id": interview_id,
@@ -173,7 +203,69 @@ class InterviewEngine:
             "stress_level": request.stress_level,
             "duration_minutes": request.duration_minutes,
             "memory_enabled": request.memory_enabled,
+            "stage": self._stage_snapshot(stage_state),
         }
+
+    @staticmethod
+    def _stage_state(interview: dict[str, Any]) -> dict[str, Any]:
+        raw = interview.get("stage_state") or {}
+        plan = [
+            item for item in raw.get("plan", [])
+            if item in STAGE_LABELS
+        ] or interview_stage_plan(str(interview.get("interview_type") or "technical"))
+        index = max(0, min(int(raw.get("index") or 0), len(plan) - 1))
+        return {
+            "plan": plan,
+            "index": index,
+            "turn_count": max(0, int(raw.get("turn_count") or 0)),
+            "revision": max(1, int(raw.get("revision") or 1)),
+            "history": list(raw.get("history") or [])[-20:],
+        }
+
+    @staticmethod
+    def _stage_snapshot(state: dict[str, Any]) -> dict[str, Any]:
+        plan = list(state["plan"])
+        index = int(state["index"])
+        history = list(state.get("history") or [])
+        skipped = {
+            str(item.get("stage")) for item in history
+            if isinstance(item, dict) and item.get("reason") == "user_skip"
+        }
+        stages = []
+        for position, stage_id in enumerate(plan):
+            status = (
+                "current" if position == index
+                else "skipped" if stage_id in skipped
+                else "completed" if position < index
+                else "upcoming"
+            )
+            stages.append(
+                {
+                    "id": stage_id,
+                    "label": STAGE_LABELS[stage_id],
+                    "status": status,
+                }
+            )
+        next_stage = plan[index + 1] if index + 1 < len(plan) else None
+        return {
+            "revision": int(state.get("revision") or 1),
+            "current": {
+                "id": plan[index],
+                "label": STAGE_LABELS[plan[index]],
+                "index": index,
+                "turn_count": int(state.get("turn_count") or 0),
+            },
+            "stages": stages,
+            "can_skip": next_stage is not None,
+            "next_stage": (
+                {"id": next_stage, "label": STAGE_LABELS[next_stage]}
+                if next_stage
+                else None
+            ),
+        }
+
+    def stage_snapshot(self, interview: dict[str, Any]) -> dict[str, Any]:
+        return self._stage_snapshot(self._stage_state(interview))
 
     async def hint(self, interview_id: str) -> dict[str, Any]:
         interview = await self.db.get_interview(interview_id)
@@ -208,6 +300,107 @@ class InterviewEngine:
         if not event:
             raise AppError("INTERVIEW_NOT_FOUND", "面试不存在", status_code=404)
         return event
+
+    def _question_for_stage(
+        self,
+        interview: dict[str, Any],
+        state: dict[str, Any],
+        *,
+        resume: ResumeData,
+        anchor: str = "",
+        vague: bool = False,
+    ) -> str:
+        stage_id = state["plan"][state["index"]]
+        language_mode = str(interview.get("language_mode") or "bilingual")
+        if stage_id == "self_intro":
+            return initial_question(
+                str(interview.get("company") or "bytedance"),
+                language_mode,
+                str(interview.get("interview_type") or "technical"),
+            )
+        if stage_id == "project_deep_dive":
+            return project_followup(
+                max(1, min(7, int(state.get("turn_count") or 0) + 1)),
+                anchor,
+                resume,
+                vague=vague,
+                language_mode=language_mode,
+            )[0]
+        questions = select_server_questions(
+            str(interview.get("company") or "bytedance"),
+            list(interview.get("weak_topics") or []),
+            interview.get("duration_minutes"),
+            str(interview.get("specialization") or "通用后端"),
+            selection_seed=str(interview.get("id") or "stage"),
+            language_mode=language_mode,
+            interview_type=str(interview.get("interview_type") or "technical"),
+        )
+        if stage_id == "fundamentals":
+            pool = [
+                item
+                for item in questions
+                if item.get("kind") not in {"behavioral", "coding"}
+            ]
+        elif stage_id == "coding":
+            pool = [item for item in questions if item.get("kind") == "coding"]
+        elif stage_id == "behavioral":
+            pool = [item for item in questions if item.get("kind") == "behavioral"]
+        else:
+            return (
+                "What would you like to ask about the role, team, or work?"
+                if language_mode == "en"
+                else "最后留给你反问：关于岗位、团队或工作内容，你有什么想了解的？"
+            )
+        if not pool:
+            next_state = self._next_stage_state(state, reason="unavailable")
+            return self._question_for_stage(
+                interview, next_state, resume=resume
+            )
+        turn_count = int(state.get("turn_count") or 0)
+        # Fundamentals and behavioral sections use a reviewed opener followed
+        # by at most one answer-anchored follow-up. This keeps the interview
+        # responsive without letting a generated question replace the bank.
+        item_index = turn_count // 2 if stage_id in {"fundamentals", "behavioral"} else turn_count
+        item = pool[item_index % len(pool)]
+        return str(item.get("question") or "").strip()
+
+    @staticmethod
+    def _next_stage_state(
+        state: dict[str, Any], *, reason: str
+    ) -> dict[str, Any]:
+        next_state = {
+            **state,
+            "history": [
+                *list(state.get("history") or []),
+                {"stage": state["plan"][state["index"]], "reason": reason},
+            ][-20:],
+            "revision": int(state.get("revision") or 1) + 1,
+            "turn_count": 0,
+        }
+        if next_state["index"] + 1 < len(next_state["plan"]):
+            next_state["index"] += 1
+        return next_state
+
+    async def advance_stage(
+        self, interview_id: str, *, expected_revision: int | None = None
+    ) -> dict[str, Any]:
+        interview = await self.db.get_interview(interview_id)
+        if not interview:
+            raise AppError("INTERVIEW_NOT_FOUND", "面试不存在", status_code=404)
+        if interview["status"] in {"ended", "reporting", "reported"}:
+            raise AppError("INTERVIEW_ENDED", "本场面试已经结束", status_code=409)
+        state = self._stage_state(interview)
+        if expected_revision is not None and expected_revision != state["revision"]:
+            raise AppError("STALE_STAGE", "面试阶段已更新，请按最新进度操作", status_code=409)
+        if state["index"] + 1 >= len(state["plan"]):
+            raise AppError("NO_NEXT_STAGE", "当前已是最后阶段", status_code=409)
+        state = self._next_stage_state(state, reason="user_skip")
+        resume = ResumeData.model_validate(interview["resume"])
+        question = self._question_for_stage(interview, state, resume=resume)
+        await self.db.set_interview_stage(
+            interview_id, stage_state=state, question=question
+        )
+        return {"question": question, "stage": self._stage_snapshot(state)}
 
     async def retry(self, interview_id: str, client_id: str) -> dict[str, Any]:
         source = await self.db.get_interview(interview_id)
@@ -422,6 +615,7 @@ class InterviewEngine:
         *,
         input_mode: str = "text",
         answer_duration_seconds: float | None = None,
+        control_intent: str = "",
     ) -> EngineResult:
         interview = await self.db.get_interview(interview_id)
         if not interview:
@@ -440,6 +634,8 @@ class InterviewEngine:
 
         turns = await self.db.list_turns(interview_id)
         resume = ResumeData.model_validate(interview["resume"])
+        stage_state = self._stage_state(interview)
+        current_stage = stage_state["plan"][stage_state["index"]]
         decision_interview = {
             **interview,
             "_answer_input_mode": "voice" if input_mode == "voice" else "text",
@@ -448,6 +644,7 @@ class InterviewEngine:
         decision = await self._decide(decision_interview, resume, turns, answer)
         vague_answer = is_vague_answer(answer)
         explicit_unknown = self._explicit_unknown(answer)
+        unknown_control = control_intent == "unknown"
         project_ownership_correction = self._explicit_project_ownership_correction(
             answer
         )
@@ -482,11 +679,8 @@ class InterviewEngine:
             elif resume.projects and resume.projects[0].name:
                 anchor = resume.projects[0].name
         elif explicit_unknown:
-            anchor = (
-                resume.projects[0].name
-                if resume.projects and resume.projects[0].name
-                else "下一项能力"
-            )
+            anchor = ""
+            response_anchor = ""
 
         completed_turns = len(turns) + 1
         last_project_correction_ordinal = (
@@ -596,6 +790,138 @@ class InterviewEngine:
                 else "明白，这个项目不作为你的经历继续追问。" + question
             )
 
+        next_stage_state = {
+            **stage_state,
+            "turn_count": int(stage_state.get("turn_count") or 0) + 1,
+        }
+        if project_ownership_correction:
+            next_stage_state["turn_count"] = 0
+        should_advance_stage = False
+        stage_reason = "coverage"
+        if project_ownership_correction:
+            current_dimension = "communication"
+            current_topic = "项目归属澄清"
+            current_drill_dimension = ""
+            current_drill_depth = 0
+        elif current_stage == "self_intro":
+            should_advance_stage = True
+        elif current_stage == "project_deep_dive":
+            should_advance_stage = (
+                explicit_unknown
+                or unknown_control
+                or (
+                    next_stage_state["turn_count"] >= 2
+                    and (vague_answer or decision.assessment.failed)
+                )
+                or next_stage_state["turn_count"]
+                >= interview_drill_target(
+                    interview["weak_topics"], str(interview.get("interview_type") or "technical")
+                )
+            )
+            stage_reason = "unknown" if explicit_unknown or unknown_control else "adaptive"
+        elif current_stage == "fundamentals":
+            should_advance_stage = next_stage_state["turn_count"] >= 4
+        elif current_stage == "coding":
+            should_advance_stage = True
+        elif current_stage == "behavioral":
+            should_advance_stage = next_stage_state["turn_count"] >= 6
+
+        if (
+            (explicit_unknown or unknown_control)
+            and current_stage in {"fundamentals", "behavioral"}
+            and not should_advance_stage
+            and next_stage_state["turn_count"] % 2 == 1
+        ):
+            # “我不知道” skips the pending follow-up for this topic. It must
+            # never result in the same reviewed opener being asked again.
+            next_stage_state["turn_count"] += 1
+
+        if should_advance_stage:
+            next_stage_state = self._next_stage_state(
+                next_stage_state, reason=stage_reason
+            )
+        else:
+            next_stage_state["revision"] = int(stage_state.get("revision") or 1) + 1
+        next_stage_id = next_stage_state["plan"][next_stage_state["index"]]
+        if next_stage_id == current_stage and current_stage == "project_deep_dive":
+            proposed = self._sanitize_question(
+                decision.next_question,
+                interview["company"],
+                language_mode=str(interview.get("language_mode") or "bilingual"),
+            )
+            answer_terms = {
+                token.casefold()
+                for token in re.findall(
+                    r"[A-Za-z][A-Za-z0-9+.#_-]{2,}|[\u4e00-\u9fff]{2,10}",
+                    answer,
+                )
+                if token not in {"这个", "那个", "我们", "然后", "就是", "项目", "回答"}
+            }
+            responsive = any(term in proposed.casefold() for term in answer_terms)
+            if (
+                proposed
+                and not is_internal_interview_instruction(proposed)
+                and not explicit_unknown
+                and not unknown_control
+                and not project_ownership_correction
+                and responsive
+            ):
+                question = proposed
+            else:
+                question = self._question_for_stage(
+                    interview,
+                    next_stage_state,
+                    resume=drill_resume,
+                    anchor=anchor,
+                    vague=vague_answer,
+                )
+        elif (
+            current_stage in {"fundamentals", "behavioral"}
+            and next_stage_id == current_stage
+            and next_stage_state["turn_count"] % 2 == 1
+        ):
+            stage_pool = (
+                [item for item in server_questions if item.get("kind") == "behavioral"]
+                if current_stage == "behavioral"
+                else [
+                    item
+                    for item in server_questions
+                    if item.get("kind") not in {"behavioral", "coding"}
+                ]
+            )
+            answered_index = int(stage_state.get("turn_count") or 0) // 2
+            bank_item = stage_pool[answered_index % len(stage_pool)] if stage_pool else None
+            question = (
+                self._anchored_bank_followup(
+                    decision.next_question,
+                    answer=answer,
+                    anchor=response_anchor,
+                    bank_item=bank_item,
+                    track="hr" if current_stage == "behavioral" else "technical",
+                    vague=vague_answer,
+                    language_mode=str(interview.get("language_mode") or "bilingual"),
+                )
+                if bank_item
+                else self._question_for_stage(
+                    interview, next_stage_state, resume=drill_resume, anchor=anchor
+                )
+            )
+        else:
+            question = self._question_for_stage(
+                interview,
+                next_stage_state,
+                resume=drill_resume,
+                anchor="" if explicit_unknown or unknown_control else anchor,
+            )
+        if project_ownership_correction:
+            acknowledgement = (
+                "Understood. We will not treat that project as your experience. "
+                if interview.get("language_mode") == "en"
+                else "明白，这个项目不作为你的经历继续追问。"
+            )
+            if not question.startswith(acknowledgement):
+                question = acknowledgement + question
+
         # A row represents the question that was just answered, not the next
         # question generated above. Normalize server-forced phases accordingly
         # so reports and next-session memory are not shifted by one turn.
@@ -647,6 +973,57 @@ class InterviewEngine:
             current_drill_dimension = "手撕思路" if is_coding else "基础知识"
             current_drill_depth = 1 if phase.answered_followup else 0
 
+        if project_ownership_correction:
+            current_dimension = "communication"
+            current_topic = "项目归属澄清"
+            current_drill_dimension = ""
+            current_drill_depth = 0
+        elif current_stage == "self_intro":
+            current_dimension = "communication"
+            current_topic = "自我介绍·整体与学习情况"
+            current_drill_dimension = ""
+            current_drill_depth = 0
+        elif current_stage == "project_deep_dive":
+            depth = min(int(stage_state.get("turn_count") or 0), len(SEVEN_DRILL_DIMENSIONS) - 1)
+            dimension = SEVEN_DRILL_DIMENSIONS[depth]
+            current_dimension = "project_depth"
+            current_topic = f"项目深挖·{dimension}"
+            current_drill_dimension = dimension
+            current_drill_depth = depth + 1
+        elif current_stage == "fundamentals":
+            stage_pool = [
+                item
+                for item in server_questions
+                if item.get("kind") not in {"behavioral", "coding"}
+            ]
+            item_index = int(stage_state.get("turn_count") or 0) // 2
+            answered_bank_item = stage_pool[item_index % len(stage_pool)] if stage_pool else None
+            current_dimension = "fundamentals"
+            current_topic = str(
+                (answered_bank_item or {}).get("topic")
+                or (answered_bank_item or {}).get("category")
+                or "基础与场景题"
+            )
+            current_drill_dimension = "基础知识"
+            current_drill_depth = int(stage_state.get("turn_count") or 0) % 2
+        elif current_stage == "coding":
+            coding_pool = [item for item in server_questions if item.get("kind") == "coding"]
+            answered_bank_item = coding_pool[0] if coding_pool else None
+            current_dimension = "coding_thought"
+            current_topic = f"手撕思路·{(answered_bank_item or {}).get('topic') or '数据结构与算法'}"
+            current_drill_dimension = "手撕思路"
+        elif current_stage == "behavioral":
+            item_index = int(stage_state.get("turn_count") or 0) // 2
+            answered_bank_item = hr_questions[item_index % len(hr_questions)] if hr_questions else None
+            current_dimension = "communication"
+            current_topic = f"综合面·{(answered_bank_item or {}).get('topic') or '综合交流'}"
+            current_drill_dimension = ""
+            current_drill_depth = int(stage_state.get("turn_count") or 0) % 2
+        elif current_stage == "candidate_questions":
+            current_dimension = "communication"
+            current_topic = "反问"
+            current_drill_dimension = ""
+
         if resume_selection_warning:
             pressure_action = "none"
             question = (
@@ -668,6 +1045,13 @@ class InterviewEngine:
                 else "这题先跳过。真实面试中，建议先说出你能确认的边界，再坦诚不会。下一题："
             )
             question = transition + question
+        elif next_stage_id != current_stage:
+            pressure_action = "none"
+        elif (
+            current_stage in {"fundamentals", "behavioral"}
+            and next_stage_state["turn_count"] % 2 == 0
+        ):
+            pressure_action = "none"
         elif completed_turns == 1 or (
             phase.next_track == "hr" and not phase.next_followup
         ):
@@ -763,12 +1147,15 @@ class InterviewEngine:
             speech_rate_cpm=speech_rate_cpm,
             recommended_answer_seconds=current_recommended_seconds,
         )
-        streak = await self.db.append_turn(interview_id, turn, question)
+        streak = await self.db.append_turn(
+            interview_id, turn, question, stage_state=next_stage_state
+        )
         threshold = self._breakdown_threshold(interview["stress_level"])
-        ended = streak >= threshold
+        completed_normally = current_stage == "candidate_questions"
+        ended = streak >= threshold or completed_normally
         end_reason: str | None = None
         if ended:
-            end_reason = "poor_performance"
+            end_reason = "completed" if completed_normally else "poor_performance"
             question = (
                 "That concludes today's interview. Thank you for your time."
                 if interview.get("language_mode") == "en"
@@ -794,6 +1181,7 @@ class InterviewEngine:
             ),
             resume_mismatch_reason=resume_mismatch_reason,
             resume_selection_warning=resume_selection_warning,
+            stage=self._stage_snapshot(next_stage_state),
             turn=turn,
         )
 

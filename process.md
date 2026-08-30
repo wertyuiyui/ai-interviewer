@@ -19,7 +19,6 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
-| `INTERVIEW-005` | `/root`（只读协作：`real_flow_research`、`adaptive_engine_audit`、`phase_ui_audit`） | `in_progress` | 将面试改为可见、可跳过且按回答自适应的显式阶段流程；修复“不知道”继续追同项目；技术/技术综合/纯综合采用不同阶段计划 | `interview_skills/interviewer_core.json`, `app/db.py`, `app/interview_engine.py`, `app/main.py`, `app/prompt_engine.py`, `app/voice_session.py`, `public/interview.html`, `public/js/interview.js`, `public/assets/app.css`, `tests/test_interview_stage_flow.py`, `tests/test_interviewer_skill.py`, `tests/test_frontend_interview_controls.py`, `tests/test_frontend_audio_ui.py`, `tests/test_voice_session.py`, `tests/test_core.py`（仅阶段流断言）, `tests/test_english_company_flow.py`, `references/REAL_INTERVIEW_STAGE_DESIGN.md`, `process.md` | `tests/test_core.py` 同时含 `PROFILE-004` 未提交增量，提交时仅暂存本任务断言 hunk；子 Agent 只读。显式阶段状态不得用假回答污染报告，纯综合面不得包含八股或手撕 |
 
 登记模板：
 
@@ -39,6 +38,15 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### INTERVIEW-005 · 2026-08-30 · 自适应面试阶段流与可跳阶段控制
+
+- Agent：`/root`；只读协作：`/root/real_flow_research`、`/root/adaptive_engine_audit`、`/root/phase_ui_audit`。
+- 状态：`completed`。
+- 摘要：基于公开候选人面经把服务端面试流改为持久化的显式阶段状态。技术面依次为自我介绍、项目深挖、基础与场景题、手撕代码、反问；技术综合面追加综合交流；独立综合面只保留自我介绍、综合交流和反问。前端展示当前/完成/跳过/待进行阶段，并新增“直接进入下一阶段”；跳阶段是带 revision 校验的控制事件，不写入虚假回答。核心面试官 skill 改为先识别回答意图和证据再决定追深、换题或换阶段；项目回答有新事实才继续追问，含糊最多澄清一次，明确“不知道”会关闭项目上下文、清空 anchor 并进入基础阶段。基础和综合阶段采用审核主问加至多一次回答锚定追问；点“不知道”直接换主题。技术流程即使短时长也保证从审核题库选出一题手撕代码。
+- 实际文件：`interview_skills/interviewer_core.json`、`app/db.py`、`app/interview_engine.py`、`app/main.py`、`app/prompt_engine.py`、`app/voice_session.py`、`public/interview.html`、`public/js/interview.js`、`public/assets/app.css`、`tests/test_interview_stage_flow.py`、`tests/test_interviewer_skill.py`、`tests/test_frontend_interview_controls.py`、`tests/test_frontend_audio_ui.py`、`tests/test_core.py`、`tests/test_english_company_flow.py`、`references/REAL_INTERVIEW_STAGE_DESIGN.md`、`process.md`。
+- 验证：`PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `253 passed`；`.venv/bin/python -m json.tool interview_skills/interviewer_core.json`、`node --check public/js/interview.js`、`.venv/bin/python -m compileall -q app`、`git diff --check` 均通过。
+- 风险或后续事项：公开面经代表特定候选人、岗位、部门和时间点，不宣称公司官方固定流程；阶段内仍保留审核题库和安全回退以防模型跑题。SQLite 会在启动时无损新增 `stage_state_json`；本任务只提交代码，不推送、不部署，线上仍是当前稳定提交。
 
 ### DEPLOY-015 · 2026-08-30 · 首页简历入口视觉优化生产发布
 
