@@ -344,6 +344,22 @@ class ResumeParser:
         return re.sub(r"[^A-Za-z0-9\u3400-\u9fff]", "", str(value or "")).casefold()
 
     @staticmethod
+    def _uncovered_fragments(items: Any, complete_items: Any) -> list[str]:
+        complete_keys = [
+            ResumeParser._text_key(item)
+            for item in ResumeParser._string_list(complete_items)
+        ]
+        return [
+            item
+            for item in ResumeParser._string_list(items)
+            if len(ResumeParser._text_key(item)) < 6
+            or not any(
+                ResumeParser._text_key(item) in complete_key
+                for complete_key in complete_keys
+            )
+        ]
+
+    @staticmethod
     def _project_key(value: Any) -> str:
         name = " ".join(str(value or "").split())
         name = re.sub(
@@ -444,11 +460,18 @@ class ResumeParser:
                 used.add(match_index)
             if not target.get("role") and source.get("role"):
                 target["role"] = source["role"]
-            target["highlights"] = ResumeParser._string_list(
-                [*source.get("highlights", []), *target.get("highlights", [])]
-            )
+            source_highlights = ResumeParser._string_list(source.get("highlights"))
+            target["highlights"] = ResumeParser._string_list([
+                *source_highlights,
+                *ResumeParser._uncovered_fragments(
+                    target.get("highlights"), source_highlights
+                ),
+            ])
             for field in ("technologies", "metrics", "links"):
                 target[field] = ResumeParser._string_list(target.get(field))
+            target["metrics"] = ResumeParser._uncovered_fragments(
+                target.get("metrics"), target["highlights"]
+            )
             merged.append(target)
         for index, item in enumerate(model_items):
             if index in used or ResumeParser._project_key(item.get("name")) in role_rows:
@@ -780,8 +803,15 @@ class ResumeParser:
             for field in ("company", "role", "period"):
                 if not match.get(field) and source.get(field):
                     match[field] = source[field]
-            match["highlights"] = ResumeParser._string_list(
-                [*source.get("highlights", []), *match.get("highlights", [])]
+            source_highlights = ResumeParser._string_list(source.get("highlights"))
+            match["highlights"] = ResumeParser._string_list([
+                *source_highlights,
+                *ResumeParser._uncovered_fragments(
+                    match.get("highlights"), source_highlights
+                ),
+            ])
+            match["metrics"] = ResumeParser._uncovered_fragments(
+                match.get("metrics"), match["highlights"]
             )
         merged: list[dict[str, Any]] = []
         indexes: dict[str, int] = {}

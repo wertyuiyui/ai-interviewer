@@ -895,6 +895,38 @@ def test_resume_normalization_keeps_same_row_project_and_all_wrapped_bullets() -
     assert "拒绝策略和监控指标" in project["highlights"][3]
 
 
+def test_resume_normalization_drops_metric_fragments_covered_by_full_bullets() -> None:
+    source_text = (
+        "项目经历\n"
+        "实验室微服务可观测平台｜基础架构开发｜2025.02—2025.09\n"
+        "•基于 Kubernetes、Prometheus、Grafana、OpenTelemetry 搭建指标、日志和链路追踪。\n"
+        "•编写 Admission Webhook 自动注入采集配置，使用证书轮换和失败放行策略避免阻塞业务发布。\n"
+        "•为告警聚合服务设计滑动窗口与去重键，将一次模拟故障产生的 600 条告警压缩为 18 个事件。\n"
+        "•通过 readinessProbe、PodDisruptionBudget 和滚动发布参数控制升级风险；能说明探针误配导致的\n"
+        "故障案例。\n"
+        "技能\nKubernetes"
+    )
+    normalized = ResumeParser._normalize(
+        {
+            "姓名": "",
+            "教育": [],
+            "实习经历": [],
+            "项目": [{
+                "name": "实验室微服务可观测平台",
+                "highlights": ["600 条告警压缩为 18 个事件"],
+                "metrics": ["600 条告警压缩为 18 个事件"],
+            }],
+            "技能": ["Kubernetes"],
+        },
+        source_text=source_text,
+    )
+
+    project = normalized["项目"][0]
+    assert len(project["highlights"]) == 4
+    assert project["highlights"][-1].endswith("故障案例。")
+    assert project["metrics"] == []
+
+
 def test_resume_normalization_recovers_education_stages_and_complete_internship() -> None:
     source_text = (
         "教育经历\n"
@@ -938,6 +970,7 @@ def test_resume_normalization_recovers_education_stages_and_complete_internship(
         "负责订单、支付回调和库存模块。",
         "使用 Redis Lua 实现库存预扣与幂等校验，失败率降低 20%。",
     ]
+    assert internship["metrics"] == []
 
 
 def test_resume_normalization_recovers_internship_omitted_by_model() -> None:

@@ -39,6 +39,15 @@
 
 ## 变更日志
 
+### PROFILE-007 · 2026-08-30 · 简历完整职责与指标片段去重
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：根因是原文恢复已把 PDF 换行拼回完整职责，但模型返回的 highlights 或 metrics 指标短片段随后仍按“非完全相等”被追加；Profile 展示又合并这两个字段，因此完整四条职责后重复出现“600 条告警压缩为 18 个事件”。现在项目和实习统一以原文完整职责为优先证据，后续 highlights/metrics 的规范化文本若已被至少六字符的完整职责覆盖则不再追加；短技术名和未被完整句覆盖的独立指标继续保留，不增加模型调用或数据结构。
+- 实际文件：`app/resume.py`、`tests/test_core.py`、`process.md`。
+- 验证：简历归一化专项 `9 passed`；最新远端基线全量 `265 passed`；`node --check public/js/profile.js`、Python compileall 与 `git diff --check` 通过。回归覆盖 Kubernetes/OpenTelemetry 四条完整项目职责、跨行故障案例、highlights 与 metrics 双来源的“600 条告警压缩为 18 个事件”片段去重，以及实习完整职责覆盖“失败率降低 20%”指标片段。
+- 风险或后续事项：只在短片段规范化后完整包含于原文职责时过滤，不做相似度模糊去重，避免误删不同语义指标；已保存的旧识别结果需点击“重新识别”应用新规则。
+
 ### DEPLOY-023 · 2026-08-30 · 旧场次清理与阶段兼容移除生产发布
 
 - Agent：`/root`。
