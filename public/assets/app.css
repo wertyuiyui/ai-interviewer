@@ -60,7 +60,7 @@ svg { display: block; fill: none; stroke: currentColor; stroke-linecap: round; s
 .hero { padding-top: 50px; position: sticky; top: 8px; }
 .eyebrow, .panel-eyebrow, .step-kicker { display: inline-flex; align-items: center; gap: 8px; color: #647086; font-size: 10px; font-weight: 750; letter-spacing: .18em; text-transform: uppercase; }
 .eyebrow > span { width: 24px; height: 1px; background: var(--blue); }
-.hero h1 { margin: 27px 0 22px; font-family: var(--font-serif); font-size: clamp(42px, 4vw, 62px); font-weight: 650; line-height: 1.16; letter-spacing: -.04em; }
+.hero h1 { margin: 27px 0 22px; font-family: var(--font-serif); font-size: clamp(42px, 4vw, 55px); font-weight: 650; line-height: 1.16; letter-spacing: -.04em; }
 .hero h1 em { color: var(--blue); font-style: normal; }
 .hero-copy { max-width: 510px; margin: 0; color: #5d687b; font-size: 16px; line-height: 1.9; }
 .weakness-card { width: min(430px, 100%); margin-top: 28px; padding: 15px 17px; display: flex; align-items: center; gap: 13px; border: 1px solid #dce5fb; border-radius: 14px; background: rgba(239, 244, 255, .78); }
