@@ -19,7 +19,6 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
-| `REPORT-002` | `/root` | `in_progress` | 中文面试报告的具体扣分点禁止回落为纯英文，并修复已有中文报告 | `app/report_engine.py`, `tests/test_report_language.py`, `process.md`；生产报告 JSON | 不修改 `INTERVIEW-013/014` 占用的主接口、前端或共享测试文件 |
 
 登记模板：
 
@@ -28,7 +27,7 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`f80ab61`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`112771e`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
@@ -39,6 +38,21 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-031 · 2026-08-30 · 中文报告扣分点语言修复生产发布
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：将基于最新远端的固定提交 `112771e` 推送并以 `git archive` 隔离部署至 `/opt/ai-interviewer-mvp`；保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git` 与缓存，只重启 `ai-interviewer-3000.service`。备份 SQLite 后，将已有 1 份中文报告中的 2 条纯英文扣分点替换为对应轮次已有的中文具体扣分点。
+- 验证：最新隔离基线全量 `269 passed`；生产中文报告纯英文扣分点计数为 `0`，生产代码包含 `_localized_deductions`。服务为 `active/running`，主进程 PID `860410`；本机 8000、正式域名 HTTPS 443 和 3000 均返回 `{"status":"ok"}`。
+- 回滚与风险：代码回滚包为 `/tmp/ai-interviewer-mvp-pre-112771e-20260830.tar.gz`，数据修正前备份为 `/tmp/interviews-pre-report-language-fix-20260830.db`。英文面试仍保留英文扣分点；中文句子中的 Java、Redis 等英文技术术语不会被误删。
+
+### REPORT-002 · 2026-08-30 · 中文报告具体扣分点语言兜底
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：根因是报告 prompt 虽要求中文，但服务端直接接受模型偶发返回的纯英文 `question_feedback.deductions`。现在中文场次只接受至少含中文正文的生成扣分点；模型返回纯英文时优先使用该轮评分阶段已有的中文具体扣分点，两处都不合规时才使用中文通用说明。English 场次保持英文输出，前端无需翻译或猜测语言。
+- 实际文件：`app/report_engine.py`、`tests/test_report_language.py`、`process.md`；生产 `reports.report_json`。
+- 验证：语言兜底专项 `1 passed`；最新远端全量 `269 passed`；Python compileall 与 `git diff --check` 通过。生产修正前/后分别为受影响中文报告 `1 → 0`、纯英文扣分点 `2 → 0`。
+- 风险或后续事项：服务端不对英文文本做机器翻译，避免改变技术含义；优先复用逐轮中文具体证据，只有模型与逐轮评分同时违反语言约束时才显示中文通用扣分说明。
 
 ### TESTDATA-001 · 2026-08-30 · 五份虚构简历网页测试回答
 
