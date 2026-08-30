@@ -27,7 +27,7 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`0985dcc`；GitHub `origin/main` 已同步至 `0985dcc`
+- 当前生产已部署提交：`0985dcc`；GitHub `origin/main` 已包含该功能提交及对应部署记录
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
