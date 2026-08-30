@@ -76,6 +76,8 @@ class InterviewEngine:
             company=request.company,
             resume=request.resume,
             stress=request.stress,
+            stress_level=request.stress_level,
+            specialization=request.specialization,
             duration_minutes=request.duration_minutes,
             weak_topics=weak_topics,
         )
@@ -86,7 +88,9 @@ class InterviewEngine:
             client_id=request.client_id,
             company=request.company,
             role=request.role,
+            specialization=request.specialization,
             stress=request.stress,
+            stress_level=request.stress_level,
             duration_minutes=request.duration_minutes,
             voice_mode=self.settings.voice_mode,
             resume=request.resume,
@@ -101,6 +105,10 @@ class InterviewEngine:
             "voice_mode": self.settings.voice_mode,
             "weak_topics": weak_topics,
             "initial_question": first_question,
+            "specialization": request.specialization,
+            "stress": request.stress,
+            "stress_level": request.stress_level,
+            "duration_minutes": request.duration_minutes,
         }
 
     async def answer(self, interview_id: str, answer: str) -> EngineResult:
@@ -187,7 +195,7 @@ class InterviewEngine:
             current_drill_depth = 0
 
         pressure_action = self._pressure_action(
-            stress=interview["stress"],
+            stress_level=interview["stress_level"],
             ordinal=completed_turns,
             proposed=decision.pressure_action,
         )
@@ -207,7 +215,7 @@ class InterviewEngine:
             anchor_keyword=anchor,
         )
         streak = await self.db.append_turn(interview_id, turn, question)
-        threshold = 2 if interview["stress"] else 3
+        threshold = self._breakdown_threshold(interview["stress_level"])
         ended = streak >= threshold
         end_reason: str | None = None
         if ended:
@@ -239,6 +247,8 @@ class InterviewEngine:
             company=interview["company"],
             resume=resume,
             stress=interview["stress"],
+            stress_level=interview["stress_level"],
+            specialization=interview["specialization"],
             duration_minutes=interview["duration_minutes"],
             weak_topics=interview["weak_topics"],
             turns=turns,
@@ -312,6 +322,7 @@ class InterviewEngine:
             interview["company"],
             interview["weak_topics"],
             interview["duration_minutes"],
+            interview["specialization"],
         )
         if ordinal <= 4:
             question = ""
@@ -338,14 +349,32 @@ class InterviewEngine:
         )
 
     @staticmethod
-    def _pressure_action(stress: bool, ordinal: int, proposed: str) -> str:
-        if not stress:
+    def _pressure_action(stress_level: int, ordinal: int, proposed: str) -> str:
+        del proposed
+        if stress_level <= 0:
             return "none"
-        cycle = {1: "chain", 2: "challenge", 3: "interrupt", 0: "silence"}
-        # The server owns the sequence so every enabled interview actually
-        # demonstrates all four pressure techniques; model output cannot keep
-        # selecting the same action indefinitely.
-        return cycle[ordinal % 4]
+        if stress_level == 1:
+            if ordinal % 3:
+                return "none"
+            return ("chain", "challenge")[((ordinal // 3) - 1) % 2]
+        if stress_level == 2:
+            cycle = {1: "chain", 2: "challenge", 3: "interrupt", 0: "silence"}
+            return cycle[ordinal % 4]
+        # High pressure retains every technique but deliberately interrupts on
+        # every other round. The live voice path mirrors the same cadence.
+        cycle = (
+            "chain",
+            "interrupt",
+            "challenge",
+            "interrupt",
+            "silence",
+            "interrupt",
+        )
+        return cycle[(ordinal - 1) % len(cycle)]
+
+    @staticmethod
+    def _breakdown_threshold(stress_level: int) -> int:
+        return 2 if stress_level >= 2 else 3
 
     @staticmethod
     def _sanitize_question(question: str, company: str) -> str:

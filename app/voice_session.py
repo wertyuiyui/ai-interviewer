@@ -701,11 +701,20 @@ class BrowserVoiceSession:
     ) -> None:
         self._candidate_speaking = True
         await self._barge_in(source=source, cancel_provider=cancel_provider)
-        if not self.interview.get("stress") or self.ending or self.closed:
+        raw_stress_level = self.interview.get("stress_level")
+        stress_level = int(
+            raw_stress_level
+            if raw_stress_level is not None
+            else (2 if self.interview.get("stress") else 0)
+        )
+        if stress_level < 2 or self.ending or self.closed:
             return
         turns = await self.db.list_turns(self.interview_id)
         ordinal = len(turns) + 1
-        if ordinal % 4 != 3 or ordinal in self._deliberate_interrupt_ordinals:
+        should_interrupt = (
+            ordinal % 2 == 0 if stress_level >= 3 else ordinal % 4 == 3
+        )
+        if not should_interrupt or ordinal in self._deliberate_interrupt_ordinals:
             return
         if self._deliberate_interrupt_task and not self._deliberate_interrupt_task.done():
             return

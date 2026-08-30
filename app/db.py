@@ -25,8 +25,10 @@ CREATE TABLE IF NOT EXISTS interviews (
     client_id TEXT NOT NULL,
     company TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'backend',
+    specialization TEXT NOT NULL DEFAULT '通用后端',
     stress INTEGER NOT NULL DEFAULT 0,
-    duration_minutes INTEGER NOT NULL,
+    stress_level INTEGER NOT NULL DEFAULT 0,
+    duration_minutes INTEGER,
     voice_mode TEXT NOT NULL,
     resume_json TEXT NOT NULL,
     style_json TEXT NOT NULL,
@@ -95,6 +97,28 @@ class Database:
 
         def operation(connection: sqlite3.Connection) -> None:
             connection.executescript(SCHEMA_SQL)
+            columns = {
+                str(row["name"])
+                for row in connection.execute(
+                    "PRAGMA table_info(interviews)"
+                ).fetchall()
+            }
+            if "specialization" not in columns:
+                connection.execute(
+                    "ALTER TABLE interviews ADD COLUMN specialization TEXT "
+                    "NOT NULL DEFAULT '通用后端'"
+                )
+            if "stress_level" not in columns:
+                connection.execute(
+                    "ALTER TABLE interviews ADD COLUMN stress_level INTEGER "
+                    "NOT NULL DEFAULT 0"
+                )
+                # Preserve the old boolean contract: enabled meant the current
+                # standard pressure mode.
+                connection.execute(
+                    "UPDATE interviews SET stress_level = "
+                    "CASE WHEN stress <> 0 THEN 2 ELSE 0 END"
+                )
             connection.commit()
 
         await self._run(operation)
@@ -106,8 +130,10 @@ class Database:
         client_id: str,
         company: str,
         role: str,
+        specialization: str,
         stress: bool,
-        duration_minutes: int,
+        stress_level: int,
+        duration_minutes: int | None,
         voice_mode: str,
         resume: ResumeData,
         style: dict[str, Any],
@@ -120,8 +146,12 @@ class Database:
             client_id,
             company,
             role,
+            specialization,
             int(stress),
-            duration_minutes,
+            stress_level,
+            # Older deployed databases declared this column NOT NULL. A zero
+            # sentinel keeps those databases writable and is decoded as None.
+            duration_minutes if duration_minutes is not None else 0,
             voice_mode,
             resume.model_dump_json(by_alias=True),
             json.dumps(style, ensure_ascii=False),
@@ -135,10 +165,11 @@ class Database:
             connection.execute(
                 """
                 INSERT INTO interviews (
-                    id, client_id, company, role, stress, duration_minutes,
-                    voice_mode, resume_json, style_json, weak_topics_json,
-                    system_prompt, last_question, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, client_id, company, role, specialization, stress,
+                    stress_level, duration_minutes, voice_mode, resume_json,
+                    style_json, weak_topics_json, system_prompt, last_question,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 values,
             )
@@ -164,7 +195,12 @@ class Database:
                 return None
             if row["started_at"] is None and row["status"] == "created":
                 started = time.time()
-                deadline = started + int(row["duration_minutes"]) * 60
+                duration = row["duration_minutes"]
+                deadline = (
+                    started + int(duration) * 60
+                    if duration is not None and int(duration) > 0
+                    else None
+                )
                 connection.execute(
                     """
                     UPDATE interviews
@@ -366,8 +402,9 @@ class Database:
         def operation(connection: sqlite3.Connection) -> list[dict[str, Any]]:
             rows = connection.execute(
                 """
-                SELECT r.report_json, i.role, i.stress, i.duration_minutes,
-                       i.ended_at, i.end_reason
+                SELECT r.report_json, i.role, i.specialization, i.stress,
+                       i.stress_level, i.duration_minutes, i.ended_at,
+                       i.end_reason
                 FROM reports r
                 JOIN interviews i ON i.id = r.interview_id
                 WHERE r.client_id = ?
@@ -380,8 +417,15 @@ class Database:
                 report = json.loads(row["report_json"])
                 report.update(
                     role=row["role"],
-                    stress=bool(row["stress"]),
-                    duration_minutes=row["duration_minutes"],
+                    specialization=row["specialization"],
+                    stress_level=int(row["stress_level"]),
+                    stress=int(row["stress_level"]) > 0,
+                    duration_minutes=(
+                        int(row["duration_minutes"])
+                        if row["duration_minutes"] is not None
+                        and int(row["duration_minutes"]) > 0
+                        else None
+                    ),
                     ended_at=(
                         datetime.fromtimestamp(row["ended_at"], timezone.utc).isoformat()
                         if row["ended_at"] is not None
@@ -487,7 +531,19 @@ class Database:
     @staticmethod
     def _decode_interview(row: sqlite3.Row) -> dict[str, Any]:
         data = dict(row)
-        data["stress"] = bool(data["stress"])
+        raw_stress_level = data.get("stress_level")
+        stress_level = int(
+            raw_stress_level
+            if raw_stress_level is not None
+            else (2 if data.get("stress") else 0)
+        )
+        data["stress_level"] = stress_level
+        data["stress"] = stress_level > 0
+        data["specialization"] = str(data.get("specialization") or "通用后端")
+        duration = data.get("duration_minutes")
+        data["duration_minutes"] = (
+            int(duration) if duration is not None and int(duration) > 0 else None
+        )
         data["resume"] = json.loads(data.pop("resume_json"))
         data["style"] = json.loads(data.pop("style_json"))
         data["weak_topics"] = json.loads(data.pop("weak_topics_json"))

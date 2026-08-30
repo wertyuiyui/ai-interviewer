@@ -1,0 +1,388 @@
+{
+  "schema_version": "1.0",
+  "role": "backend",
+  "specialization": "AI 工程后端 / LLM Infra",
+  "attribution": {
+    "project": "ARIS-in-AI-Offer",
+    "author": "Ruofeng Yang (杨若峰)",
+    "license": "MIT",
+    "upstream_commit": "6f60d728ae290982f7bddd88d9816073dd64d045",
+    "repository": "https://github.com/wanshuiyin/ARIS-in-AI-Offer",
+    "website": "https://wanshuiyin.github.io/ARIS-in-AI-Offer/",
+    "note": "题目依据上游知识点人工筛选并面向本科后端一面重新表述；答案和长篇教程不进入运行时 prompt。"
+  },
+  "questions": [
+    {
+      "id": "aris-serving-01",
+      "category": "AI工程",
+      "topic": "llm_request_lifecycle",
+      "question": "一个 LLM 请求从进入网关到返回首个 token，会经过哪些关键阶段？请把排队、prefill、decode 和流式回传串起来。",
+      "followups": [
+        "每个阶段应记录什么指标，哪个阶段最可能拖慢 TTFT？",
+        "客户端取消请求后，网关、调度器和 GPU worker 分别要清理什么状态？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/llm_inference_serving_tutorial.md"
+    },
+    {
+      "id": "aris-serving-02",
+      "category": "AI工程",
+      "topic": "serving_metrics",
+      "question": "TTFT、TPOT、ITL、吞吐量和 goodput 分别衡量什么？为什么只报每秒 token 数不够？",
+      "followups": [
+        "给一个延迟下降但 goodput 反而变差的例子。",
+        "不同输入输出长度的请求如何分桶统计，避免平均数误导？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/llm_inference_serving_tutorial.md"
+    },
+    {
+      "id": "aris-serving-03",
+      "category": "AI工程",
+      "topic": "prefill_decode",
+      "question": "为什么 prefill 和 decode 往往是不同的性能瓶颈？从计算密度、显存访问和批处理机会解释。",
+      "followups": [
+        "什么工作负载下这个经验判断会失效？",
+        "如果长 prompt 抢占资源导致在线 decode 抖动，你会怎么调度？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/llm_inference_serving_tutorial.md"
+    },
+    {
+      "id": "aris-serving-04",
+      "category": "AI工程",
+      "topic": "continuous_batching",
+      "question": "连续批处理和静态批处理的调度差别是什么，为什么它通常能提升 GPU 利用率？",
+      "followups": [
+        "请求长度差异很大时，连续批处理仍可能出现什么浪费？",
+        "迭代级调度如何处理新请求加入和已完成请求退出？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/llm_inference_serving_tutorial.md"
+    },
+    {
+      "id": "aris-serving-05",
+      "category": "AI工程",
+      "topic": "chunked_prefill",
+      "question": "Chunked prefill 想解决什么线上问题？切得过大或过小分别有什么代价？",
+      "followups": [
+        "它如何与正在运行的 decode 请求交错调度？",
+        "你会用哪些线上指标动态调整 chunk 大小？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/llm_inference_serving_tutorial.md"
+    },
+    {
+      "id": "aris-serving-06",
+      "category": "AI工程",
+      "topic": "admission_control",
+      "question": "模型服务的准入控制应看哪些信号？不要只说限流，请覆盖 token 预算、KV 内存和延迟目标。",
+      "followups": [
+        "按请求数限流为什么会被一个超长 prompt 绕过？",
+        "拒绝、排队和降级三种动作的选择依据是什么？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/llm_inference_serving_tutorial.md"
+    },
+    {
+      "id": "aris-serving-07",
+      "category": "AI工程",
+      "topic": "serving_preemption",
+      "question": "GPU 服务需要抢占一个生成请求时，可以丢弃重算、换出 KV，还是暂停保留？比较三者成本。",
+      "followups": [
+        "怎样避免长请求长期饥饿？",
+        "恢复请求时如何保证采样状态和输出顺序正确？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/llm_inference_serving_tutorial.md"
+    },
+    {
+      "id": "aris-serving-08",
+      "category": "AI工程",
+      "topic": "serving_incident",
+      "question": "模型服务 p99 延迟突然恶化，你拿到告警后按什么顺序定位？",
+      "followups": [
+        "如何区分流量结构变化、调度排队、GPU 降频和下游网络问题？",
+        "只能先止损时，你会牺牲吞吐、上下文长度还是输出长度，为什么？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/llm_inference_serving_tutorial.md"
+    },
+    {
+      "id": "aris-serving-09",
+      "category": "AI工程",
+      "topic": "constrained_decoding",
+      "question": "服务端如何让模型输出满足 JSON Schema 或正则约束？请说明 token 级候选过滤的基本思路。",
+      "followups": [
+        "约束解码为什么仍不能保证业务语义正确？",
+        "Schema 很复杂时，状态机编译和每步 mask 会带来什么开销？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/llm_inference_serving_tutorial.md"
+    },
+    {
+      "id": "aris-kv-01",
+      "category": "AI工程",
+      "topic": "kv_cache_memory",
+      "question": "给定层数、KV head 数、head dimension、上下文长度和数据类型，怎样估算单请求 KV cache 显存？",
+      "followups": [
+        "并发翻十倍时，哪个量线性增长？",
+        "如果使用 GQA 或 KV cache 量化，公式分别怎么变？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/kv_cache_speculative_decoding_tutorial.md"
+    },
+    {
+      "id": "aris-kv-02",
+      "category": "AI工程",
+      "topic": "kv_cache_training",
+      "question": "自回归推理为什么使用 KV cache，而训练阶段通常不用？",
+      "followups": [
+        "训练时一次并行计算所有 token 与逐 token decode 的数据依赖有何不同？",
+        "开启梯度检查点和 KV cache 是同一类内存优化吗？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/kv_cache_speculative_decoding_tutorial.md"
+    },
+    {
+      "id": "aris-kv-03",
+      "category": "AI工程",
+      "topic": "mha_mqa_gqa",
+      "question": "MHA、MQA、GQA 在 K/V head 数量和推理成本上有什么差别？",
+      "followups": [
+        "减少 KV head 为什么能省缓存和带宽，可能损失什么？",
+        "模型权重体积不变时，为什么吞吐仍可能明显提升？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/kv_cache_speculative_decoding_tutorial.md"
+    },
+    {
+      "id": "aris-kv-04",
+      "category": "AI工程",
+      "topic": "paged_attention",
+      "question": "PagedAttention 主要解决 KV cache 的哪类内存管理问题？它和 FlashAttention 解决的是同一问题吗？",
+      "followups": [
+        "逻辑块到物理块的映射怎样支持请求增长和共享前缀？",
+        "分页带来的元数据、碎片和访存开销怎么衡量？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/kv_cache_speculative_decoding_tutorial.md"
+    },
+    {
+      "id": "aris-kv-05",
+      "category": "AI工程",
+      "topic": "prefix_cache",
+      "question": "前缀缓存复用的具体状态是什么？哪些条件不一致时必须判定不能复用？",
+      "followups": [
+        "多租户共享缓存会带来哪些侧信道或数据隔离风险？",
+        "缓存键除了 token 序列，还应包含哪些模型和推理配置？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/kv_cache_speculative_decoding_tutorial.md"
+    },
+    {
+      "id": "aris-kv-06",
+      "category": "AI工程",
+      "topic": "speculative_decoding",
+      "question": "推测解码为什么能加速，又如何通过接受与拒绝保证目标分布不被随意改变？",
+      "followups": [
+        "草稿模型太大或接受率太低时为什么会负加速？",
+        "你会用哪些离线和线上指标选择 draft 模型？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/kv_cache_speculative_decoding_tutorial.md"
+    },
+    {
+      "id": "aris-quant-01",
+      "category": "AI工程",
+      "topic": "quantization_tradeoff",
+      "question": "对称量化和非对称量化如何表示零点与缩放因子？在模型服务里怎么取舍？",
+      "followups": [
+        "非对称量化为什么可能增加 kernel 计算和实现复杂度？",
+        "激活中存在离群值时，简单 per-tensor 量化会发生什么？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/quantization_tutorial.md"
+    },
+    {
+      "id": "aris-quant-02",
+      "category": "AI工程",
+      "topic": "quantization_granularity",
+      "question": "Per-tensor、per-channel、per-group 量化的精度、元数据和 kernel 效率如何权衡？",
+      "followups": [
+        "group size 变小时为什么通常更准但不一定更快？",
+        "权重和 KV cache 会选择同样的量化粒度吗？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/quantization_tutorial.md"
+    },
+    {
+      "id": "aris-quant-03",
+      "category": "AI工程",
+      "topic": "numeric_formats",
+      "question": "INT8、INT4 和 FP8 在可表示范围、精度与硬件支持上有什么关键区别？",
+      "followups": [
+        "为什么模型体积减半不等于端到端吞吐必然翻倍？",
+        "评估量化方案时除困惑度外还要看什么任务和线上指标？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/quantization_tutorial.md"
+    },
+    {
+      "id": "aris-dist-01",
+      "category": "AI工程",
+      "topic": "distributed_parallelism",
+      "question": "数据并行、张量并行、流水线并行分别切分什么？在线推理部署时如何选择？",
+      "followups": [
+        "为什么张量并行通常要求卡间高带宽互联？",
+        "增加并行度后单请求延迟和集群总吞吐一定同时变好吗？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/distributed_training_tutorial.md"
+    },
+    {
+      "id": "aris-agent-01",
+      "category": "AI工程",
+      "topic": "function_calling",
+      "question": "结构化 Function Calling 相比让模型输出自由格式的 ReAct 文本协议，工程上解决了什么问题？",
+      "followups": [
+        "Schema 校验通过为什么仍不能直接执行工具？",
+        "工具调用超时、重试和幂等性应由哪一层负责？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/agent_foundations_tutorial.md"
+    },
+    {
+      "id": "aris-agent-02",
+      "category": "AI工程",
+      "topic": "mcp_security",
+      "question": "MCP 中 tools、resources、prompts 三类能力有什么区别？服务端接入时如何划权限边界？",
+      "followups": [
+        "第三方工具描述里藏有 prompt injection 时，为什么只靠 system prompt 不够？",
+        "哪些操作必须在执行前获得用户确认并记录审计日志？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/agent_foundations_tutorial.md"
+    },
+    {
+      "id": "aris-agent-03",
+      "category": "AI工程",
+      "topic": "tool_registry",
+      "question": "Agent 可用工具从 10 个涨到 100 个后，为什么把全部 Schema 塞进上下文不是好方案？",
+      "followups": [
+        "你会如何做工具检索、权限过滤和按需加载？",
+        "工具版本升级怎样避免历史会话调用到不兼容参数？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/agent_foundations_tutorial.md"
+    },
+    {
+      "id": "aris-agent-04",
+      "category": "AI工程",
+      "topic": "parallel_tool_calls",
+      "question": "并行执行多个工具调用前，必须检查哪些数据依赖和副作用约束？",
+      "followups": [
+        "两个调用都修改同一业务对象时如何检测冲突？",
+        "部分成功后怎样补偿，为什么不能对所有失败直接重试？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/agent_foundations_tutorial.md"
+    },
+    {
+      "id": "aris-agent-05",
+      "category": "AI工程",
+      "topic": "agent_cost_latency",
+      "question": "多轮 Agent 的成本和延迟为什么容易失控？请从上下文增长、工具串行和失败重试分析。",
+      "followups": [
+        "如何设置总 token、总步骤和总时长三类预算？",
+        "截断历史时怎样保留仍会影响后续动作的关键状态？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/agent_foundations_tutorial.md"
+    },
+    {
+      "id": "aris-eval-01",
+      "category": "AI工程",
+      "topic": "evaluation_contract",
+      "question": "评测一个模型服务前，为什么要先定义 evaluation contract？至少说清任务、样本、指标和决策阈值。",
+      "followups": [
+        "同一分数在离线基准和真实业务上为什么可能代表不同结论？",
+        "哪些数据泄漏会让评测结果虚高？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/llm_evaluation_benchmarking_tutorial.md"
+    },
+    {
+      "id": "aris-eval-02",
+      "category": "AI工程",
+      "topic": "pass_at_k",
+      "question": "代码生成评测里的 pass@k 想估计什么？为什么简单跑 k 次看是否有一次通过可能造成误解？",
+      "followups": [
+        "不同题目的结果应该怎样聚合，为什么不能把所有通过数直接合并？",
+        "pass@k 提高但单次成功率很低，对线上用户有什么实际意义？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/llm_evaluation_benchmarking_tutorial.md"
+    },
+    {
+      "id": "aris-eval-03",
+      "category": "AI工程",
+      "topic": "llm_as_judge",
+      "question": "使用 LLM-as-judge 时，pointwise 与 pairwise 评审各有什么偏差和成本？",
+      "followups": [
+        "如何检测位置偏好、自偏好和长度偏好？",
+        "候选答案中的 prompt injection 怎样污染 judge，系统设计上如何缓解？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/llm_evaluation_benchmarking_tutorial.md"
+    },
+    {
+      "id": "aris-eval-04",
+      "category": "AI工程",
+      "topic": "benchmark_design",
+      "question": "你会怎样做一次可信的模型服务 benchmark，避免只测到理想吞吐？",
+      "followups": [
+        "请求长度分布、到达过程、预热、并发和 SLO 应如何设置？",
+        "为什么必须同时报告延迟分位数、失败率、质量和成本？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/llm_evaluation_benchmarking_tutorial.md"
+    },
+    {
+      "id": "aris-eval-05",
+      "category": "AI工程",
+      "topic": "benchmark_contamination",
+      "question": "如何判断一个公开 benchmark 可能已被训练数据污染？请区分线索、统计证据和真正证明。",
+      "followups": [
+        "时间切分、改写题和私有保留集分别能降低什么风险？",
+        "检测到污染后，线上发布决策应该怎样调整？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/llm_evaluation_benchmarking_tutorial.md"
+    },
+    {
+      "id": "aris-token-01",
+      "category": "AI工程",
+      "topic": "tokenization_tradeoff",
+      "question": "LLM 为什么通常选择 subword，而不是纯 word-level 或 byte-level？请把词表、OOV、序列长度和成本连起来。",
+      "followups": [
+        "中文和英文 tokenizer 效率应该怎样公平比较？",
+        "为什么不同 tokenizer 的 perplexity 不能直接横向比较？"
+      ],
+      "difficulty": "medium",
+      "source_ref": "docs/tutorials/tokenization_tutorial.md"
+    },
+    {
+      "id": "aris-token-02",
+      "category": "AI工程",
+      "topic": "tokenizer_alignment",
+      "question": "模型服务链路中哪些组件必须与同一 tokenizer 和 chat template 对齐？错位会出现什么故障？",
+      "followups": [
+        "流式输出时 prefix instability 会怎样影响增量解码？",
+        "special token 注入应在哪些层做校验和隔离？"
+      ],
+      "difficulty": "hard",
+      "source_ref": "docs/tutorials/tokenization_tutorial.md"
+    }
+  ]
+}

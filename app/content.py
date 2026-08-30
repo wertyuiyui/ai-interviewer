@@ -15,6 +15,36 @@ COMPANIES = {
     "tencent": "腾讯",
 }
 
+SPECIALIZATIONS = [
+    "通用后端",
+    "Java 后端",
+    "Go 后端",
+    "C++ 后端",
+    "Python 后端",
+    "基础架构",
+    "云原生与微服务",
+    "数据库与存储",
+    "消息队列与中间件",
+    "分布式系统",
+    "AI 工程后端 / LLM Infra",
+]
+
+AI_SPECIALIZATION_KEYWORDS = (
+    "ai后端",
+    "ai 后端",
+    "ai应用",
+    "ai 应用",
+    "ai工程",
+    "ai 工程",
+    "llm",
+    "大模型",
+    "模型服务",
+    "推理服务",
+    "模型网关",
+    "agent",
+    "智能体",
+)
+
 
 @lru_cache(maxsize=12)
 def _load_json(path: str) -> Any:
@@ -42,13 +72,7 @@ def load_style_card(company: str) -> dict[str, Any]:
     return value
 
 
-def load_question_bank(company: str) -> list[dict[str, Any]]:
-    if company not in COMPANIES:
-        raise AppError("INVALID_COMPANY", "暂不支持该公司", status_code=422)
-    path = ROOT_DIR / "questions" / f"{company}_backend.json"
-    if not path.exists():
-        return _fallback_questions()
-    value = _load_json(str(path))
+def _normalize_questions(value: Any, path: Path) -> list[dict[str, Any]]:
     if isinstance(value, dict):
         value = value.get("questions", [])
     if not isinstance(value, list):
@@ -62,6 +86,8 @@ def load_question_bank(company: str) -> list[dict[str, Any]]:
         "network": "计网",
         "coding_thought": "手撕思路",
         "coding": "手撕思路",
+        "ai_backend": "AI工程",
+        "ai_engineering": "AI工程",
     }
     normalized: list[dict[str, Any]] = []
     for raw in value:
@@ -72,6 +98,29 @@ def load_question_bank(company: str) -> list[dict[str, Any]]:
         item["category"] = category_names.get(raw_category, raw_category)
         normalized.append(item)
     return normalized
+
+
+def load_question_bank(company: str) -> list[dict[str, Any]]:
+    if company not in COMPANIES:
+        raise AppError("INVALID_COMPANY", "暂不支持该公司", status_code=422)
+    path = ROOT_DIR / "questions" / f"{company}_backend.json"
+    if not path.exists():
+        return _fallback_questions()
+    return _normalize_questions(_load_json(str(path)), path)
+
+
+def is_ai_specialization(specialization: str) -> bool:
+    compact = " ".join(str(specialization or "").strip().lower().split())
+    return any(keyword in compact for keyword in AI_SPECIALIZATION_KEYWORDS)
+
+
+def load_specialization_question_bank(specialization: str) -> list[dict[str, Any]]:
+    if not is_ai_specialization(specialization):
+        return []
+    path = ROOT_DIR / "questions" / "aris_ai_backend.json"
+    if not path.exists():
+        return []
+    return _normalize_questions(_load_json(str(path)), path)
 
 
 def load_topic_links() -> dict[str, dict[str, str]]:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def utc_now_iso() -> str:
@@ -57,8 +57,31 @@ class InterviewCreate(BaseModel):
     resume: ResumeData
     company: Company
     role: Literal["backend"] = "backend"
+    specialization: str = Field(default="通用后端", min_length=1, max_length=80)
+    # ``stress`` is retained as a compatibility alias for older clients. New
+    # clients should send stress_level; when both are present, stress_level wins.
     stress: bool = False
-    duration_minutes: Literal[10, 15, 25] = 15
+    stress_level: int = Field(default=0, ge=0, le=3, strict=True)
+    duration_minutes: int | None = Field(default=15, ge=1, le=180, strict=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_stress(cls, raw: Any) -> Any:
+        if not isinstance(raw, dict) or "stress_level" in raw:
+            return raw
+        values = dict(raw)
+        legacy = values.get("stress", False)
+        enabled = legacy is True or legacy == 1 or (
+            isinstance(legacy, str)
+            and legacy.strip().lower() in {"true", "1", "yes", "on"}
+        )
+        values["stress_level"] = 2 if enabled else 0
+        return values
+
+    @model_validator(mode="after")
+    def synchronize_legacy_stress(self) -> "InterviewCreate":
+        self.stress = self.stress_level > 0
+        return self
 
     @field_validator("client_id")
     @classmethod
@@ -67,6 +90,14 @@ class InterviewCreate(BaseModel):
         allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_")
         if not value or any(char not in allowed for char in value):
             raise ValueError("client_id 格式不正确")
+        return value
+
+    @field_validator("specialization")
+    @classmethod
+    def clean_specialization(cls, value: str) -> str:
+        value = " ".join(value.strip().split())
+        if not value:
+            raise ValueError("岗位细分方向不能为空")
         return value
 
 

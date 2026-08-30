@@ -17,6 +17,8 @@ COPY cards ./cards
 COPY questions ./questions
 COPY resources ./resources
 COPY public ./public
+COPY THIRD_PARTY_NOTICES.md ./THIRD_PARTY_NOTICES.md
+COPY references/licenses ./references/licenses
 
 RUN addgroup --system interview \
     && adduser --system --ingroup interview --home /app interview \
