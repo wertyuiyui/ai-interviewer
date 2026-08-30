@@ -47,6 +47,15 @@
 - 验证：Python 编译、两份前端脚本 `node --check`、两份 JSON `jq empty`、`git diff --check` 均通过；不知道/提示/面经选题/报告/前端专项 `66 passed`；共享工作区全量 `231 passed, 2 failed`，两项失败均来自并发 `PROJECT-009` 已更改首页 Profile 文案但尚未同步其旧断言，不涉及本任务文件。
 - 风险或后续事项：真实面经仅代表具体候选人、部门和时间点，不宣称公司官方题库；新增中文改写题不在纯英文面试中直接翻译冒充已审核英文题。提示示例是回答结构而非标准答案，项目细节仍要求候选人替换为真实经历。`PROJECT-009` 继续保留在进行中表，本提交不得包含其 `public/index.html`、`home-profile.css`、项目前端或 Profile 测试改动。
 
+### DEPLOY-010 · 2026-08-30 · 模拟面试跳题、提示与面经建议生产发布
+
+- Agent：`/root`。
+- 状态：`completed`
+- 摘要：将固定提交 `54fb2d4` 推送至既有 GitHub `origin/main`，并由 `git archive` 生成隔离发布快照同步到 `/opt/ai-interviewer-mvp`；未使用包含并发 `PROJECT-009` 改动的共享工作区。同步前创建 `/tmp/ai-interviewer-mvp-pre-54fb2d4-20260830.tar.gz` 回滚包，保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 和缓存，只重启 `ai-interviewer-3000.service`。
+- 文件：GitHub `main` 与生产目录中的固定提交 `54fb2d4`；生产密钥、SQLite 数据、依赖及并发任务文件未修改。
+- 验证：目标服务为 `active`，新主进程 PID `669334`；本机 8000、正式域名证书/SNI 直连本机 Caddy 的 HTTPS 443 与 3000 均返回 `{"status":"ok"}`；生产 `/interview` 已包含 `unknownButton` 与 `interview-guidance-v1`，`/report` 已包含“结合本次练习，优先做什么”及 `companyPersonalizedAdviceList`。
+- 风险或后续事项：发布快照不包含仍未提交的 `PROJECT-009`；该任务完成后需基于 `54fb2d4` 集成并重新跑全量测试。回滚包不含环境、数据库和依赖，可恢复本次发布前代码。
+
 ### PROFILE-002 · 2026-08-30 · 可靠简历身份、项目资料编辑与全站字体统一
 
 - Agent：`/root`；只读协作调研/审计：`resume_skill_research`、`project_edit_audit`、`typography_audit`。
