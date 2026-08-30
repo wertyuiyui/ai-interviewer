@@ -14,16 +14,21 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from .config import ROOT_DIR, Settings, get_settings
-from .content import COMPANIES
+from .content import COMPANIES, company_question_rank, load_interview_skill
 from .db import Database
 from .errors import AppError, LLMError
 from .llm import BailianChatClient
+from .schemas import InterviewType, normalize_interview_type
 
 
 LanguageMode = Literal["zh", "bilingual", "en"]
 InputMode = Literal["text", "voice"]
 PracticeMode = Literal["quick", "review"]
 GLOBAL_COMPANY_TAGS = {"all", "global", "global_tech", "overseas"}
+REVIEWED_PRACTICE_BANK_FILES = (
+    "real_practice_bank.json",
+    "real_practice_bank_extended.json",
+)
 
 
 def _utc_iso() -> str:
@@ -42,6 +47,7 @@ class PracticeSessionCreate(BaseModel):
 
     client_id: str = Field(min_length=8, max_length=128)
     mode: PracticeMode = "quick"
+    interview_type: InterviewType = "technical"
     company: str | None = Field(default=None, min_length=1, max_length=64)
     topic: str | None = Field(default=None, max_length=80)
     difficulty: Literal["easy", "medium", "hard", "discussion"] | None = None
@@ -55,6 +61,11 @@ class PracticeSessionCreate(BaseModel):
     @classmethod
     def validate_client_id(cls, value: str) -> str:
         return _clean_client_id(value)
+
+    @field_validator("interview_type", mode="before")
+    @classmethod
+    def migrate_legacy_interview_type(cls, value: Any) -> str:
+        return normalize_interview_type(value)
 
     @field_validator("company", "topic")
     @classmethod
@@ -142,6 +153,8 @@ class RealQuestion:
     id: str
     company: str | None
     companies: tuple[str, ...]
+    kind: str
+    directions: tuple[str, ...]
     category: str
     topic: str
     question: str
@@ -156,6 +169,8 @@ class RealQuestion:
             "id": self.id,
             "company": self.company,
             "company_tags": list(self.companies),
+            "kind": self.kind,
+            "direction_tags": list(self.directions),
             "category": self.category,
             "topic": self.topic,
             "question": self.question,
@@ -180,6 +195,19 @@ def _recommended_seconds(question: str, difficulty: str) -> int:
     if difficulty == "easy":
         return 45
     return 75
+
+
+def _is_behavioral_question(question: dict[str, Any]) -> bool:
+    """Classify the item itself so mixed sessions use the right rubric."""
+
+    kind = str(question.get("kind") or "").strip().casefold()
+    if kind in {"behavioral", "behavioural", "hr"}:
+        return True
+    category = str(question.get("category") or "").strip().casefold()
+    return bool(
+        any(marker in category for marker in ("综合面", "行为面", "价值观", "薪酬"))
+        or re.search(r"\b(?:behavioral|behavioural|hr|human resources?)\b", category)
+    )
 
 
 def _applies_to_company(question: RealQuestion, company: str | None) -> bool:
@@ -261,7 +289,7 @@ def load_real_question_bank(question_dir: Path | None = None) -> list[RealQuesti
     paths = (
         sorted(directory.glob("*.json"))
         if question_dir is not None
-        else [directory / "real_practice_bank.json"]
+        else [directory / name for name in REVIEWED_PRACTICE_BANK_FILES]
     )
     seen: set[str] = set()
     result: list[RealQuestion] = []
@@ -317,6 +345,19 @@ def load_real_question_bank(question_dir: Path | None = None) -> list[RealQuesti
                     for item in (value.get("company_tags") or [])
                     if str(item).strip()
                 )
+                raw_kind = str(value.get("kind") or "").strip().lower()
+                if raw_kind == "behavioral" or any(
+                    marker in str(value.get("category") or "").casefold()
+                    for marker in ("behavioral", "hr", "综合")
+                ):
+                    kind = "behavioral"
+                else:
+                    kind = raw_kind or "technical"
+                direction_tags = tuple(
+                    str(item).strip().lower()
+                    for item in (value.get("direction_tags") or [])
+                    if str(item).strip()
+                )
                 topics = [
                     str(item).strip()
                     for item in (value.get("topics") or [])
@@ -360,12 +401,19 @@ def load_real_question_bank(question_dir: Path | None = None) -> list[RealQuesti
                     private_provenance = dict(provenance)
                     if isinstance(scoring, dict):
                         private_provenance["scoring"] = scoring
+                    public_category = (
+                        ("Behavioral" if language == "en" else "综合面")
+                        if kind == "behavioral"
+                        else category
+                    )
                     result.append(
                         RealQuestion(
                             id=question_id,
                             company=company or None,
                             companies=company_tags,
-                            category=category,
+                            kind=kind,
+                            directions=direction_tags,
+                            category=public_category,
                             topic=topic,
                             question=question,
                             followups=followups,
@@ -388,6 +436,7 @@ CREATE TABLE IF NOT EXISTS practice_sessions (
     id TEXT PRIMARY KEY,
     client_id TEXT NOT NULL,
     mode TEXT NOT NULL,
+    interview_type TEXT NOT NULL DEFAULT 'technical',
     company TEXT,
     topic TEXT,
     difficulty TEXT,
@@ -450,6 +499,11 @@ class PracticeService:
                     "ALTER TABLE practice_sessions ADD COLUMN hint_events_json "
                     "TEXT NOT NULL DEFAULT '[]'"
                 )
+            if "interview_type" not in session_columns:
+                connection.execute(
+                    "ALTER TABLE practice_sessions ADD COLUMN interview_type TEXT "
+                    "NOT NULL DEFAULT 'technical'"
+                )
             attempt_columns = {
                 str(row["name"])
                 for row in connection.execute(
@@ -498,6 +552,35 @@ class PracticeService:
             "topics": sorted({item.topic for item in bank}),
             "difficulties": ["easy", "medium", "hard", "discussion"],
             "language_modes": ["zh", "bilingual", "en"],
+            "interview_types": [
+                {
+                    "id": "technical",
+                    "name": "技术面",
+                    "question_count": len(
+                        {
+                            re.sub(r":(?:zh|en)$", "", item.id)
+                            for item in bank
+                            if item.kind != "behavioral"
+                        }
+                    ),
+                },
+                {
+                    "id": "hr",
+                    "name": "综合面（HR 面）",
+                    "question_count": len(
+                        {
+                            re.sub(r":(?:zh|en)$", "", item.id)
+                            for item in bank
+                            if item.kind == "behavioral"
+                        }
+                    ),
+                },
+                {
+                    "id": "technical_hr",
+                    "name": "技术 + 综合面",
+                    "question_count": approved_question_count,
+                },
+            ],
         }
 
     async def create_session(self, request: PracticeSessionCreate) -> dict[str, Any]:
@@ -524,6 +607,7 @@ class PracticeService:
             session_id,
             request.client_id,
             request.mode,
+            request.interview_type,
             request.company,
             request.topic,
             request.difficulty,
@@ -537,9 +621,9 @@ class PracticeService:
             connection.execute(
                 """
                 INSERT INTO practice_sessions (
-                    id, client_id, mode, company, topic, difficulty,
+                    id, client_id, mode, interview_type, company, topic, difficulty,
                     language_mode, source_interview_id, questions_json, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 values,
             )
@@ -553,16 +637,44 @@ class PracticeService:
         self, request: PracticeSessionCreate, session_id: str
     ) -> list[dict[str, Any]]:
         bank = load_real_question_bank(self.question_dir)
+
+        def topic_matches(item: RealQuestion) -> bool:
+            if item.kind == "behavioral":
+                # A combined set must retain its HR share even when the user
+                # narrows the technical half to MySQL/Redis/etc. Standalone HR
+                # also should not become empty because of a stale tech filter.
+                return request.interview_type in {"hr", "technical_hr"}
+            if not request.topic:
+                return True
+            needle = request.topic.casefold()
+            return needle in item.topic.casefold() or needle in item.category.casefold()
+
+        def difficulty_matches(item: RealQuestion) -> bool:
+            # Behavioral evidence questions have their own progression rather
+            # than sharing technical easy/medium/hard semantics.
+            return (
+                item.kind == "behavioral"
+                or not request.difficulty
+                or item.difficulty == request.difficulty
+            )
+
         candidates = [
             item
             for item in bank
             if _applies_to_company(item, request.company)
             and (
-                not request.topic
-                or request.topic.casefold() in item.topic.casefold()
-                or request.topic.casefold() in item.category.casefold()
+                request.interview_type == "technical_hr"
+                or (
+                    request.interview_type == "hr"
+                    and item.kind == "behavioral"
+                )
+                or (
+                    request.interview_type == "technical"
+                    and item.kind != "behavioral"
+                )
             )
-            and (not request.difficulty or item.difficulty == request.difficulty)
+            and topic_matches(item)
+            and difficulty_matches(item)
             and (
                 request.language_mode == "bilingual"
                 or item.language == request.language_mode
@@ -593,10 +705,57 @@ class PracticeService:
         # Stable pseudo-random order makes a session retry/debuggable without
         # always presenting file order to every candidate.
         snapshots.sort(
-            key=lambda item: hashlib.sha256(
-                f"{session_id}:{item['id']}".encode("utf-8")
-            ).hexdigest()
+            key=lambda item: (
+                company_question_rank(request.company, item),
+                hashlib.sha256(
+                    f"{session_id}:{item['id']}".encode("utf-8")
+                ).hexdigest(),
+            )
         )
+        if request.company in COMPANIES and not request.topic:
+            priority_count = len(
+                load_interview_skill(str(request.company)).get(
+                    "question_topic_priorities", []
+                )
+            )
+            ranked_buckets: dict[int, list[dict[str, Any]]] = {}
+            unmatched: list[dict[str, Any]] = []
+            for item in snapshots:
+                rank = company_question_rank(request.company, item)
+                if rank < priority_count:
+                    ranked_buckets.setdefault(rank, []).append(item)
+                else:
+                    unmatched.append(item)
+            interleaved: list[dict[str, Any]] = []
+            while any(ranked_buckets.values()):
+                for rank in sorted(ranked_buckets):
+                    if ranked_buckets[rank]:
+                        interleaved.append(ranked_buckets[rank].pop(0))
+            snapshots = [*interleaved, *unmatched]
+        if request.interview_type == "technical_hr":
+            technical = [item for item in snapshots if item.get("kind") != "behavioral"]
+            behavioral = [item for item in snapshots if item.get("kind") == "behavioral"]
+            if request.count >= 2 and technical and behavioral:
+                behavioral_target = min(
+                    len(behavioral), max(1, round(request.count * 0.4))
+                )
+                technical_target = min(
+                    len(technical), max(1, request.count - behavioral_target)
+                )
+                selected = technical[:technical_target] + behavioral[:behavioral_target]
+                selected_ids = {str(item.get("id")) for item in selected}
+                if len(selected) < request.count:
+                    selected.extend(
+                        item
+                        for item in snapshots
+                        if str(item.get("id")) not in selected_ids
+                    )
+                selected.sort(
+                    key=lambda item: hashlib.sha256(
+                        f"{session_id}:mixed:{item['id']}".encode("utf-8")
+                    ).hexdigest()
+                )
+                snapshots = selected
         return snapshots[: request.count]
 
     async def _review_questions(
@@ -689,6 +848,8 @@ class PracticeService:
             question=question,
             answer=request.answer,
             language_mode=session["language_mode"],
+            company=session.get("company"),
+            interview_type=session.get("interview_type") or "technical",
         )
         attempt_id = uuid.uuid4().hex
         created_at = _utc_iso()
@@ -891,6 +1052,12 @@ class PracticeService:
         row: sqlite3.Row, connection: sqlite3.Connection
     ) -> dict[str, Any]:
         data = dict(row)
+        interview_type = normalize_interview_type(data.get("interview_type"))
+        data["interview_type"] = (
+            interview_type
+            if interview_type in {"technical", "hr", "technical_hr"}
+            else "technical"
+        )
         data["questions"] = json.loads(data.pop("questions_json"))
         try:
             hints = json.loads(data.pop("hint_events_json", "[]") or "[]")
@@ -969,6 +1136,7 @@ class PracticeService:
             "id": session["id"],
             "client_id": session["client_id"],
             "mode": session["mode"],
+            "interview_type": session.get("interview_type") or "technical",
             "company": session["company"],
             "topic": session["topic"],
             "difficulty": session["difficulty"],
@@ -995,15 +1163,30 @@ class PracticeService:
         }
 
     async def _assess(
-        self, *, question: dict[str, Any], answer: str, language_mode: str
+        self,
+        *,
+        question: dict[str, Any],
+        answer: str,
+        language_mode: str,
+        company: str | None = None,
+        interview_type: str = "technical",
     ) -> PracticeAssessment:
+        assessment_mode = (
+            "behavioral" if _is_behavioral_question(question) else "technical"
+        )
         if self.settings.mock_llm:
-            return self._mock_assessment(question, answer, language_mode)
+            return self._mock_assessment(
+                question, answer, language_mode, assessment_mode=assessment_mode
+            )
         output_language = "English" if language_mode == "en" else "简体中文"
         private_scoring = (
             (question.get("provenance") or {}).get("scoring") or {}
         )
         payload = {
+            "target_company": COMPANIES.get(str(company), str(company or "通用")),
+            "interview_type": interview_type,
+            "question_kind": question.get("kind"),
+            "assessment_mode": assessment_mode,
             "question": question["question"],
             "category": question.get("category"),
             "topic": question.get("topic"),
@@ -1012,10 +1195,41 @@ class PracticeService:
             "reviewed_key_points": private_scoring.get("key_points") or [],
             "reviewed_red_flags": private_scoring.get("red_flags") or [],
         }
+        company_guidance: dict[str, Any] = {}
+        if company in COMPANIES:
+            skill = load_interview_skill(str(company))
+            company_guidance = {
+                "tone": skill.get("tone"),
+                "difficulty_ladder": skill.get("difficulty_ladder"),
+                "hr_focus": skill.get("hr_focus"),
+            }
+        payload["company_practice_guidance"] = company_guidance
+        if assessment_mode == "behavioral":
+            rubric = """
+本题是行为/综合（HR）题，只能使用行为面 rubric：
+- STAR 证据的具体性（情境、任务、个人行动、可验证结果）35%；
+- 价值观、选择逻辑与目标公司/岗位契合度 25%；
+- 自我认知、复盘质量，以及规划的现实性与行动路径 25%；
+- 表达的真诚、清晰与分寸感 15%。
+根据题意评价价值观、人生/职业规划或薪酬沟通；不要求每题机械覆盖所有维度。
+涉及薪酬时只评价信息依据、表达方式、优先级与可协商边界，不得因具体数值本身扣分。
+不得套用技术正确性、底层原理、机制深度或系统 trade-off 的评分标准。
+""".strip()
+        else:
+            rubric = """
+本题是技术题，只能使用技术面 rubric：
+- 正确性 40%；
+- 原理与深度 30%；
+- 场景、边界与取舍 20%；
+- 表达 10%。
+不得因为所在场次同时包含综合面，就把技术题改用 STAR、价值观或职业规划标准评分。
+""".strip()
         system = f"""
-你是大厂后端实习技术面试的单题阅卷员。用 {output_language} 输出。
-只评价候选人的回答，不因为语音或文字输入方式改变技术评分标准。
-按 0-10 分评价：正确性 40%，原理与深度 30%，场景/边界/取舍 20%，表达 10%。
+你是大厂后端实习面试的单题阅卷员。用 {output_language} 输出。
+目标公司只影响追问侧重和反馈语气，不得把共享公开题冒充为该公司的独家真题。
+assessment_mode 已根据当前题目的 kind/category 确定；即使 interview_type=technical_hr，也必须逐题采用对应标准。
+{rubric}
+只评价候选人的回答，不因为语音或文字输入方式改变本题评分标准。
 扣分必须指向回答中的缺失或错误；不要捏造候选人没说过的内容。
 reviewed_key_points 和 reviewed_red_flags 来自已审核题库，仅用作评分依据，不向用户透露来源。
 better_answer 给出适合本科实习面试、可以直接练习复述的示范回答。
@@ -1053,22 +1267,45 @@ better_answer 给出适合本科实习面试、可以直接练习复述的示范
 
     @staticmethod
     def _mock_assessment(
-        question: dict[str, Any], answer: str, language_mode: str
+        question: dict[str, Any],
+        answer: str,
+        language_mode: str,
+        *,
+        assessment_mode: str = "technical",
     ) -> PracticeAssessment:
         compact = re.sub(r"\s+", "", answer)
         admits_unknown = any(
             marker in answer.lower()
             for marker in ("不知道", "不会", "不清楚", "i don't know", "no idea")
         )
+        behavioral = assessment_mode == "behavioral"
         if admits_unknown or len(compact) < 12:
             score = 2.5
-            deductions = ["回答缺少可评分的原理、过程和边界条件。"]
+            deductions = [
+                (
+                    "回答缺少可评分的具体情境、个人行动和结果证据。"
+                    if behavioral
+                    else "回答缺少可评分的原理、过程和边界条件。"
+                )
+            ]
         elif len(compact) < 55:
             score = 5.5
-            deductions = ["给出了方向，但缺少关键机制、验证方法或取舍。"]
+            deductions = [
+                (
+                    "给出了态度或结论，但缺少 STAR 证据、选择依据或复盘。"
+                    if behavioral
+                    else "给出了方向，但缺少关键机制、验证方法或取舍。"
+                )
+            ]
         elif len(compact) < 140:
             score = 7.0
-            deductions = ["主体正确，可以补充失败场景和可观测指标。"]
+            deductions = [
+                (
+                    "回答已有具体信息，可以进一步说明个人行动、可验证结果与反思。"
+                    if behavioral
+                    else "主体正确，可以补充失败场景和可观测指标。"
+                )
+            ]
         else:
             score = 8.5
             deductions = []
@@ -1080,12 +1317,27 @@ better_answer 给出适合本科实习面试、可以直接练习复述的示范
             for item in (private_scoring.get("key_points") or [])
             if str(item).strip()
         ]
-        if language_mode == "en":
+        if language_mode == "en" and behavioral:
+            better = (
+                "State your choice clearly, support it with one specific STAR example, distinguish "
+                "your own actions from the team's work, quantify the result where possible, and "
+                "close with what you learned or will do next. For compensation, explain your basis "
+                "and priorities without treating one number as inherently right or wrong."
+            )
+            steps = ["Add one concrete STAR example", "Connect the choice to your next action"]
+        elif language_mode == "en":
             better = (
                 "Start with the core mechanism, walk through one concrete request or failure path, "
                 "then close with observability signals and the trade-offs of your choice."
             )
             steps = ["Add one concrete example", "State a boundary case and a verification metric"]
+        elif behavioral:
+            better = (
+                "先明确给出自己的选择或判断，再用一个具体 STAR 事例说明情境、个人行动和可验证结果，"
+                "最后补充复盘与下一步行动；若涉及薪酬，应说明信息依据、个人优先级和可协商边界，"
+                "而不是把某个数字包装成唯一正确答案。"
+            )
+            steps = ["补充一个具体 STAR 事例", "说明选择依据、复盘与下一步行动"]
         else:
             better = "；".join(reviewed_points) if reviewed_points else (
                 f"先直接回答“{question.get('topic') or '核心结论'}”的机制，再用一个具体请求或故障链路展开，"
@@ -1102,6 +1354,10 @@ better_answer 给出适合本科实习面试、可以直接练习复述的示范
             strengths=[] if score < 6 else ["回答包含了可继续追问的有效信息。"],
             deductions=deductions,
             better_answer=better,
-            key_points=reviewed_points or ["核心机制", "具体场景", "边界与取舍"],
+            key_points=reviewed_points or (
+                ["STAR 证据", "个人行动与结果", "价值观或选择逻辑", "复盘与规划"]
+                if behavioral
+                else ["核心机制", "具体场景", "边界与取舍"]
+            ),
             next_steps=steps,
         )

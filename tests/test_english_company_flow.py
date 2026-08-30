@@ -11,6 +11,7 @@ from app.config import get_settings
 from app.content import (
     COMPANIES,
     load_english_question_bank,
+    load_hr_question_bank,
     load_interview_skill,
     load_style_card,
 )
@@ -21,6 +22,7 @@ from app.prompt_engine import (
     enforce_project_drill,
     initial_question,
     select_questions,
+    select_server_questions,
 )
 from app.report_engine import REPORT_SYSTEM_PROMPT_EN, ReportEngine
 from app.schemas import InterviewCreate, Project, ResumeData
@@ -122,7 +124,7 @@ def test_home_and_report_preserve_six_companies_and_english_mode() -> None:
 
 def test_pure_english_prompt_applies_company_skill_and_hides_provenance() -> None:
     questions = load_english_question_bank()
-    assert len(questions) == 66
+    assert len(questions) == 108
     assert all(item["language"] == "en" for item in questions)
     assert {item["license"] for item in questions} <= {"Apache-2.0", "MIT"}
     technical = select_questions(
@@ -146,7 +148,15 @@ def test_pure_english_prompt_applies_company_skill_and_hides_provenance() -> Non
     assert "company-specific interview skill" not in prompt.lower()
     assert "【公司针对性 interview skill】" in prompt
     assert "one_hundred_times_traffic" in prompt
-    assert questions[0]["question"] in prompt
+    selected = select_server_questions(
+        "alibaba",
+        [],
+        15,
+        "通用后端",
+        language_mode="en",
+        interview_type="technical_hr",
+    )
+    assert all(item["question"] in prompt for item in selected)
     assert "source_url" not in prompt
     assert "source_title" not in prompt
     assert "source_path" not in prompt
@@ -209,6 +219,8 @@ async def test_mock_combined_interview_keeps_every_candidate_question_english(
         "I would define p99 over five-minute windows, compare it with the pre-release baseline, and validate the change under the same traffic distribution.",
         "If traffic grew tenfold, the database connection pool and hot keys would fail first, so I would add admission control, shard hot state, and degrade noncritical reads.",
         "I would state the delivery constraint, compare evidence with the team, run a small experiment, and own the result even if my first proposal was rejected.",
+        "In five years I want to own reliable backend services, and this internship lets me test that plan through real delivery and feedback.",
+        "This semester I track shipped milestones, load-test results, and mentor feedback, then revise the plan at the end of each month.",
     ]
     questions: list[str] = []
     for answer in answers:
@@ -216,7 +228,9 @@ async def test_mock_combined_interview_keeps_every_candidate_question_english(
         questions.append(result.question)
         assert not re.search(r"[\u3400-\u9fff]", result.question)
         assert not result.ended
-    assert any("Baidu" in question for question in questions)
+    assert [questions[index] for index in (5, 7, 9)] == [
+        item["question"] for item in load_hr_question_bank("baidu", "en")
+    ]
     assert any("compensation expectations" in question.lower() for question in questions)
 
 
@@ -237,10 +251,11 @@ def test_english_voice_and_report_instructions_are_not_chinese_fallbacks() -> No
     assert not re.search(r"[\u3400-\u9fff]", required)
 
 
-def test_new_company_report_advice_is_explicitly_caveated_without_fake_links() -> None:
+def test_new_company_report_advice_is_caveated_and_uses_traceable_links() -> None:
     insights = ReportEngine._company_insights("huawei")
 
     assert insights.recurring_patterns
     assert insights.interview_advice
     assert "不是该公司官方标准" in insights.sample_caveat
-    assert insights.citations == []
+    assert len(insights.citations) >= 3
+    assert all(item.url.startswith("https://www.nowcoder.com/") for item in insights.citations)

@@ -50,17 +50,36 @@ class ResumeData(BaseModel):
 
 
 Company = str
+InterviewType = Literal["technical", "hr", "technical_hr"]
+
+
+def normalize_interview_type(value: Any) -> str:
+    """Normalize the one legacy combined-interview spelling.
+
+    ``tech_hr`` was used by an early client build.  Keep accepting it at API
+    boundaries and when reading old SQLite rows, but expose and persist only
+    the canonical ``technical_hr`` spelling.
+    """
+
+    normalized = str(value or "technical").strip().lower()
+    if normalized == "tech_hr":
+        return "technical_hr"
+    return normalized
 
 
 class InterviewCreate(BaseModel):
     client_id: str = Field(min_length=8, max_length=128)
     resume: ResumeData
+    # Optional anonymous-Profile project selected on the home page. The HTTP
+    # adapter resolves ownership and snapshots its structured analysis into the
+    # resume before the interview engine persists the session.
+    profile_project_id: str | None = Field(
+        default=None, pattern=r"^[a-f0-9]{32}$"
+    )
     company: Company
     role: Literal["backend"] = "backend"
     # Keep the original technical interview as the compatibility default.
-    # ``technical_hr`` is a combined technical + behavioral/HR first round,
-    # not a standalone recruiter screen.
-    interview_type: Literal["technical", "technical_hr"] = "technical"
+    interview_type: InterviewType = "technical"
     specialization: str = Field(default="通用后端", min_length=1, max_length=80)
     language_mode: Literal["zh", "bilingual", "en"] = "bilingual"
     # ``stress`` is retained as a compatibility alias for older clients. New
@@ -99,6 +118,11 @@ class InterviewCreate(BaseModel):
         if not value or any(char not in allowed for char in value):
             raise ValueError("client_id 格式不正确")
         return value
+
+    @field_validator("interview_type", mode="before")
+    @classmethod
+    def migrate_legacy_interview_type(cls, value: Any) -> str:
+        return normalize_interview_type(value)
 
     @field_validator("company")
     @classmethod
@@ -295,6 +319,23 @@ class RoleFitAnalysis(BaseModel):
     improvement_plan: list[str] = Field(default_factory=list)
 
 
+class BehavioralAnalysis(BaseModel):
+    """Evidence-backed dimensions for standalone or combined HR interviews.
+
+    These dimensions intentionally sit beside the fixed technical rubric.  A
+    behavioral interview should not pretend that unasked MySQL/coding topics
+    were observed, while its values, planning and compensation evidence still
+    needs a structured home in the report.
+    """
+
+    company_fit: EvidenceAnalysis = Field(default_factory=EvidenceAnalysis)
+    career_planning: EvidenceAnalysis = Field(default_factory=EvidenceAnalysis)
+    collaboration: EvidenceAnalysis = Field(default_factory=EvidenceAnalysis)
+    compensation_communication: EvidenceAnalysis = Field(
+        default_factory=EvidenceAnalysis
+    )
+
+
 class CompanyExperienceCitation(BaseModel):
     title: str
     url: str
@@ -347,6 +388,7 @@ class InterviewReport(BaseModel):
     resume_analysis: ResumeAnalysis = Field(default_factory=ResumeAnalysis)
     process_analysis: ProcessAnalysis = Field(default_factory=ProcessAnalysis)
     role_fit: RoleFitAnalysis = Field(default_factory=RoleFitAnalysis)
+    behavioral_analysis: BehavioralAnalysis = Field(default_factory=BehavioralAnalysis)
     company_insights: CompanyInsights = Field(default_factory=CompanyInsights)
     radar: list[RadarAxis] = Field(default_factory=list)
 

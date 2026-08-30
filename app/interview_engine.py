@@ -12,8 +12,6 @@ from pydantic import ValidationError
 from .config import Settings, get_settings
 from .content import (
     load_current_research_question_bank,
-    load_hr_question_bank,
-    load_question_bank,
     load_style_card,
 )
 from .db import Database
@@ -28,6 +26,7 @@ from .prompt_engine import (
     interview_drill_target,
     is_vague_answer,
     select_questions,
+    select_server_questions,
 )
 from .schemas import (
     InterviewCreate,
@@ -51,6 +50,24 @@ class EngineResult:
     turn: InterviewTurn
 
 
+@dataclass(slots=True, frozen=True)
+class _BankPhase:
+    """Server-bank position for the question just answered and the next one.
+
+    ``*_followup`` means the question stays on the same reviewed bank item but
+    is personalized from the candidate's preceding answer.  Keeping this
+    mapping independent from generated model state prevents a malformed model
+    response from skipping or reordering reviewed main questions.
+    """
+
+    next_track: str = ""
+    next_index: int = -1
+    next_followup: bool = False
+    answered_track: str = ""
+    answered_index: int = -1
+    answered_followup: bool = False
+
+
 class InterviewEngine:
     def __init__(
         self,
@@ -62,12 +79,9 @@ class InterviewEngine:
         self.settings = settings or get_settings()
         self.client = client or BailianChatClient(self.settings)
 
-    async def create(
-        self,
-        request: InterviewCreate,
-        *,
-        weak_topics_override: list[str] | None = None,
-    ) -> dict[str, Any]:
+    async def ensure_budget_available(self, client_id: str) -> None:
+        """Reject a new session before any optional project-analysis LLM call."""
+
         global_count = await self.db.interview_count_today()
         if global_count >= self.settings.daily_interview_limit:
             raise AppError(
@@ -75,13 +89,21 @@ class InterviewEngine:
                 "今日公开体验场次已用完，请明天再来。",
                 status_code=429,
             )
-        client_count = await self.db.interview_count_today(request.client_id)
+        client_count = await self.db.interview_count_today(client_id)
         if client_count >= self.settings.client_daily_interview_limit:
             raise AppError(
                 "CLIENT_DAILY_LIMIT",
                 "本设备今日练习场次已用完，请先复盘已有报告。",
                 status_code=429,
             )
+
+    async def create(
+        self,
+        request: InterviewCreate,
+        *,
+        weak_topics_override: list[str] | None = None,
+    ) -> dict[str, Any]:
+        await self.ensure_budget_available(request.client_id)
         if weak_topics_override is not None:
             weak_topics = self._normalize_weak_topics(weak_topics_override)
         elif request.memory_enabled:
@@ -102,7 +124,9 @@ class InterviewEngine:
             weak_topics=weak_topics,
             selection_seed=interview_id,
         )
-        first_question = initial_question(request.company, request.language_mode)
+        first_question = initial_question(
+            request.company, request.language_mode, request.interview_type
+        )
         await self.db.create_interview(
             interview_id=interview_id,
             client_id=request.client_id,
@@ -359,6 +383,10 @@ class InterviewEngine:
         anchor = decision.anchor_keyword.strip()
         if not anchor or anchor.lower() not in answer.lower():
             anchor = extract_anchor_keyword(answer, resume)
+        # Bank follow-ups must stay tied to this answer. Project drilling may
+        # deliberately reuse a previous project anchor for a vague response,
+        # so retain the direct response anchor before that substitution.
+        response_anchor = anchor
         if vague_answer:
             previous_anchor = next(
                 (turn.anchor_keyword for turn in reversed(turns) if turn.anchor_keyword),
@@ -383,42 +411,50 @@ class InterviewEngine:
             max_depth=drill_target,
             language_mode=str(interview.get("language_mode") or "bilingual"),
         )
-        if not forced_depth and (
-            interview["company"] == "bytedance"
-            and completed_turns == drill_target + 1
-        ):
-            # 字节风格卡要求每场都有手撕思路。把它放在项目深挖之后
-            # 的第一个切换点，避免短场面被普通八股挤掉。
-            if interview.get("language_mode") == "en":
-                coding_question = (
-                    "Design an O(1) LRU cache verbally. Explain the data structures, "
-                    "the get and put operations, complexity, and edge cases."
-                )
-            else:
-                coding_question = next(
-                    (
-                        item["question"]
-                        for item in load_question_bank("bytedance")
-                        if item.get("category") == "手撕思路"
-                    ),
-                    "请口述一个 O(1) LRU Cache 的数据结构、操作和边界。",
-                )
-            question = str(coding_question)
-        hr_questions = (
-            load_hr_question_bank(
-                interview["company"],
-                str(interview.get("language_mode") or "bilingual"),
-            )
-            if interview_type == "technical_hr"
-            else []
+        server_questions = select_server_questions(
+            interview["company"],
+            interview["weak_topics"],
+            interview["duration_minutes"],
+            interview["specialization"],
+            selection_seed=interview["id"],
+            language_mode=str(interview.get("language_mode") or "bilingual"),
+            interview_type=interview_type,
         )
-        # After the self introduction, >=3 project layers and one additional
-        # technical question, a combined interview deterministically covers
-        # all three behavioral areas instead of hoping the model happens to
-        # select them before a short interview times out.
-        next_hr_index = completed_turns - (drill_target + 2)
-        if 0 <= next_hr_index < len(hr_questions):
-            question = str(hr_questions[next_hr_index]["question"])
+        technical_questions = [
+            item for item in server_questions if item.get("kind") != "behavioral"
+        ]
+        hr_questions = [
+            item for item in server_questions if item.get("kind") == "behavioral"
+        ]
+        phase = self._bank_phase(
+            interview_type,
+            completed_turns=completed_turns,
+            drill_target=drill_target,
+            combined_hr_stages=min(3, len(hr_questions)),
+        )
+        next_item: dict[str, Any] | None = None
+        if not forced_depth and phase.next_track:
+            bank = (
+                technical_questions
+                if phase.next_track == "technical"
+                else hr_questions
+            )
+            if bank:
+                next_item = bank[phase.next_index % len(bank)]
+                if phase.next_followup:
+                    question = self._anchored_bank_followup(
+                        decision.next_question,
+                        answer=answer,
+                        anchor=response_anchor,
+                        bank_item=next_item,
+                        track=phase.next_track,
+                        vague=vague_answer,
+                        language_mode=str(
+                            interview.get("language_mode") or "bilingual"
+                        ),
+                    )
+                else:
+                    question = str(next_item["question"])
         question = self._sanitize_question(
             question,
             interview["company"],
@@ -432,6 +468,7 @@ class InterviewEngine:
         current_topic = decision.assessment.topic
         current_drill_dimension = decision.drill_dimension
         current_drill_depth = decision.drill_depth
+        answered_bank_item: dict[str, Any] | None = None
         if completed_turns == 1:
             current_dimension = "communication"
             current_topic = "自我介绍·整体与学习情况"
@@ -444,22 +481,35 @@ class InterviewEngine:
             ]
             current_dimension = "project_depth"
             current_topic = f"项目深挖·{current_drill_dimension}"
-        elif (
-            interview["company"] == "bytedance"
-            and completed_turns == drill_target + 2
-        ):
-            current_dimension = "coding_thought"
-            current_topic = "手撕思路·LRU"
-            current_drill_dimension = "手撕思路"
-            current_drill_depth = 0
-        answered_hr_index = completed_turns - (drill_target + 3)
-        if 0 <= answered_hr_index < len(hr_questions):
+        if phase.answered_track == "hr" and hr_questions:
+            answered_hr_index = phase.answered_index % len(hr_questions)
+            answered_bank_item = hr_questions[answered_hr_index]
             current_dimension = "communication"
             current_topic = f"综合面·{hr_questions[answered_hr_index]['topic']}"
             current_drill_dimension = ""
-            current_drill_depth = 0
+            current_drill_depth = 1 if phase.answered_followup else 0
+        if phase.answered_track == "technical" and technical_questions:
+            answered_item = technical_questions[
+                phase.answered_index % len(technical_questions)
+            ]
+            answered_bank_item = answered_item
+            is_coding = answered_item.get("kind") == "coding"
+            current_dimension = "coding_thought" if is_coding else "fundamentals"
+            current_topic = (
+                f"手撕思路·{answered_item.get('topic') or '数据结构与算法'}"
+                if is_coding
+                else str(
+                    answered_item.get("topic")
+                    or answered_item.get("category")
+                    or "后端基础"
+                )
+            )
+            current_drill_dimension = "手撕思路" if is_coding else "基础知识"
+            current_drill_depth = 1 if phase.answered_followup else 0
 
-        if completed_turns == 1 or 0 <= next_hr_index < len(hr_questions):
+        if completed_turns == 1 or (
+            phase.next_track == "hr" and not phase.next_followup
+        ):
             # The introduction-to-experience handoff and the three required HR
             # openers should sound like coherent phase transitions. Pressure
             # resumes inside technical follow-ups instead of adding a generic
@@ -480,9 +530,9 @@ class InterviewEngine:
             ordinal=completed_turns,
             language_mode=str(interview.get("language_mode") or "bilingual"),
         )
-        recommended_seconds = self.recommended_answer_seconds(question)
-        current_recommended_seconds = self.recommended_answer_seconds(
-            str(interview["last_question"])
+        recommended_seconds = self._recommended_seconds_for_item(next_item, question)
+        current_recommended_seconds = self._recommended_seconds_for_item(
+            answered_bank_item, str(interview["last_question"])
         )
         normalized_duration = (
             round(max(0.0, min(float(answer_duration_seconds), 3600.0)), 2)
@@ -538,6 +588,223 @@ class InterviewEngine:
             recommended_answer_seconds=0 if ended else recommended_seconds,
             turn=turn,
         )
+
+    @staticmethod
+    def _bank_phase(
+        interview_type: str,
+        *,
+        completed_turns: int,
+        drill_target: int,
+        combined_hr_stages: int,
+    ) -> _BankPhase:
+        """Map the transcript ordinal to reviewed-base/follow-up pairs.
+
+        Technical interviews enter the bank after the project drill. HR
+        interviews enter immediately after the introduction. Combined
+        interviews use one technical pair, three HR pairs, and then continue
+        through technical pairs. The function is intentionally stateless: the
+        persisted turn count is sufficient to resume the correct phase.
+        """
+
+        normalized_type = (
+            "technical_hr" if interview_type == "tech_hr" else interview_type
+        )
+        origin = 1 if normalized_type == "hr" else drill_target + 1
+
+        def slot(step: int) -> tuple[str, int, bool]:
+            if step < 0:
+                return "", -1, False
+            if normalized_type == "technical":
+                return "technical", step // 2, bool(step % 2)
+            if normalized_type == "hr":
+                return "hr", step // 2, bool(step % 2)
+            if normalized_type == "technical_hr":
+                # Pair 0 is technical. It is followed by up to three distinct
+                # HR stages, then technical pair 1 onward.
+                if step < 2:
+                    return "technical", 0, bool(step % 2)
+                hr_end = 2 + (2 * max(0, combined_hr_stages))
+                if step < hr_end:
+                    hr_step = step - 2
+                    return "hr", hr_step // 2, bool(hr_step % 2)
+                technical_step = step - hr_end
+                return "technical", 1 + technical_step // 2, bool(technical_step % 2)
+            return "", -1, False
+
+        next_track, next_index, next_followup = slot(completed_turns - origin)
+        answered_track, answered_index, answered_followup = slot(
+            completed_turns - origin - 1
+        )
+        return _BankPhase(
+            next_track=next_track,
+            next_index=next_index,
+            next_followup=next_followup,
+            answered_track=answered_track,
+            answered_index=answered_index,
+            answered_followup=answered_followup,
+        )
+
+    @staticmethod
+    def _anchored_bank_followup(
+        candidate: str,
+        *,
+        answer: str,
+        anchor: str,
+        bank_item: dict[str, Any],
+        track: str,
+        vague: bool,
+        language_mode: str,
+    ) -> str:
+        """Keep a generated follow-up only when it is demonstrably anchored.
+
+        A bank follow-up has two independent anchors: the reviewed main
+        question and a concrete word from the candidate's answer. Requiring
+        both prevents an off-topic answer from steering the next question away
+        from the reviewed item. HR fallbacks explicitly ask for action,
+        evidence, result, and review.
+        """
+
+        item_language = str(bank_item.get("language") or "").lower()
+        item_question = str(bank_item.get("question") or "")
+        english = language_mode == "en" or (
+            language_mode == "bilingual"
+            and (
+                item_language == "en"
+                or (
+                    bool(re.search(r"[A-Za-z]", item_question))
+                    and not re.search(r"[\u4e00-\u9fff]", item_question)
+                )
+            )
+        )
+        clean_answer = " ".join(str(answer or "").split()).strip()
+        clean_anchor = " ".join(str(anchor or "").split()).strip("“”\"'，,。.!！?")
+        if len(clean_anchor) < 2 or clean_anchor.casefold() not in clean_answer.casefold():
+            answer_tokens = re.findall(
+                r"[A-Za-z][A-Za-z0-9+.#_-]{2,}|[\u4e00-\u9fff]{2,8}",
+                clean_answer,
+            )
+            clean_anchor = next(
+                (token for token in answer_tokens if len(token.strip()) >= 2),
+                "no concrete evidence" if english else "未给出具体依据",
+            )
+        if english and re.search(r"[\u4e00-\u9fff]", clean_anchor):
+            english_tokens = re.findall(
+                r"[A-Za-z][A-Za-z0-9+.#_-]*(?:\s+[A-Za-z][A-Za-z0-9+.#_-]*){0,4}",
+                clean_answer,
+            )
+            clean_anchor = next(
+                (value.strip() for value in english_tokens if len(value.strip()) >= 3),
+                "no concrete evidence",
+            )
+        clean_anchor = clean_anchor[:64]
+
+        topic = " ".join(str(bank_item.get("topic") or "").split()).strip()
+        category = " ".join(str(bank_item.get("category") or "").split()).strip()
+        normalized_item_question = " ".join(item_question.split()).strip()
+        if english:
+            # Runtime English variants can retain a Chinese canonical topic,
+            # so the reviewed English question is the safest exact context.
+            bank_context = normalized_item_question or (
+                category if not re.search(r"[\u4e00-\u9fff]", category) else "the original question"
+            )
+            bank_context = bank_context[:140].rstrip()
+        else:
+            bank_context = topic or category or normalized_item_question or "原问题"
+            bank_context = bank_context[:56].rstrip()
+
+        theme_markers: set[str] = set()
+        for value in (topic, category):
+            for part in re.split(r"[/|·:：]", value):
+                marker = " ".join(part.split()).strip().casefold()
+                if len(marker) >= 2:
+                    theme_markers.add(marker)
+        english_stopwords = {
+            "about",
+            "after",
+            "could",
+            "does",
+            "explain",
+            "first",
+            "from",
+            "have",
+            "into",
+            "question",
+            "should",
+            "their",
+            "under",
+            "what",
+            "when",
+            "where",
+            "which",
+            "would",
+        }
+        for token in re.findall(r"[A-Za-z][A-Za-z0-9+.#_-]{2,}", item_question):
+            marker = token.casefold()
+            if marker not in english_stopwords:
+                theme_markers.add(marker)
+
+        proposed = str(candidate or "").strip()
+        answer_anchored = bool(
+            proposed
+            and clean_anchor
+            and clean_anchor.casefold() in proposed.casefold()
+        )
+        topic_anchored = any(
+            marker in proposed.casefold() for marker in theme_markers
+        )
+        anchored = answer_anchored and topic_anchored
+        if english and re.search(r"[\u4e00-\u9fff]", proposed):
+            anchored = False
+        if anchored and track == "hr":
+            evidence_markers = (
+                ("action", "result", "evidence", "specific", "measure", "learn")
+                if english
+                else ("行动", "结果", "证据", "具体", "验证", "复盘", "你做")
+            )
+            anchored = any(marker in proposed.casefold() for marker in evidence_markers)
+        if anchored:
+            return proposed
+
+        if english:
+            if track == "hr":
+                return (
+                    f'Staying with "{bank_context}", you mentioned "{clean_anchor}". '
+                    "How does that evidence answer the original question? What action did "
+                    "you personally take, "
+                    "what was the result, what evidence did you use to judge it, and what "
+                    "would you change in hindsight?"
+                )
+            return (
+                f'Staying with "{bank_context}", you mentioned "{clean_anchor}". '
+                "How does that claim or evidence answer the original question? Explain "
+                "the underlying mechanism, "
+                "the boundary condition where it would fail, and the evidence you would "
+                "use to validate it."
+            )
+        if track == "hr":
+            return (
+                f"仍围绕“{bank_context}”这个问题：你刚才提到“{clean_anchor}”。"
+                "这条依据如何回答原问题？当时你本人采取了什么具体行动，结果如何，"
+                "你用什么证据判断结果，复盘时会改什么？"
+            )
+        return (
+            f"仍围绕“{bank_context}”这个问题：你刚才提到“{clean_anchor}”。"
+            "这条信息如何回答原问题？请把底层机制讲清楚：关键状态如何变化，"
+            "在哪个边界条件下会失效，你会用什么证据验证？"
+        )
+
+    @classmethod
+    def _recommended_seconds_for_item(
+        cls, item: dict[str, Any] | None, question: str
+    ) -> int:
+        if item is not None:
+            try:
+                suggested = int(item.get("suggested_seconds"))
+            except (TypeError, ValueError):
+                suggested = 0
+            if suggested > 0:
+                return max(30, min(suggested, 600))
+        return cls.recommended_answer_seconds(question)
 
     async def correct_answer(
         self, interview_id: str, *, ordinal: int, text: str
@@ -851,6 +1118,11 @@ class InterviewEngine:
         # branch keeps text/L3 behavior aligned.
         if proposed == "interrupt" and expression_problem:
             return "interrupt"
+        # A deliberate post-answer pause is reserved for standard/high
+        # pressure and never replaces the first transition. Unlike an
+        # interruption it does not presume an expression problem.
+        if proposed == "silence" and stress_level >= 2 and ordinal >= 2:
+            return "silence"
         if stress_level == 1:
             if ordinal % 2:
                 return "none"
@@ -865,6 +1137,7 @@ class InterviewEngine:
     @staticmethod
     def _has_expression_problem(answer: str, deductions: list[str]) -> bool:
         compact = re.sub(r"\s+", "", answer)
+        lowered = answer.casefold()
         evidence = " ".join(str(item) for item in deductions)
         if any(
             marker in evidence
@@ -876,11 +1149,34 @@ class InterviewEngine:
             for marker in ("我说乱了", "有点乱", "不对不对", "我重新说", "不知道怎么表达")
         ):
             return True
+        if any(
+            marker in lowered
+            for marker in (
+                "i'm going in circles",
+                "i am going in circles",
+                "i lost my train of thought",
+                "let me start over",
+                "i'm not expressing this clearly",
+                "i am not expressing this clearly",
+            )
+        ):
+            return True
         filler_count = sum(
             answer.count(marker)
             for marker in ("嗯", "呃", "那个", "就是说", "怎么说呢")
         )
-        return len(compact) >= 220 and filler_count >= 4
+        english_fillers = len(
+            re.findall(r"(?<![A-Za-z])(?:um+|uh+)(?![A-Za-z])", lowered)
+        )
+        english_fillers += len(
+            re.findall(r"\b(?:i\s+think\s+maybe|maybe\s+i\s+think|you\s+know|i\s+mean)\b", lowered)
+        )
+        english_word_count = len(re.findall(r"\b[A-Za-z]+(?:'[A-Za-z]+)?\b", answer))
+        return (
+            (len(compact) >= 220 and filler_count >= 4)
+            or english_fillers >= 5
+            or (english_word_count >= 30 and english_fillers >= 3)
+        )
 
     @staticmethod
     def _breakdown_threshold(stress_level: int) -> int:
@@ -974,9 +1270,10 @@ class InterviewEngine:
     @staticmethod
     def recommended_answer_seconds(question: str) -> int:
         lowered = question.lower()
-        if "自我介绍" in question or any(
-            marker in lowered for marker in ("brief introduction", "academic background")
-        ):
+        if "一分钟" in question or any(
+            marker in lowered
+            for marker in ("one minute", "1 minute", "brief introduction", "academic background")
+        ) or "自我介绍" in question:
             return 60
         if any(marker in lowered for marker in ("手撕", "算法", "lru", "复杂度", "实现", "algorithm", "complexity", "design an")):
             return 180

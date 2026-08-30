@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from collections import defaultdict
 from typing import Any
@@ -14,6 +15,7 @@ from .db import Database
 from .errors import AppError, LLMError
 from .llm import BailianChatClient
 from .schemas import (
+    BehavioralAnalysis,
     CompanyExperienceCitation,
     CompanyInsights,
     EvidenceAnalysis,
@@ -46,6 +48,29 @@ ENGLISH_TOPIC_LABELS = {
     "项目深度": "project depth",
     "表达逻辑": "communication structure",
     "综合基础": "backend fundamentals",
+    "价值观与公司契合": "values and company fit",
+    "职业规划与选择": "career planning and choices",
+    "协作与冲突处理": "collaboration and conflict handling",
+    "薪酬沟通": "compensation communication",
+}
+
+BEHAVIORAL_PRACTICE_GUIDANCE = {
+    "价值观与公司契合": {
+        "zh": "用真实取舍说明判断依据、个人行动、结果与复盘，并解释与目标团队的契合点。",
+        "en": "Use a real trade-off to show your evidence, personal action, result, reflection, and fit with the target team.",
+    },
+    "职业规划与选择": {
+        "zh": "把两三年目标拆成近期可验证行动，并说清选择不同实习机会时的排序依据。",
+        "en": "Turn your two-to-three-year direction into verifiable near-term actions and explain how you rank different internship choices.",
+    },
+    "协作与冲突处理": {
+        "zh": "按情境、分歧、本人沟通动作、结果与复盘说明，不要只给“善于沟通”的结论。",
+        "en": "Cover the situation, disagreement, your communication, the result, and your reflection instead of merely claiming strong teamwork.",
+    },
+    "薪酬沟通": {
+        "zh": "准备预期依据、薪酬与成长/导师/方向的排序及可协商边界；不以具体数值高低作为得失分依据。",
+        "en": "Prepare the rationale for your expectations, rank compensation against growth, mentorship, and role fit, and state negotiable boundaries.",
+    },
 }
 
 
@@ -195,7 +220,9 @@ class ReportEngine:
 
     @staticmethod
     def _report_requirements(interview: dict[str, Any]) -> str:
-        combined = interview.get("interview_type") == "technical_hr"
+        interview_type = interview.get("interview_type") or "technical"
+        hr_enabled = interview_type in {"hr", "technical_hr"}
+        combined = interview_type == "technical_hr"
         if interview.get("language_mode") == "en":
             requirement = (
                 "Write every narrative field in English. Include per-question deductions, "
@@ -203,12 +230,16 @@ class ReportEngine:
                 "list. Analyze resume content, answer timing, wording, fluency when voice evidence "
                 "exists, and role fit. Do not infer speech rate or fluency without voice evidence."
             )
-            if combined:
+            if hr_enabled:
                 requirement += (
-                    " This was a combined technical and behavioral interview. Also analyze values "
+                    " Also analyze values "
                     "and company fit, career choices and planning, and the evidence and communication "
                     "behind compensation expectations. Never deduct points for the compensation number itself."
                 )
+                if combined:
+                    requirement += " This was a combined technical and behavioral interview."
+                else:
+                    requirement += " This was a standalone behavioral/HR interview."
             return requirement
         return (
             "输出每题扣分点、改写示范、四维 rubric、知识点分数、下次必练清单，"
@@ -216,7 +247,7 @@ class ReportEngine:
             + (
                 "本场是技术/综合（HR）面，还要基于对应问答分析价值观与公司契合、"
                 "人生规划和选择逻辑、薪酬预期的依据与沟通方式；不得因薪酬数值本身扣分。"
-                if combined
+                if hr_enabled
                 else ""
             )
         )
@@ -550,19 +581,31 @@ class ReportEngine:
         result: list[PracticeItem] = []
         for topic, score in weakest:
             resource = self._resource_for_topic(topic, links)
+            behavioral_guidance = BEHAVIORAL_PRACTICE_GUIDANCE.get(topic)
             display_topic = (
                 ENGLISH_TOPIC_LABELS.get(topic, topic)
                 if language_mode == "en"
                 else topic
             )
+            if behavioral_guidance:
+                guidance = behavioral_guidance[
+                    "en" if language_mode == "en" else "zh"
+                ]
+                reason = (
+                    f"This behavioral topic scored {score:.1f}/10. {guidance}"
+                    if language_mode == "en"
+                    else f"本场该综合面主题得分 {score:.1f}/10。{guidance}"
+                )
+            else:
+                reason = (
+                    f"This topic scored {score:.1f}/10; prioritize the mechanism, evidence, and boundary conditions."
+                    if language_mode == "en"
+                    else f"本场该知识点得分 {score:.1f}/10，需要优先补齐原理、证据和边界。"
+                )
             result.append(
                 PracticeItem(
                     topic=display_topic,
-                    reason=(
-                        f"This topic scored {score:.1f}/10; prioritize the mechanism, evidence, and boundary conditions."
-                        if language_mode == "en"
-                        else f"本场该知识点得分 {score:.1f}/10，需要优先补齐原理、证据和边界。"
-                    ),
+                    reason=reason,
                     resource_title=resource["title"],  # type: ignore[arg-type]
                     resource_url=resource["url"],
                 )
@@ -658,14 +701,145 @@ class ReportEngine:
         interview: dict[str, Any],
         turns: list[InterviewTurn],
     ) -> InterviewReport:
+        language_mode = str(interview.get("language_mode") or "bilingual")
         report.resume_analysis = self._resume_analysis(interview)
-        report.process_analysis = self._process_analysis(turns)
+        report.process_analysis = self._process_analysis(
+            turns,
+            language_mode=language_mode,
+        )
         report.role_fit = self._role_fit_analysis(interview)
+        report.behavioral_analysis = self._behavioral_analysis(
+            interview,
+            turns,
+            language_mode=language_mode,
+        )
         # Citations are always overwritten from a reviewed static file.  Model
         # output is never allowed to introduce a report URL.
         report.company_insights = self._company_insights(interview["company"])
         report.radar = self._radar(report)
         return report
+
+    @staticmethod
+    def _behavioral_analysis(
+        interview: dict[str, Any],
+        turns: list[InterviewTurn],
+        language_mode: str = "bilingual",
+    ) -> BehavioralAnalysis:
+        """Build HR dimensions only from turns that were actually observed.
+
+        The turn scorer already returns a 0-10 communication/evidence score.
+        We reuse those observed scores here instead of asking another model or
+        manufacturing neutral defaults.  Compensation is judged on reasoning
+        and communication only, never on the requested number.
+        """
+
+        interview_type = str(interview.get("interview_type") or "technical")
+        if interview_type not in {"hr", "technical_hr"}:
+            return BehavioralAnalysis()
+        english = language_mode == "en"
+
+        dimensions: dict[str, list[InterviewTurn]] = {
+            "company_fit": [],
+            "career_planning": [],
+            "collaboration": [],
+            "compensation_communication": [],
+        }
+        for turn in turns:
+            topic = str(turn.topic or "").casefold()
+            question = str(turn.question or "").casefold()
+            haystack = f"{topic} {question}"
+            if any(marker in haystack for marker in ("价值观", "公司契合", "company fit", "values")):
+                dimensions["company_fit"].append(turn)
+            if any(marker in haystack for marker in ("人生规划", "职业规划", "选择", "career", "planning")):
+                dimensions["career_planning"].append(turn)
+            if any(marker in haystack for marker in ("协作", "冲突", "团队", "collaboration", "conflict", "team")):
+                dimensions["collaboration"].append(turn)
+            if any(marker in haystack for marker in ("薪酬", "compensation", "salary", "negoti")):
+                dimensions["compensation_communication"].append(turn)
+
+        def analyze(
+            key: str, label: str, suggestion: str
+        ) -> EvidenceAnalysis:
+            observed = [
+                turn
+                for turn in dimensions[key]
+                if turn.scorable and turn.score is not None
+            ]
+            score = (
+                round(sum(float(turn.score) for turn in observed) / len(observed), 1)
+                if observed
+                else None
+            )
+            return EvidenceAnalysis(
+                score=score,
+                scorable=score is not None,
+                evidence=[
+                    (
+                        f"Question {turn.ordinal}: {' '.join(turn.answer.split())[:120]}"
+                        if english
+                        else f"第{turn.ordinal}题：{' '.join(turn.answer.split())[:120]}"
+                    )
+                    for turn in observed[:3]
+                ],
+                strengths=(
+                    (
+                        [f"The {label} answer included a scorable real experience or decision rationale."]
+                        if english
+                        else [f"{label}回答已有可评分的真实经历或判断依据。"]
+                    )
+                    if score is not None and score >= 7
+                    else []
+                ),
+                weaknesses=(
+                    (
+                        [f"The {label} answer still lacked verifiable action, outcome, or reflection."]
+                        if english
+                        else [f"{label}回答仍缺少可核验的行动、结果或复盘。"]
+                    )
+                    if score is not None and score < 7
+                    else []
+                ),
+                suggestions=[suggestion] if dimensions[key] else [],
+            )
+
+        return BehavioralAnalysis(
+            company_fit=analyze(
+                "company_fit",
+                "values and company fit" if english else "价值观与公司契合",
+                (
+                    "Use one real trade-off to explain the evidence behind your decision, your own actions and outcome, then connect it to the target team's values and the areas where you would need to adapt."
+                    if english
+                    else "用一次真实取舍说明判断依据、个人行动和结果，再说明与目标团队的契合点及需要适应的地方。"
+                ),
+            ),
+            career_planning=analyze(
+                "career_planning",
+                "career planning and choices" if english else "人生规划与选择",
+                (
+                    "Break the two-to-three-year direction into verifiable actions for the current semester, and explain how you would rank different internship choices."
+                    if english
+                    else "把两三年目标拆成当前学期的可验证行动，并给出选择不同实习机会时的排序依据。"
+                ),
+            ),
+            collaboration=analyze(
+                "collaboration",
+                "collaboration and conflict handling" if english else "协作与冲突处理",
+                (
+                    "Cover the situation, disagreement, your own communication, the result, and your reflection instead of merely claiming that you communicate well."
+                    if english
+                    else "按情境、分歧、本人沟通动作、结果与复盘描述，不要只说自己善于沟通。"
+                ),
+            ),
+            compensation_communication=analyze(
+                "compensation_communication",
+                "compensation communication" if english else "薪酬沟通",
+                (
+                    "Explain your information sources, how you rank compensation against mentorship, role direction, and growth, and your negotiable boundaries; the specific number itself is not scored."
+                    if english
+                    else "说明信息来源、薪酬与导师/方向/成长的排序，以及可协商边界；系统不按具体数值扣分。"
+                ),
+            ),
+        )
 
     @staticmethod
     def _resume_analysis(interview: dict[str, Any]) -> ResumeAnalysis:
@@ -748,51 +922,153 @@ class ReportEngine:
         )
 
     @staticmethod
-    def _process_analysis(turns: list[InterviewTurn]) -> ProcessAnalysis:
-        timed = [
+    def _process_analysis(
+        turns: list[InterviewTurn], language_mode: str = "bilingual"
+    ) -> ProcessAnalysis:
+        """Analyze delivery without mixing text timing and voice-only signals.
+
+        A duration recorded between the explicit start/end-answer controls is
+        valid timing evidence for both text and voice answers.  Speech rate and
+        transcript fluency remain voice-only.  Chinese uses characters per
+        minute, English uses words per minute, and bilingual answers are scored
+        per turn with the matching unit before their scores are averaged.
+        """
+
+        mode = language_mode if language_mode in {"zh", "en", "bilingual"} else "bilingual"
+        english_report = mode == "en"
+        timed_answers = [
             turn
             for turn in turns
-            if turn.input_mode == "voice"
-            and turn.answer_duration_seconds is not None
+            if turn.answer_duration_seconds is not None
             and turn.answer_duration_seconds > 0
         ]
-        rates = [
-            float(turn.speech_rate_cpm)
-            for turn in timed
-            if turn.speech_rate_cpm is not None
-        ]
+        voice_timed = [turn for turn in timed_answers if turn.input_mode == "voice"]
+
         time_score: float | None = None
         time_evidence: list[str] = []
-        if timed:
+        if timed_answers:
             per_turn: list[float] = []
-            for turn in timed:
-                ratio = float(turn.answer_duration_seconds) / max(
-                    1, turn.recommended_answer_seconds
-                )
+            for turn in timed_answers:
+                duration = float(turn.answer_duration_seconds)
+                ratio = duration / max(1, turn.recommended_answer_seconds)
                 if 0.5 <= ratio <= 1.25:
                     per_turn.append(9.0)
                 elif 0.3 <= ratio <= 1.6:
                     per_turn.append(7.0)
                 else:
                     per_turn.append(4.5)
+                input_label = (
+                    "voice" if turn.input_mode == "voice" else "text"
+                ) if english_report else (
+                    "语音" if turn.input_mode == "voice" else "文字"
+                )
                 time_evidence.append(
-                    f"第{turn.ordinal}题实际 {turn.answer_duration_seconds:.1f}s，建议 {turn.recommended_answer_seconds}s。"
+                    (
+                        f"Question {turn.ordinal} ({input_label}) took {duration:.1f}s; the suggested time was {turn.recommended_answer_seconds}s."
+                        if english_report
+                        else f"第{turn.ordinal}题（{input_label}）实际 {duration:.1f}s，建议 {turn.recommended_answer_seconds}s。"
+                    )
                 )
             time_score = round(sum(per_turn) / len(per_turn), 1)
-        rate_score: float | None = None
-        average_rate = round(sum(rates) / len(rates), 1) if rates else None
-        if average_rate is not None:
-            if 160 <= average_rate <= 300:
-                rate_score = 9.0
-            elif 120 <= average_rate <= 360:
-                rate_score = 7.0
-            else:
-                rate_score = 4.5
 
+        english_word_pattern = re.compile(
+            r"[A-Za-z]+(?:['’-][A-Za-z]+)*|\d+(?:\.\d+)?"
+        )
+
+        def counts(text: str) -> tuple[int, int, int]:
+            cjk_count = len(re.findall(r"[\u3400-\u9fff]", text))
+            english_words = len(english_word_pattern.findall(text))
+            latin_chars = len(re.findall(r"[A-Za-z]", text))
+            return cjk_count, english_words, latin_chars
+
+        def turn_language(text: str) -> str:
+            if mode in {"zh", "en"}:
+                return mode
+            cjk_count, english_words, latin_chars = counts(text)
+            if english_words >= 3 and latin_chars > cjk_count * 2:
+                return "en"
+            return "zh"
+
+        rate_samples: list[tuple[str, float, float]] = []
+        for turn in voice_timed:
+            cjk_count, english_words, _ = counts(turn.answer)
+            sample_language = turn_language(turn.answer)
+            units = (
+                english_words
+                if sample_language == "en"
+                else cjk_count + english_words
+            )
+            if units <= 0:
+                continue
+            rate = units * 60 / float(turn.answer_duration_seconds)
+            if sample_language == "en":
+                score = 9.0 if 110 <= rate <= 180 else 7.0 if 85 <= rate <= 210 else 4.5
+            else:
+                score = 9.0 if 180 <= rate <= 320 else 7.0 if 120 <= rate <= 400 else 4.5
+            rate_samples.append((sample_language, rate, score))
+
+        rate_score = (
+            round(sum(sample[2] for sample in rate_samples) / len(rate_samples), 1)
+            if rate_samples
+            else None
+        )
+        chinese_rates = [rate for language, rate, _ in rate_samples if language == "zh"]
+        english_rates = [rate for language, rate, _ in rate_samples if language == "en"]
+        average_chinese_rate = (
+            round(sum(chinese_rates) / len(chinese_rates), 1)
+            if chinese_rates
+            else None
+        )
+        average_english_rate = (
+            round(sum(english_rates) / len(english_rates), 1)
+            if english_rates
+            else None
+        )
+        if not rate_samples:
+            rate_evidence = [
+                (
+                    "No voice answer had a usable transcript and recorded voice duration, so speaking rate is unscorable."
+                    if english_report
+                    else "本场没有同时具备有效转写和语音时长的回答，无法估算语速。"
+                )
+            ]
+        elif english_report:
+            rate_evidence = [
+                f"{len(english_rates)} voice answers averaged {average_english_rate:.1f} words per minute; the score uses an English-speaking range rather than Chinese character thresholds."
+            ]
+        else:
+            rate_evidence = []
+            if chinese_rates:
+                rate_evidence.append(
+                    f"{len(chinese_rates)} 个中文语音回答平均 {average_chinese_rate:.1f} 字/分钟。"
+                )
+            if english_rates:
+                rate_evidence.append(
+                    f"{len(english_rates)} 个英文语音回答平均 {average_english_rate:.1f} 词/分钟。"
+                )
+            if mode == "bilingual" and chinese_rates and english_rates:
+                rate_evidence.append("双语场按每段主要语言分别计速和评分，不混算字/分钟与词/分钟。")
+
+        zh_structure_markers = (
+            "首先", "第一", "其次", "然后", "最后", "因为", "所以",
+            "因此", "但是", "不过", "取舍", "结论", "边界", "例如",
+        )
+        en_structure_pattern = re.compile(
+            r"\b(?:first(?:ly)?|first of all|second(?:ly)?|then|finally|because|"
+            r"therefore|so|however|trade[ -]?off|in conclusion|boundary|"
+            r"for example|as a result|on the one hand)\b",
+            re.IGNORECASE,
+        )
         structured = 0
         quantified = 0
         for turn in turns:
-            if any(word in turn.answer for word in ("首先", "其次", "最后", "因为", "所以", "取舍")):
+            has_zh_structure = any(word in turn.answer for word in zh_structure_markers)
+            has_en_structure = bool(en_structure_pattern.search(turn.answer))
+            if (
+                (mode == "zh" and has_zh_structure)
+                or (mode == "en" and has_en_structure)
+                or (mode == "bilingual" and (has_zh_structure or has_en_structure))
+            ):
                 structured += 1
             if any(char.isdigit() for char in turn.answer):
                 quantified += 1
@@ -801,81 +1077,143 @@ class ReportEngine:
         if turns:
             structured_ratio = structured / len(turns)
             metric_ratio = quantified / len(turns)
-            wording_score = round(min(10.0, 4.0 + 3.5 * structured_ratio + 2.5 * metric_ratio), 1)
+            wording_score = round(
+                min(10.0, 4.0 + 3.5 * structured_ratio + 2.5 * metric_ratio), 1
+            )
             wording_evidence = [
-                f"{len(turns)} 个回答中，{structured} 个包含因果/分层连接词，{quantified} 个包含数字证据。"
+                (
+                    f"Of {len(turns)} answers, {structured} used English causal or layered transitions and {quantified} included numeric evidence."
+                    if english_report
+                    else f"{len(turns)} 个回答中，{structured} 个包含与本场语言匹配的因果/分层连接词，{quantified} 个包含数字证据。"
+                )
             ]
+
         voice_turns = [turn for turn in turns if turn.input_mode == "voice"]
-        filler_markers = ("嗯", "呃", "额", "那个", "就是说", "怎么说", "然后就是")
-        filler_count = sum(
+        zh_filler_markers = ("嗯", "呃", "额", "那个", "就是说", "怎么说", "然后就是")
+        en_filler_pattern = re.compile(
+            r"\b(?:um+|uh+|erm+|you know|i mean|sort of|kind of)\b",
+            re.IGNORECASE,
+        )
+        zh_filler_count = sum(
             turn.answer.count(marker)
             for turn in voice_turns
-            for marker in filler_markers
+            for marker in zh_filler_markers
         )
-        voice_chars = sum(
-            len("".join(turn.answer.split())) for turn in voice_turns
+        en_filler_count = sum(
+            len(en_filler_pattern.findall(turn.answer)) for turn in voice_turns
         )
+        cjk_units = sum(counts(turn.answer)[0] for turn in voice_turns)
+        english_units = sum(counts(turn.answer)[1] for turn in voice_turns)
+        if mode == "zh":
+            filler_count = zh_filler_count
+            fluency_units = cjk_units + english_units
+            fluent_unit_label = "字"
+            good_filler_limit, acceptable_filler_limit = 0.5, 2.0
+        elif mode == "en":
+            filler_count = en_filler_count
+            fluency_units = english_units
+            fluent_unit_label = "words"
+            good_filler_limit, acceptable_filler_limit = 1.0, 3.0
+        else:
+            filler_count = zh_filler_count + en_filler_count
+            fluency_units = cjk_units + english_units
+            fluent_unit_label = "口语单位"
+            good_filler_limit, acceptable_filler_limit = 0.75, 2.5
         filler_per_hundred = (
-            round(filler_count * 100 / voice_chars, 2) if voice_chars else None
+            round(filler_count * 100 / fluency_units, 2) if fluency_units else None
         )
         fluency_score: float | None = None
         if filler_per_hundred is not None:
-            if filler_per_hundred <= 0.5:
+            if filler_per_hundred <= good_filler_limit:
                 fluency_score = 8.5
-            elif filler_per_hundred <= 2:
+            elif filler_per_hundred <= acceptable_filler_limit:
                 fluency_score = 7.0
             else:
                 fluency_score = 4.5
+
+        if filler_per_hundred is None:
+            fluency_evidence = [
+                "There was no voice transcript, so spoken fluency is unscorable."
+                if english_report
+                else "本场没有语音回答，无法评价口语流畅度。"
+            ]
+        elif english_report:
+            fluency_evidence = [
+                f"Across {len(voice_turns)} voice transcripts ({fluency_units} {fluent_unit_label}), {filler_count} common English filler expressions were found ({filler_per_hundred:.2f} per 100 words).",
+                "This score covers transcript-level verbal fluency only. Pause distribution, pitch, and raw audio were not retained, so acoustic fluency is not scored.",
+            ]
+        else:
+            fluency_evidence = [
+                f"{len(voice_turns)} 个语音回答的最终转写共 {fluency_units} {fluent_unit_label}，识别到 {filler_count} 个与本场语言匹配的常见填充词（每百{fluent_unit_label} {filler_per_hundred:.2f} 个）。",
+                "该分数只反映转写中的词语流畅度；系统未保存停顿分布、音高或原始音频，因此不评价声学流畅度。",
+            ]
+
         return ProcessAnalysis(
             time_control=EvidenceAnalysis(
                 score=time_score,
                 scorable=time_score is not None,
                 evidence=time_evidence,
-                suggestions=["优先在建议时长的 50%—125% 内先给结论，再补证据与边界。"],
+                suggestions=[
+                    "Aim to give the conclusion first within 50%-125% of the suggested time, then add evidence and boundaries."
+                    if english_report
+                    else "优先在建议时长的 50%—125% 内先给结论，再补证据与边界。"
+                ],
             ),
             speech_rate=EvidenceAnalysis(
                 score=rate_score,
                 scorable=rate_score is not None,
-                evidence=(
-                    [f"{len(rates)} 个语音回答的平均转写字符速率为 {average_rate:.1f} 字/分钟。"]
-                    if average_rate is not None
-                    else ["本场没有带有效 VAD 时长的语音回答，无法估算语速。"]
-                ),
-                suggestions=["技术回答保持稳定节奏，在术语、数字和结论前后主动停顿。"],
+                evidence=rate_evidence,
+                suggestions=[
+                    "Keep a steady pace and pause around terminology, numbers, and conclusions."
+                    if english_report
+                    else "技术回答保持稳定节奏，在术语、数字和结论前后主动停顿。"
+                ],
             ),
             wording=EvidenceAnalysis(
                 score=wording_score,
                 scorable=wording_score is not None,
                 evidence=wording_evidence,
-                suggestions=["使用“结论—依据—取舍—边界”结构，减少无指代的“这个/然后/就是”。"],
+                suggestions=[
+                    "Use a conclusion-evidence-trade-off-boundary structure and avoid vague references."
+                    if english_report
+                    else "使用“结论—依据—取舍—边界”结构，减少无指代的“这个/然后/就是”。"
+                ],
             ),
             fluency=EvidenceAnalysis(
                 score=fluency_score,
                 scorable=fluency_score is not None,
-                evidence=(
+                evidence=fluency_evidence,
+                weaknesses=(
                     [
-                        f"{len(voice_turns)} 个语音回答的最终转写共 {voice_chars} 字，识别到 {filler_count} 个常见填充词（每百字 {filler_per_hundred:.2f} 个）。",
-                        "该分数只反映转写中的词语流畅度；系统未保存停顿分布、音高或原始音频，因此不评价声学流畅度。",
+                        "Filler density was high enough to obscure conclusions and technical terms."
+                        if english_report
+                        else "填充词密度偏高，容易削弱结论和关键术语的清晰度。"
                     ]
                     if filler_per_hundred is not None
-                    else ["本场没有语音回答，无法评价口语流畅度。"]
-                ),
-                weaknesses=(
-                    ["填充词密度偏高，容易削弱结论和关键术语的清晰度。"]
-                    if filler_per_hundred is not None and filler_per_hundred > 2
+                    and filler_per_hundred > acceptable_filler_limit
                     else []
                 ),
-                suggestions=["用“结论—依据—边界”短句替代填充词；录音回听时另外标记两秒以上停顿和重复起句。"],
+                suggestions=[
+                    "Replace fillers with short conclusion-evidence-boundary sentences; separately mark pauses over two seconds when reviewing audio."
+                    if english_report
+                    else "用“结论—依据—边界”短句替代填充词；录音回听时另外标记两秒以上停顿和重复起句。"
+                ],
             ),
             average_answer_seconds=(
                 round(
-                    sum(float(turn.answer_duration_seconds) for turn in timed) / len(timed),
+                    sum(float(turn.answer_duration_seconds) for turn in timed_answers)
+                    / len(timed_answers),
                     1,
                 )
-                if timed
+                if timed_answers
                 else None
             ),
-            average_speech_rate_cpm=average_rate,
+            # The public field is explicitly characters/minute. Do not put
+            # English WPM into it; English and mixed-language rates remain in
+            # the evidence above so clients cannot mislabel their unit.
+            average_speech_rate_cpm=(
+                average_chinese_rate if chinese_rates and not english_rates else None
+            ),
         )
 
     @staticmethod
@@ -1013,6 +1351,24 @@ class ReportEngine:
         add("wording", "措辞结构", report.process_analysis.wording)
         add("fluency", "流畅度", report.process_analysis.fluency)
         add("role_fit", "岗位契合", report.role_fit.overall)
+        behavioral = report.behavioral_analysis
+        if any(
+            item.scorable
+            for item in (
+                behavioral.company_fit,
+                behavioral.career_planning,
+                behavioral.collaboration,
+                behavioral.compensation_communication,
+            )
+        ):
+            add("company_fit", "价值观契合", behavioral.company_fit)
+            add("career_planning", "规划选择", behavioral.career_planning)
+            add("collaboration", "协作沟通", behavioral.collaboration)
+            add(
+                "compensation_communication",
+                "薪酬沟通",
+                behavioral.compensation_communication,
+            )
         return axes
 
     @staticmethod

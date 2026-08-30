@@ -20,6 +20,58 @@ def canonical_topic(topic: str, category: str = "") -> str:
 
     raw = f"{topic} {category}".strip()
     lowered = raw.lower()
+    # Behavioral turns intentionally use the fixed technical rubric's
+    # ``communication`` dimension, but that rubric category must not erase the
+    # actual HR subject from cross-interview memory.  Keep these checks before
+    # the generic communication alias and accept both report languages.
+    if any(
+        marker in lowered
+        for marker in (
+            "compensation",
+            "salary",
+            "薪酬",
+            "待遇沟通",
+        )
+    ):
+        return "薪酬沟通"
+    if any(
+        marker in lowered
+        for marker in (
+            "career planning",
+            "career choice",
+            "planning and choice",
+            "职业规划",
+            "人生规划",
+            "规划与选择",
+            "发展规划",
+        )
+    ):
+        return "职业规划与选择"
+    if any(
+        marker in lowered
+        for marker in (
+            "collaboration",
+            "teamwork",
+            "conflict",
+            "协作",
+            "冲突处理",
+            "团队合作",
+            "分歧处理",
+        )
+    ):
+        return "协作与冲突处理"
+    if any(
+        marker in lowered
+        for marker in (
+            "company fit",
+            "values and",
+            "value fit",
+            "价值观",
+            "公司契合",
+            "文化契合",
+        )
+    ):
+        return "价值观与公司契合"
     if "mysql" in lowered:
         return "MySQL"
     if "redis" in lowered:

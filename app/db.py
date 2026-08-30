@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Callable, TypeVar
 
 from .config import Settings, get_settings
-from .schemas import InterviewReport, InterviewTurn, ResumeData
+from .schemas import InterviewReport, InterviewTurn, ResumeData, normalize_interview_type
 from .topics import canonical_topic
 
 
@@ -308,7 +308,7 @@ class Database:
             client_id,
             company,
             role,
-            interview_type,
+            normalize_interview_type(interview_type),
             specialization,
             language_mode,
             int(stress),
@@ -823,8 +823,9 @@ class Database:
                 report.update(
                     role=row["role"],
                     interview_type=(
-                        "technical_hr"
-                        if row["interview_type"] == "technical_hr"
+                        normalize_interview_type(row["interview_type"])
+                        if normalize_interview_type(row["interview_type"])
+                        in {"technical", "hr", "technical_hr"}
                         else "technical"
                     ),
                     specialization=row["specialization"],
@@ -964,9 +965,10 @@ class Database:
         )
         data["stress_level"] = stress_level
         data["stress"] = stress_level > 0
+        interview_type = normalize_interview_type(data.get("interview_type"))
         data["interview_type"] = (
-            "technical_hr"
-            if data.get("interview_type") == "technical_hr"
+            interview_type
+            if interview_type in {"technical", "hr", "technical_hr"}
             else "technical"
         )
         data["specialization"] = str(data.get("specialization") or "通用后端")

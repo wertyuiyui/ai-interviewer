@@ -197,6 +197,68 @@ async def test_quick_drill_english_filter_and_empty_bank_are_explicit(tmp_path) 
     assert caught.value.status_code == 404
 
 
+def test_production_quick_drill_company_changes_priority_without_claiming_exclusivity(
+    tmp_path,
+) -> None:
+    settings = replace(get_settings(), mock_llm=True, db_path=tmp_path / "rank.db")
+    service = PracticeService(Database(settings), settings)
+
+    byte_questions = service._quick_questions(
+        PracticeSessionCreate(
+            client_id="practice-company-rank-001",
+            company="bytedance",
+            interview_type="technical",
+            language_mode="zh",
+            difficulty=None,
+            count=6,
+        ),
+        "same-selection-seed",
+    )
+    meituan_questions = service._quick_questions(
+        PracticeSessionCreate(
+            client_id="practice-company-rank-001",
+            company="meituan",
+            interview_type="technical",
+            language_mode="zh",
+            difficulty=None,
+            count=6,
+        ),
+        "same-selection-seed",
+    )
+
+    assert byte_questions[0]["kind"] == "coding"
+    assert meituan_questions[0]["category"] == "MySQL"
+    assert [item["id"] for item in byte_questions] != [
+        item["id"] for item in meituan_questions
+    ]
+
+
+def test_combined_quick_drill_keeps_behavioral_share_with_technical_filters(
+    tmp_path,
+) -> None:
+    settings = replace(get_settings(), mock_llm=True, db_path=tmp_path / "mixed.db")
+    service = PracticeService(Database(settings), settings)
+    questions = service._quick_questions(
+        PracticeSessionCreate(
+            client_id="practice-mixed-filter-001",
+            company="bytedance",
+            interview_type="technical_hr",
+            language_mode="zh",
+            topic="MySQL",
+            difficulty="hard",
+            count=5,
+        ),
+        "mixed-filter-seed",
+    )
+
+    assert len(questions) == 5
+    assert any(item["kind"] == "behavioral" for item in questions)
+    assert any(
+        item["kind"] != "behavioral" and item["category"] == "MySQL"
+        for item in questions
+    )
+
+
 @pytest.mark.asyncio
 async def test_review_reuses_exact_interview_turn_and_checks_owner(tmp_path) -> None:
     settings = replace(
@@ -261,6 +323,100 @@ async def test_review_reuses_exact_interview_turn_and_checks_owner(tmp_path) -> 
 class FailingClient:
     async def chat_json(self, *args, **kwargs):
         raise LLMError("synthetic outage")
+
+
+class RecordingAssessmentClient:
+    def __init__(self) -> None:
+        self.calls: list[tuple[list[dict[str, str]], dict]] = []
+
+    async def chat_json(self, messages, **kwargs):
+        self.calls.append((messages, kwargs))
+        return {
+            "score": 7.5,
+            "scorable": True,
+            "status": "scored",
+            "evidence": ["回答给出了具体信息。"],
+            "strengths": ["结构清楚。"],
+            "deductions": [],
+            "better_answer": "给出一个更具体、有证据的示范回答。",
+            "key_points": ["证据"],
+            "next_steps": ["补充细节"],
+        }
+
+
+@pytest.mark.asyncio
+async def test_mixed_practice_uses_question_specific_behavioral_and_technical_rubrics(
+    tmp_path,
+) -> None:
+    settings = replace(
+        get_settings(),
+        mock_llm=False,
+        db_path=tmp_path / "rubric.db",
+    )
+    recorder = RecordingAssessmentClient()
+    service = PracticeService(
+        Database(settings), settings, client=recorder  # type: ignore[arg-type]
+    )
+
+    await service._assess(
+        question={
+            "id": "behavioral-in-mixed",
+            "kind": "behavioral",
+            "category": "综合面",
+            "topic": "职业规划",
+            "question": "为什么选择这份实习？未来三年如何规划？",
+        },
+        answer="我会结合一次真实选择说明自己的依据、行动和结果。",
+        language_mode="zh",
+        company="bytedance",
+        interview_type="technical_hr",
+    )
+    behavioral_messages, _ = recorder.calls[-1]
+    behavioral_system = behavioral_messages[0]["content"]
+    behavioral_payload = json.loads(behavioral_messages[1]["content"])
+    assert behavioral_payload["assessment_mode"] == "behavioral"
+    assert "STAR 证据的具体性" in behavioral_system
+    assert "价值观、选择逻辑与目标公司/岗位契合度" in behavioral_system
+    assert "不得因具体数值本身扣分" in behavioral_system
+    assert "- 正确性 40%" not in behavioral_system
+
+    await service._assess(
+        question={
+            "id": "technical-in-mixed",
+            "kind": "technical",
+            "category": "MySQL",
+            "topic": "索引",
+            "question": "联合索引为什么要遵循最左匹配？",
+        },
+        answer="我会从 B+ 树有序键和查询边界说明最左匹配与失效场景。",
+        language_mode="zh",
+        company="bytedance",
+        interview_type="technical_hr",
+    )
+    technical_messages, _ = recorder.calls[-1]
+    technical_system = technical_messages[0]["content"]
+    technical_payload = json.loads(technical_messages[1]["content"])
+    assert technical_payload["assessment_mode"] == "technical"
+    assert "- 正确性 40%" in technical_system
+    assert "原理与深度 30%" in technical_system
+    assert "STAR 证据的具体性" not in technical_system
+
+    # Category classification keeps legacy/persisted pure-HR questions on the
+    # behavioral rubric even when they do not carry a `kind` field.
+    await service._assess(
+        question={
+            "id": "legacy-pure-hr",
+            "category": "HR",
+            "topic": "薪酬期待",
+            "question": "你的薪酬期待是什么？",
+        },
+        answer="我会说明市场信息、岗位匹配和成长机会的优先级。",
+        language_mode="zh",
+        interview_type="hr",
+    )
+    pure_hr_messages, _ = recorder.calls[-1]
+    assert json.loads(pure_hr_messages[1]["content"])["assessment_mode"] == "behavioral"
+    assert "STAR 证据的具体性" in pure_hr_messages[0]["content"]
 
 
 @pytest.mark.asyncio
@@ -342,7 +498,17 @@ async def test_practice_rest_api_contract(tmp_path, monkeypatch) -> None:
         assert created.status_code == 201
         payload = created.json()
         question = payload["current_question"]
-        assert set(question).isdisjoint({"source_ids", "source_url", "provenance"})
+        assert set(question).isdisjoint(
+            {
+                "source_ids",
+                "source_id",
+                "source_url",
+                "source_path",
+                "revision",
+                "license",
+                "provenance",
+            }
+        )
 
         hint = await client.post(
             f"/api/practice/sessions/{payload['id']}/hint",
