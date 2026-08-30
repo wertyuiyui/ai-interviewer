@@ -1,0 +1,193 @@
+{
+  "schema_version": "1.0",
+  "curated_at": "2026-08-30",
+  "scope": "中国大陆互联网公司后端开发实习技术一面公开面经，供面后报告做公司针对性复盘",
+  "usage_policy": {
+    "exposure": "report_only",
+    "do_not_show_in_interview": true,
+    "runtime": "静态人工精选 JSON；不在运行时抓取，不使用 RAG 或向量库",
+    "citation": "报告只展示目标公司的相关帖子标题、平台、发布日期和原帖链接，并明确标注为个人经历样本，不宣称是官方题库或官方招聘标准",
+    "copyright": "仅保存人工概括的短趋势和建议，不复制帖子答案或长段正文",
+    "social_media": "不绕过登录、验证码、robots 或反爬措施；未能公开复核的社交媒体正文不入库"
+  },
+  "companies": {
+    "bytedance": {
+      "display_name": "字节跳动",
+      "sample_caveat": "以下结论来自不同年份、部门和技术栈的个人面试复盘，仅用于发现反复出现的准备方向。",
+      "trend_summary": [
+        "多份一面记录都从简历或项目切入，沿回答里的技术名词继续追到底层原理、边界和本人贡献。",
+        "数据库、网络、并发与语言运行时反复出现；只会概念但说不清实现细节，容易触发连续追问。",
+        "算法或口述编码在三个样本中都出现，除思路外还应主动说明复杂度、边界条件和测试样例。"
+      ],
+      "report_advice": [
+        "把主项目整理成“业务目标—完整请求链路—个人改动—指标口径—故障与取舍”的两分钟版本，并为每个关键词准备至少两层追问。",
+        "复习时把 MySQL、Redis、HTTP/TCP、线程同步和所用语言运行时与自己的项目实例绑定，避免孤立背诵。",
+        "手撕前先复述题意和约束，口述方案、复杂度及测试用例，再开始写或讲实现。"
+      ],
+      "sources": [
+        {
+          "id": "experience-bytedance-project-drill",
+          "title": "字节跳动后端开发日常实习面经",
+          "url": "https://www.nowcoder.com/discuss/353159114589151232",
+          "platform": "牛客网",
+          "published_at": "2022-03-24",
+          "round": "一面",
+          "role": "后端开发日常实习",
+          "provenance_type": "first_hand",
+          "outcome": "offer",
+          "signals": ["项目线程模型深挖", "epoll 与 HTTP 细节", "数据库隔离与索引", "多轮算法"],
+          "report_takeaway": "候选人需要能解释项目内线程分工和同步细节；帖子作者总结数据库、网络及算法准备都很重要。"
+        },
+        {
+          "id": "experience-bytedance-2023-daily-oc",
+          "title": "字节跳动后端日常实习面经（已OC）",
+          "url": "https://www.nowcoder.com/discuss/484830067537850368",
+          "platform": "牛客网",
+          "published_at": "2023-05-07",
+          "round": "一面",
+          "role": "后端开发日常实习",
+          "provenance_type": "first_hand",
+          "outcome": "offer",
+          "signals": ["项目经历", "Java 集合与并发", "Redis 缓存", "三道算法"],
+          "report_takeaway": "一面覆盖项目、语言基础、操作系统、并发和缓存，并以多道算法检查实现能力与临场稳定性。"
+        },
+        {
+          "id": "experience-bytedance-2021-java-depth",
+          "title": "字节跳动-后端开发实习生一二面面经",
+          "url": "https://www.nowcoder.com/discuss/353157535614050304",
+          "platform": "牛客网",
+          "published_at": "2021-02-23",
+          "round": "一面",
+          "role": "Java 后端开发实习",
+          "provenance_type": "first_hand",
+          "outcome": "unknown",
+          "signals": ["Spring 原理", "集合源码", "锁与内存模型", "JVM GC", "追问到底"],
+          "report_takeaway": "回答中的实现术语会继续被追到底层机制；概念性答案不足以支撑高质量的一面表现。"
+        }
+      ]
+    },
+    "meituan": {
+      "display_name": "美团",
+      "sample_caveat": "以下结论来自不同业务线和技术栈的个人面试复盘，部门侧重点可能明显不同。",
+      "trend_summary": [
+        "项目问题常被改写成真实业务场景，重点检查数据一致性、依赖故障、容量、降级和技术选型证据。",
+        "MySQL、Redis、Java 并发/JVM 在样本中高频出现，提到优化时通常会继续问执行计划、指标和实现机制。",
+        "项目深挖与基础题的比例随业务线变化较大，但算法或手撕在所选样本中仍然常见。"
+      ],
+      "report_advice": [
+        "为项目中的每个中间件准备“为什么选、替代方案、失败会怎样、如何观测、如何回滚”五个答案。",
+        "所有性能或稳定性结论都带上数据规模、基线、P50/P95/P99、错误率或执行计划，避免只说‘做了优化’。",
+        "重点演练 MySQL 索引与事务、Redis 缓存一致性、线程池/JVM，并用实际业务链路解释。"
+      ],
+      "sources": [
+        {
+          "id": "experience-meituan-2025-04",
+          "title": "美团后端暑期记录（已offer）",
+          "url": "https://www.nowcoder.com/discuss/739237507367256064",
+          "platform": "牛客网",
+          "published_at": "2025-04-16",
+          "round": "一面",
+          "role": "后端开发暑期实习",
+          "provenance_type": "first_hand",
+          "outcome": "offer",
+          "signals": ["Kafka/MySQL/ES 一致性", "Redis key 与 TTL", "第三方故障", "MySQL 索引证据", "算法"],
+          "report_takeaway": "面试从真实实习链路延伸到一致性、选型和故障处理，再检查网络、数据库与算法基础。"
+        },
+        {
+          "id": "experience-meituan-2024-daojia",
+          "title": "【暑期实习】美团后端到家面经（已offer）",
+          "url": "https://www.nowcoder.com/discuss/614236533700194304",
+          "platform": "牛客网",
+          "published_at": "2024-04-28",
+          "round": "一面",
+          "role": "后端开发暑期实习",
+          "provenance_type": "first_hand",
+          "outcome": "offer",
+          "signals": ["项目挑战", "Elasticsearch 一致性", "MySQL 事务", "JVM 与线程池", "手撕"],
+          "report_takeaway": "项目会按简历逐项追问，同时用 MySQL、Java/JVM 与手撕题确认基础是否扎实。"
+        },
+        {
+          "id": "experience-meituan-2024-java-basics",
+          "title": "美团后端暑期实习面经",
+          "url": "https://www.nowcoder.com/discuss/634838974485254144",
+          "platform": "牛客网",
+          "published_at": "2024-06-24",
+          "round": "一面",
+          "role": "Java 后端开发暑期实习",
+          "provenance_type": "first_hand",
+          "outcome": "offer",
+          "signals": ["DDD", "Java 集合", "多线程同步", "JVM GC", "类加载"],
+          "report_takeaway": "部分业务线的一面会集中验证 Java 基础深度，并从数据结构一路追问到并发和 JVM。"
+        },
+        {
+          "id": "experience-meituan-index-drill",
+          "title": "美团-面试经验复盘",
+          "url": "https://www.nowcoder.com/discuss/608995688709455872",
+          "platform": "牛客网",
+          "published_at": "2024-04-14",
+          "round": "一面",
+          "role": "后端开发",
+          "provenance_type": "first_hand",
+          "outcome": "offer",
+          "signals": ["实习收益", "Explain", "B+树页结构", "并发集合", "Redis 大 key"],
+          "report_takeaway": "项目收益和数据库优化会被要求落到执行计划、页结构、慢查询指标等可验证证据。"
+        }
+      ]
+    },
+    "tencent": {
+      "display_name": "腾讯",
+      "sample_caveat": "腾讯不同事业群差异较大；以下只概括公开个人样本中的共同点，不代表所有团队。",
+      "trend_summary": [
+        "样本普遍从简历和项目出发，面试氛围相对温和，但会追问实现是否由本人完成、如何测试及如何证明性能。",
+        "语言基础、Linux/网络、缓存与数据库是常见检查项，具体方向会随 IEG、PCG 等业务团队变化。",
+        "算法或口述编码仍是常见环节；沟通中清楚承认边界、再给出推导路径，比模糊扩展更稳妥。"
+      ],
+      "report_advice": [
+        "逐条复盘简历：本人贡献、关键代码、调试过程、测试覆盖率、QPS/延迟和未完成的改进都要说得清。",
+        "围绕目标事业群补齐对应场景，同时守住所用语言、Linux、网络、MySQL/Redis 的通用底座。",
+        "用“先结论—再依据—最后边界”回答；不会时明确已知部分并口述验证思路，保持交流感。"
+      ],
+      "sources": [
+        {
+          "id": "experience-tencent-2021-ieg",
+          "title": "腾讯暑期实习后端面经",
+          "url": "https://www.nowcoder.com/discuss/353157713318322176",
+          "platform": "牛客网",
+          "published_at": "2021-04-04",
+          "round": "一面",
+          "role": "IEG Go 后端开发暑期实习",
+          "provenance_type": "first_hand",
+          "outcome": "advanced",
+          "signals": ["项目经历", "Redis 高可用", "MySQL 索引边界", "select/epoll 场景", "TIME_WAIT"],
+          "report_takeaway": "一面同时检查项目实践和知识边界；索引、I/O 多路复用等题目都要求说清适用场景，而非绝对结论。"
+        },
+        {
+          "id": "experience-tencent-2024-ieg",
+          "title": "腾讯后台开发面经（已oc）",
+          "url": "https://www.nowcoder.com/discuss/618788598543937536",
+          "platform": "牛客网",
+          "published_at": "2024-05-11",
+          "round": "一面",
+          "role": "IEG 后台开发日常实习",
+          "provenance_type": "first_hand",
+          "outcome": "offer",
+          "signals": ["C++ 基础", "Linux", "分布式锁", "Raft", "调试与压测", "两道手撕"],
+          "report_takeaway": "除了语言与系统基础，项目是否独立完成、如何调试和是否做过性能验证也是明确考察点。"
+        },
+        {
+          "id": "experience-tencent-2024-news",
+          "title": "腾讯新闻暑期后台开发面经",
+          "url": "https://www.nowcoder.com/discuss/613857091815518208",
+          "platform": "牛客网",
+          "published_at": "2024-04-27",
+          "round": "一面",
+          "role": "腾讯新闻后台开发暑期实习",
+          "provenance_type": "first_hand",
+          "outcome": "advanced",
+          "signals": ["项目选型", "HTTP/TLS/TCP", "数据库隔离与索引", "Redis/MQ", "归并排序"],
+          "report_takeaway": "项目选型会自然延伸到网络、数据库和缓存基础，并以手撕题检查实现能力。"
+        }
+      ]
+    }
+  }
+}
