@@ -27,9 +27,10 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`0ab3c7b`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`9fd0cd1`；GitHub `origin/main` 已同步至 `9fd0cd1`
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
+- 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、中英双语、纯英文
@@ -37,6 +38,15 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-012 · 2026-08-30 · Qwen3.8-Flash 生产切换
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：将固定提交 `9fd0cd1` 推送至用户明确授权的 GitHub `origin/main`，以 `git archive 9fd0cd1` 生成隔离快照同步到 `/opt/ai-interviewer-mvp`；生产 `.env` 仅定点新增/更新 `QWEN_TEXT_MODEL=qwen3.8-flash` 与 `QWEN_REPORT_MODEL=qwen3.8-flash`，未改 API Key、数据库、依赖、实时语音模型或 Caddy。
+- 回滚：代码包 `/tmp/ai-interviewer-mvp-pre-9fd0cd1-20260830.tar.gz`；配置备份 `/opt/ai-interviewer-mvp/.env.pre-qwen38-20260830`。
+- 验证：发布前全量 `242 passed`；百炼 `qwen3.8-flash` 显式探测与部署后默认模型探测均成功返回严格结构化 JSON；最终服务 `active/running`，主进程 PID `689524`；本机 8000、正式域名 HTTPS 443 与 3000 健康检查均正常；运行设置为文本/报告 `qwen3.8-flash`、Realtime `qwen3.5-omni-flash-realtime`、`MOCK_LLM=false`。
+- 风险/后续：首次同步后曾将 `.env` 权限误设为 600，systemd 的 `interview` 用户无法读取，服务在自动重启窗口内短暂不可用；通过日志立即定位并恢复为 `640 root:interview`，随后健康检查和真实模型探测全部通过。未更改配置内容或扩大读取主体。
 
 ### MODEL-001 · 2026-08-30 · 模拟面试切换 Qwen3.8-Flash
 
