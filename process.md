@@ -27,7 +27,7 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`5fa0782`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`df381a2`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
@@ -38,6 +38,14 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-023 · 2026-08-30 · 旧场次清理与阶段兼容移除生产发布
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：将 `INTERVIEW-011` 在包含并行报告与计时提交的最新远端上重放为固定提交 `df381a2`，全量复测后推送并以 `git archive` 隔离部署至 `/opt/ai-interviewer-mvp`。部署保留已完成清理的生产 `data/`、`.env`、`.venv`、`.deps`、`.git` 与缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 验证：生产面试、问答、报告表均为 `0`；生产引擎不存在旧 `behavioral` 阶段标签或运行分支。服务为 `active/running`，主进程 PID `806267`，本机 8000、正式域名 HTTPS 443 和 3000 健康检查均返回 `{"status":"ok"}`；隔离提交全量 `264 passed`，JavaScript 语法、Python compileall 与 `git diff --check` 通过。
+- 回滚与风险：代码回滚包为 `/tmp/ai-interviewer-mvp-pre-df381a2-20260830.tar.gz`，清理前数据库备份为 `/tmp/interviews-pre-purge-20260830.db`。按用户要求不再兼容旧场次；浏览器保存的旧场次 ID 已失效，用户需新建面试。
 
 ### DEPLOY-022 · 2026-08-30 · 报告整合与本题计时边界生产发布
 
