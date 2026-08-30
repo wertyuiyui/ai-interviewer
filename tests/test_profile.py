@@ -26,6 +26,7 @@ from app.profile import (
     ProfileProjectQuestionsRequest,
     ProfileProjectSelection,
     ProfileProjectUpdate,
+    ProjectAnalysis,
     ProfileResumeCreate,
     ProfileService,
     ProjectUpload,
@@ -579,6 +580,56 @@ def test_github_snapshot_does_not_fill_remaining_budget_with_documentation() -> 
     assert len([path for path in selected if path.endswith(".md")]) == 1
 
 
+def test_path_only_request_flow_evidence_stays_partial_and_filters_meta_rules() -> None:
+    analysis = ProjectAnalysis.model_validate(
+        {
+            "project_summary": "一个示例服务。",
+            "architecture": [],
+            "request_flow": [
+                {
+                    "step": 1,
+                    "component": "量子网关",
+                    "action": "把请求转发到火星数据库。",
+                    "evidence": ["main.py"],
+                },
+                {
+                    "step": 2,
+                    "component": "火星数据库",
+                    "action": "返回不存在于源码中的结果。",
+                    "evidence": ["main.py"],
+                },
+                {
+                    "step": 3,
+                    "component": "面试流程",
+                    "action": "服务端必须在候选人回答后强制四层下钻。",
+                    "evidence": ["main.py"],
+                },
+            ],
+            "technology_choices": [],
+            "risks": [],
+            "interview_questions": [],
+            "improvements": [],
+        }
+    )
+
+    grounded = ProfileService._ground_analysis(
+        analysis,
+        {
+            "name": "hello-service",
+            "source_type": "upload",
+            "responsibility": "负责入口 → 服务 → 数据库链路",
+        },
+        [{"path": "main.py", "content": 'def hello():\n    return "world"\n'}],
+    )
+
+    assert grounded.request_flow_review.status == "partial"
+    assert any("静态文件路径核对" in item for item in grounded.request_flow_review.to_verify)
+    assert [item.component for item in grounded.request_flow] == ["量子网关", "火星数据库"]
+    assert any("控制规则" in item for item in grounded.request_flow_review.issues)
+    assert "源码能核实" not in grounded.interview_intro
+    assert "入口 → 服务 → 数据库链路" in grounded.interview_intro
+
+
 @pytest.mark.asyncio
 async def test_github_http_helper_rejects_non_allowlisted_origin_without_network() -> None:
     fetcher = GitHubRepositoryFetcher()
@@ -868,6 +919,7 @@ async def test_more_and_regenerate_questions_are_grounded_deduplicated_and_limit
     assert all(item["evidence"] for item in more["questions"])
     assert all("README.md" not in item["evidence"] for item in more["questions"])
     assert all("服务端必须" not in item["question"] for item in more["questions"])
+    assert all(item["responsibility_relevance"] for item in more["questions"])
 
     regenerated = await service.generate_project_questions(
         project["id"],

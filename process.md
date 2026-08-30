@@ -19,6 +19,7 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
+| `PROJ-006` | `/root` | `in_progress` | 集成首次部署后出现的 Profile 静态证据保守化与元规则过滤修正，完成回归、提交和生产同步 | `app/profile.py`, `tests/test_profile.py`, `process.md` | 基于已部署 `a3e321e`；不修改其它业务文件，生产仍保留 `.env`、`data/` 与依赖目录 |
 
 登记模板：
 
