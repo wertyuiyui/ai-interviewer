@@ -73,7 +73,12 @@ class ReportEngine:
             ]
             report = await self._build(interview, turns)
             if report.scored:
-                history = await self.db.history(interview["client_id"], limit=20)
+                history = await self.db.history(
+                    interview["client_id"],
+                    limit=1,
+                    scored_only=True,
+                    exclude_interview_id=interview_id,
+                )
                 previous = next(
                     (
                         item

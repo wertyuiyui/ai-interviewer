@@ -101,7 +101,17 @@ def _normalize_report_scoring(
     """
 
     normalized = dict(report)
-    if effective_turn_count > 0:
+    raw_scored = report.get("scored")
+    explicitly_unscored = (
+        raw_scored is False
+        or raw_scored == 0
+        or (
+            isinstance(raw_scored, str)
+            and raw_scored.strip().lower() in {"false", "0", "no", "off"}
+        )
+        or report.get("score_status") == "insufficient_data"
+    )
+    if effective_turn_count > 0 and not explicitly_unscored:
         normalized["scored"] = True
         normalized["score_status"] = "scored"
         return normalized
@@ -506,7 +516,7 @@ class Database:
                 SELECT r.report_json,
                        (SELECT COUNT(*) FROM interview_turns t
                         WHERE t.interview_id = r.interview_id
-                          AND LENGTH(TRIM(t.answer)) > 0) AS effective_turn_count
+                          AND has_effective_text(t.answer) = 1) AS effective_turn_count
                 FROM reports r WHERE r.interview_id = ?
                 """,
                 (interview_id,),
@@ -525,6 +535,8 @@ class Database:
         limit: int = 20,
         *,
         memory_only: bool = False,
+        scored_only: bool = False,
+        exclude_interview_id: str = "",
     ) -> list[dict[str, Any]]:
         def operation(connection: sqlite3.Connection) -> list[dict[str, Any]]:
             rows = connection.execute(
@@ -534,14 +546,35 @@ class Database:
                        i.end_reason, i.memory_enabled, i.hint_events_json,
                        (SELECT COUNT(*) FROM interview_turns t
                         WHERE t.interview_id = r.interview_id
-                          AND LENGTH(TRIM(t.answer)) > 0) AS effective_turn_count
+                          AND has_effective_text(t.answer) = 1) AS effective_turn_count
                 FROM reports r
                 JOIN interviews i ON i.id = r.interview_id
                 WHERE r.client_id = ?
                   AND (? = 0 OR i.memory_enabled = 1)
+                  AND (
+                    ? = 0 OR (
+                      EXISTS (
+                        SELECT 1 FROM interview_turns scored_turn
+                        WHERE scored_turn.interview_id = r.interview_id
+                          AND has_effective_text(scored_turn.answer) = 1
+                      )
+                      AND COALESCE(json_extract(r.report_json, '$.scored'), 1) != 0
+                      AND COALESCE(
+                        json_extract(r.report_json, '$.score_status'), 'scored'
+                      ) = 'scored'
+                    )
+                  )
+                  AND (? = '' OR r.interview_id != ?)
                 ORDER BY r.created_at DESC LIMIT ?
                 """,
-                (client_id, int(memory_only), limit),
+                (
+                    client_id,
+                    int(memory_only),
+                    int(scored_only),
+                    exclude_interview_id,
+                    exclude_interview_id,
+                    limit,
+                ),
             ).fetchall()
             reports: list[dict[str, Any]] = []
             for row in rows:
@@ -606,13 +639,9 @@ class Database:
         return await self._run(operation)
 
     async def weak_topics(self, client_id: str, limit: int = 3) -> list[str]:
-        reports = await self.history(client_id, limit=20, memory_only=True)
-        reports = [
-            report
-            for report in reports
-            if report.get("scored", True)
-            and report.get("score_status", "scored") == "scored"
-        ][:3]
+        reports = await self.history(
+            client_id, limit=3, memory_only=True, scored_only=True
+        )
         if not reports:
             return []
         weights = [0.6, 0.3, 0.1]
@@ -671,6 +700,15 @@ class Database:
         # single-worker hackathon hosts while WAL still handles concurrent reads.
         connection = sqlite3.connect(self.path, timeout=15)
         connection.row_factory = sqlite3.Row
+        # SQLite TRIM only removes ASCII spaces by default.  Reuse Python's
+        # Unicode whitespace semantics so report generation and legacy reads
+        # agree for tabs, newlines, NBSP, and full-width spaces.
+        connection.create_function(
+            "has_effective_text",
+            1,
+            lambda value: int(bool(str(value or "").strip())),
+            deterministic=True,
+        )
         connection.execute("PRAGMA foreign_keys = ON")
         try:
             return function(connection)

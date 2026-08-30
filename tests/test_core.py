@@ -29,7 +29,7 @@ from app.llm import parse_json_content
 from app.prompt_engine import SEVEN_DRILL_DIMENSIONS, build_system_prompt, select_questions
 from app.report_engine import ReportEngine
 from app.resume import ResumeParser, extract_pdf_text
-from app.schemas import InterviewCreate, Project, ResumeData
+from app.schemas import InterviewCreate, InterviewTurn, Project, ResumeData
 from app.topics import project_depth_target
 
 
@@ -479,6 +479,113 @@ async def test_zero_turn_report_is_unscored_without_llm_or_memory_pollution(
     assert history[0]["scored"] is False
     assert history[0]["overall_score"] == 0
     assert await db.weak_topics("unscored-client-001") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blank_answer", ["   ", "\t\n\r", "\u3000", "\u00a0"])
+async def test_unicode_whitespace_turn_stays_unscored_on_generate_and_read(
+    tmp_path, blank_answer: str
+) -> None:
+    settings = mock_settings(tmp_path)
+    db = Database(settings)
+    await db.initialize()
+    engine = InterviewEngine(db, settings)
+    interview = await engine.create(
+        InterviewCreate(
+            client_id="unicode-blank-client",
+            resume=sample_resume(),
+            company="meituan",
+        )
+    )
+    await db.append_turn(
+        interview["id"],
+        InterviewTurn(
+            ordinal=1,
+            question="请介绍项目。",
+            answer=blank_answer,
+            category="project_depth",
+            topic="项目深度",
+            score=5,
+        ),
+        "请继续。",
+    )
+    await db.finish_interview(interview["id"], "manual")
+
+    generated = await ReportEngine(db, settings).generate(interview["id"])
+    assert generated.scored is False
+    persisted = await db.get_report(interview["id"])
+    assert persisted is not None
+    assert persisted["scored"] is False
+    assert persisted["score_status"] == "insufficient_data"
+    assert persisted["overall_score"] == 0
+    assert await db.weak_topics("unicode-blank-client") == []
+
+
+@pytest.mark.asyncio
+async def test_scored_memory_survives_twenty_newer_unscored_reports(tmp_path) -> None:
+    settings = replace(
+        mock_settings(tmp_path),
+        daily_interview_limit=100,
+        client_daily_interview_limit=100,
+    )
+    db = Database(settings)
+    await db.initialize()
+    engine = InterviewEngine(db, settings)
+    reporter = ReportEngine(db, settings)
+    client_id = "scored-window-client"
+
+    scored_interview = await engine.create(
+        InterviewCreate(
+            client_id=client_id,
+            resume=sample_resume(),
+            company="bytedance",
+        )
+    )
+    await db.start_interview(scored_interview["id"])
+    await engine.answer(
+        scored_interview["id"],
+        "我负责 Redis Lua 库存链路，并用压测验证 QPS 从 800 提升到 3000。",
+    )
+    await db.finish_interview(scored_interview["id"], "manual")
+    scored_report = await reporter.generate(scored_interview["id"])
+    assert scored_report.scored is True
+    expected_weak_topics = await db.weak_topics(client_id)
+    assert expected_weak_topics
+
+    for _ in range(20):
+        empty_interview = await engine.create(
+            InterviewCreate(
+                client_id=client_id,
+                resume=sample_resume(),
+                company="tencent",
+            )
+        )
+        await db.finish_interview(empty_interview["id"], "manual")
+        empty_report = await reporter.generate(empty_interview["id"])
+        assert empty_report.scored is False
+
+    # Filtering must happen in SQL before LIMIT; otherwise the 20 empty reports
+    # would hide the older usable memory record.
+    assert await db.weak_topics(client_id) == expected_weak_topics
+
+    # An explicit unscored state remains authoritative even if a legacy/manual
+    # record happens to have an effective turn attached to it.
+    with sqlite3.connect(settings.db_path) as connection:
+        row = connection.execute(
+            "SELECT report_json FROM reports WHERE interview_id = ?",
+            (scored_interview["id"],),
+        ).fetchone()
+        payload = json.loads(row[0])
+        payload["scored"] = 0
+        payload["score_status"] = "insufficient_data"
+        connection.execute(
+            "UPDATE reports SET report_json = ? WHERE interview_id = ?",
+            (json.dumps(payload, ensure_ascii=False), scored_interview["id"]),
+        )
+        connection.commit()
+    explicit = await db.get_report(scored_interview["id"])
+    assert explicit is not None and explicit["scored"] is False
+    assert await db.weak_topics(client_id) == []
 
 
 @pytest.mark.asyncio

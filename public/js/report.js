@@ -63,16 +63,24 @@ function normalizeTextList(value) {
   }).filter(Boolean);
 }
 
-function normalizeQuestion(item, index) {
+function flagEnabled(value, fallback = true) {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'string') return !['false', '0', 'no', 'off'].includes(value.trim().toLowerCase());
+  return Boolean(value);
+}
+
+function normalizeQuestion(item, index, reportScored = true) {
   const deductions = normalizeTextList(firstValue(item, ['deductions', 'deduction_points', 'issues', 'weaknesses', '扣分点'], []));
   const rawScore = firstValue(item, ['score', 'points', '得分'], null);
+  const scored = reportScored && flagEnabled(firstValue(item, ['scored'], true));
   return {
     index: index + 1,
     question: String(firstValue(item, ['question', 'prompt', 'q', '题目'], `第 ${index + 1} 题`) || `第 ${index + 1} 题`),
     answer: String(firstValue(item, ['candidate_answer', 'answer', 'response', 'user_answer', '候选人回答'], '未记录到完整回答') || '未记录到完整回答'),
     improved: String(firstValue(item, ['improved_answer', 'rewrite', 'example_answer', 'better_answer', '改写示范'], '暂无改写示范') || '暂无改写示范'),
     category: String(firstValue(item, ['category', 'dimension', 'type', '考察点'], '综合追问') || '综合追问'),
-    score: rawScore === null ? null : score10(rawScore),
+    score: !scored || rawScore === null ? null : score10(rawScore),
+    scored,
     deductions,
   };
 }
@@ -121,24 +129,37 @@ function normalizeHintEvents(value) {
 
 function normalizeReport(raw, metadata = {}) {
   const report = unwrapReport(raw) || {};
+  const scoreStatus = String(firstValue(
+    report,
+    ['score_status'],
+    firstValue(metadata, ['score_status'], 'scored'),
+  ) || 'scored');
+  const scored = scoreStatus !== 'insufficient_data'
+    && flagEnabled(firstValue(report, ['scored'], firstValue(metadata, ['scored'], true)));
   const rubricRoot = firstValue(report, ['rubric', 'dimension_scores', 'dimensions', '评分细则'], {});
   const scoresRoot = firstValue(report, ['scores', 'score_breakdown', '评分'], {});
   const rubric = rubricDefinitions.map((definition) => {
     const entry = findDimension(rubricRoot, definition) ?? findDimension(scoresRoot, definition);
-    const score = score10(entry, 0);
+    const score = scored ? score10(entry, 0) : null;
     const feedback = typeof entry === 'object' && entry !== null
       ? String(firstValue(entry, ['feedback', 'summary', 'comment', 'description', '评价'], '') || '')
       : '';
     const deductions = typeof entry === 'object' && entry !== null
       ? normalizeTextList(firstValue(entry, ['deductions', 'issues', '扣分点'], []))
       : [];
-    return { ...definition, score, feedback: feedback || deductions.slice(0, 2).join('；') || '详见下方逐题扣分依据。' };
+    return {
+      ...definition,
+      score,
+      feedback: scored
+        ? (feedback || deductions.slice(0, 2).join('；') || '详见下方逐题扣分依据。')
+        : '有效回答不足，暂不评分。',
+    };
   });
 
   const questionsRaw = firstValue(report, ['question_reviews', 'question_feedback', 'questions', 'per_question', '逐题反馈', '逐题扣分'], []);
   const practiceRaw = firstValue(report, ['must_practice', 'practice_list', 'next_practice', 'practice_plan', '下次必练清单'], []);
   const overallRaw = firstValue(report, ['overall_score', 'total_score', 'score', '综合得分'], null);
-  const weighted = rubric.reduce((sum, item) => sum + item.score * item.weight / 100, 0);
+  const weighted = scored ? rubric.reduce((sum, item) => sum + item.score * item.weight / 100, 0) : null;
   const id = reportId(report) || reportId(metadata) || sessionId;
   const durationRaw = Object.hasOwn(report, 'duration_minutes')
     ? report.duration_minutes
@@ -166,11 +187,13 @@ function normalizeReport(raw, metadata = {}) {
     endedAt: reportDate(report) || reportDate(metadata) || new Date().toISOString(),
     endReason: String(firstValue(report, ['end_reason', 'reason'], firstValue(metadata, ['end_reason'], '')) || ''),
     summary: String(firstValue(report, ['summary', 'overall_feedback', 'conclusion', '总结', '总体评价'], '本场报告已生成，请结合逐题扣分点安排下一次练习。')),
-    overall: overallRaw === null ? Math.round(weighted * 10) / 10 : score10(overallRaw),
+    scored,
+    scoreStatus: scored ? 'scored' : 'insufficient_data',
+    overall: scored ? (overallRaw === null ? Math.round(weighted * 10) / 10 : score10(overallRaw)) : null,
     rubric,
-    questions: toArray(questionsRaw).map(normalizeQuestion),
+    questions: toArray(questionsRaw).map((item, index) => normalizeQuestion(item, index, scored)),
     practice: toArray(practiceRaw).map(normalizePractice),
-    topicScores: normalizeTopicScores(firstValue(report, ['topic_scores', 'knowledge_scores', '知识点得分'], {})),
+    topicScores: scored ? normalizeTopicScores(firstValue(report, ['topic_scores', 'knowledge_scores', '知识点得分'], {})) : {},
     hintEvents,
     memoryEnabled,
   };
@@ -181,7 +204,7 @@ function isReportPending(payload) {
   if (['pending', 'generating', 'processing', 'reporting', 'running', 'queued'].includes(status)) return true;
   const candidate = unwrapReport(payload);
   if (!candidate) return true;
-  const reportKeys = ['overall_score', 'total_score', 'score', 'rubric', 'question_reviews', 'question_feedback', '逐题反馈', '综合得分'];
+  const reportKeys = ['scored', 'overall_score', 'total_score', 'score', 'rubric', 'question_reviews', 'question_feedback', '逐题反馈', '综合得分'];
   return !reportKeys.some((key) => candidate[key] !== undefined);
 }
 
@@ -196,15 +219,19 @@ function renderRubric(report) {
   const grid = $('#rubricGrid');
   grid.replaceChildren();
   report.rubric.forEach((dimension) => {
-    const card = createElement('article', 'rubric-card');
+    const hasScore = report.scored && Number.isFinite(dimension.score);
+    const card = createElement('article', `rubric-card${hasScore ? '' : ' is-unscored'}`);
     const top = createElement('div', 'rubric-top');
     top.append(createElement('h3', '', dimension.label), createElement('span', 'rubric-weight', `权重 ${dimension.weight}%`));
     const score = createElement('div', 'rubric-score');
-    score.append(createElement('strong', '', dimension.score.toFixed(1)), createElement('small', '', '/ 10'));
+    score.append(
+      createElement('strong', '', hasScore ? dimension.score.toFixed(1) : '—'),
+      createElement('small', '', hasScore ? '/ 10' : '数据不足'),
+    );
     const track = createElement('progress', 'score-track');
     track.max = 10;
-    track.value = clamp(dimension.score, 0, 10);
-    track.setAttribute('aria-label', `${dimension.label} ${dimension.score.toFixed(1)} 分`);
+    track.value = hasScore ? clamp(dimension.score, 0, 10) : 0;
+    track.setAttribute('aria-label', hasScore ? `${dimension.label} ${dimension.score.toFixed(1)} 分` : `${dimension.label} 数据不足`);
     card.append(top, score, track, createElement('p', '', dimension.feedback));
     grid.append(card);
   });
@@ -215,7 +242,13 @@ function renderQuestions(report) {
   list.replaceChildren();
   $('#questionCount').textContent = report.questions.length ? `共 ${report.questions.length} 题` : '暂无题目记录';
   if (!report.questions.length) {
-    const empty = createElement('div', 'topic-empty', '报告没有返回逐题记录，请稍后刷新或重新生成报告。');
+    const empty = createElement(
+      'div',
+      'topic-empty',
+      report.scored
+        ? '报告没有返回逐题记录，请稍后刷新或重新生成报告。'
+        : '本场在形成可评分的完整回答前结束，因此不生成虚构分数或逐题扣分；你仍可参考下方练习建议。',
+    );
     list.append(empty);
     return;
   }
@@ -261,8 +294,10 @@ function renderPractice(report) {
   const grid = $('#practiceGrid');
   grid.replaceChildren();
   const practices = report.practice.length ? report.practice : [{
-    topic: '按最低评分维度复盘',
-    reason: `优先练习“${[...report.rubric].sort((a, b) => a.score - b.score)[0]?.label || '基础知识'}”，并用 STAR 和请求链路组织回答。`,
+    topic: report.scored ? '按最低评分维度复盘' : '先完成一轮有效回答',
+    reason: report.scored
+      ? `优先练习“${[...report.rubric].sort((a, b) => a.score - b.score)[0]?.label || '基础知识'}”，并用 STAR 和请求链路组织回答。`
+      : '本场有效回答不足，建议先完整回答至少一道项目题和一道基础题，再依据真实扣分安排复练。',
     links: [],
   }];
   practices.slice(0, 6).forEach((practice, index) => {
@@ -309,12 +344,17 @@ function renderCurrent(report) {
   $('#reportTitle').textContent = `${companyLabel(report.company)} · ${report.specialization}一面报告`;
   const pressureLabels = ['无压力', '温和压力', '标准压力', '高压'];
   const durationLabel = report.unlimited ? '不限时 · 手动结束' : (report.duration ? `${report.duration} 分钟` : '');
-  const memoryLabel = report.memoryEnabled ? '参与弱项记忆' : '未参与弱项记忆';
+  const memoryLabel = report.scored
+    ? (report.memoryEnabled ? '参与弱项记忆' : '未参与弱项记忆')
+    : '数据不足 · 不写入弱项记忆';
   const languageLabel = report.languageMode === 'zh' ? '全程中文' : '中英双语';
   const tags = [formatDate(report.endedAt), durationLabel, pressureLabels[report.stressLevel], languageLabel, memoryLabel].filter(Boolean);
   $('#reportMeta').textContent = tags.join(' · ');
   $('#reportSummary').textContent = report.summary;
-  $('#overallScore').textContent = report.overall.toFixed(1);
+  $('#overallScore').textContent = report.scored ? report.overall.toFixed(1) : '—';
+  $('#overallScoreUnit').textContent = report.scored ? '/ 10' : '数据不足';
+  $('#scoreDisc').classList.toggle('is-unscored', !report.scored);
+  $('.button-label', $('#retryWeakButton')).textContent = report.scored ? '用原简历复练弱项' : '用原简历重新开始一场';
   renderRubric(report);
   renderQuestions(report);
   renderPractice(report);
@@ -338,7 +378,8 @@ function showView(view) {
 }
 
 function historyLabel(report) {
-  return `${formatDate(report.endedAt)} · ${companyLabel(report.company)} · ${report.overall.toFixed(1)} 分`;
+  const scoreLabel = report.scored ? `${report.overall.toFixed(1)} 分` : '数据不足';
+  return `${formatDate(report.endedAt)} · ${companyLabel(report.company)} · ${scoreLabel}`;
 }
 
 function populateComparisonSelects() {
@@ -346,23 +387,29 @@ function populateComparisonSelects() {
   const previousSelect = $('#previousCompare');
   const selectedCurrent = currentSelect.value;
   const selectedPrevious = previousSelect.value;
+  const comparableReports = historyReports.filter((report) => report.scored);
   currentSelect.replaceChildren();
   previousSelect.replaceChildren();
-  historyReports.forEach((report) => {
+  comparableReports.forEach((report) => {
     const optionA = createElement('option', '', historyLabel(report));
     optionA.value = report.id;
     currentSelect.append(optionA);
     const optionB = optionA.cloneNode(true);
     previousSelect.append(optionB);
   });
-  if (historyReports.length === 1) {
-    const emptyOption = createElement('option', '', '暂无其他场次');
+  if (!comparableReports.length) {
+    const emptyCurrent = createElement('option', '', '暂无可评分场次');
+    emptyCurrent.value = '';
+    currentSelect.append(emptyCurrent);
+  }
+  if (comparableReports.length <= 1) {
+    const emptyOption = createElement('option', '', '暂无其他可评分场次');
     emptyOption.value = '';
     previousSelect.prepend(emptyOption);
   }
-  currentSelect.value = historyReports.some((item) => item.id === selectedCurrent) ? selectedCurrent : historyReports[0]?.id || '';
-  const defaultPrevious = historyReports.find((item) => item.id !== currentSelect.value)?.id || '';
-  previousSelect.value = historyReports.some((item) => item.id === selectedPrevious && item.id !== currentSelect.value) ? selectedPrevious : defaultPrevious;
+  currentSelect.value = comparableReports.some((item) => item.id === selectedCurrent) ? selectedCurrent : comparableReports[0]?.id || '';
+  const defaultPrevious = comparableReports.find((item) => item.id !== currentSelect.value)?.id || '';
+  previousSelect.value = comparableReports.some((item) => item.id === selectedPrevious && item.id !== currentSelect.value) ? selectedPrevious : defaultPrevious;
 }
 
 function drawRadar(current, previous) {
@@ -404,7 +451,7 @@ function drawRadar(current, previous) {
   }
 
   const polygon = (report, stroke, fill, dashed = false) => {
-    if (!report) return;
+    if (!report?.scored) return;
     context.save();
     context.strokeStyle = stroke;
     context.fillStyle = fill;
@@ -420,6 +467,12 @@ function drawRadar(current, previous) {
   };
   polygon(previous, '#aab4c2', 'rgba(170,180,194,.10)', true);
   polygon(current, '#356eea', 'rgba(53,110,234,.16)');
+  if (!current?.scored && !previous?.scored) {
+    context.fillStyle = '#8b949f';
+    context.font = '600 20px ui-sans-serif, system-ui, sans-serif';
+    context.textAlign = 'center';
+    context.fillText('有效回答不足，暂不绘制分数', centerX, centerY);
+  }
 }
 
 function renderScoreComparison(current, previous) {
@@ -428,8 +481,11 @@ function renderScoreComparison(current, previous) {
   current.rubric.forEach((dimension, index) => {
     const item = createElement('div', 'comparison-item');
     item.append(createElement('span', '', dimension.label));
-    const value = createElement('strong', '', dimension.score.toFixed(1));
-    if (previous) {
+    const hasCurrent = current.scored && Number.isFinite(dimension.score);
+    const hasPrevious = previous?.scored && Number.isFinite(previous.rubric[index]?.score);
+    const value = createElement('strong', '', hasCurrent ? dimension.score.toFixed(1) : '—');
+    if (!hasCurrent) value.append(createElement('em', '', '数据不足'));
+    else if (hasPrevious) {
       const delta = Math.round((dimension.score - previous.rubric[index].score) * 10) / 10;
       const deltaNode = createElement('em', delta < 0 ? 'down' : '', `${delta > 0 ? '+' : ''}${delta.toFixed(1)}`);
       value.append(deltaNode);
@@ -442,7 +498,11 @@ function renderScoreComparison(current, previous) {
 function renderTopicDeltas(current, previous) {
   const container = $('#topicDeltas');
   container.replaceChildren();
-  if (!previous) {
+  if (!current.scored) {
+    container.append(createElement('div', 'topic-empty', '本场有效回答不足，不生成知识点分数或变化曲线。'));
+    return;
+  }
+  if (!previous?.scored) {
     container.append(createElement('div', 'topic-empty', '再完成一场面试后，这里会展示 Redis、MySQL、并发与计网等知识点的分数变化。'));
     return;
   }
@@ -466,8 +526,17 @@ function renderTopicDeltas(current, previous) {
 
 function updateComparison() {
   if (!historyReports.length) return;
-  const current = historyReports.find((item) => item.id === $('#currentCompare').value) || historyReports[0];
-  const previous = historyReports.find((item) => item.id === $('#previousCompare').value && item.id !== current.id) || null;
+  const comparableReports = historyReports.filter((report) => report.scored);
+  if (!comparableReports.length) {
+    drawRadar(null, null);
+    const scoreContainer = $('#scoreComparison');
+    scoreContainer.replaceChildren(createElement('div', 'topic-empty', '完成至少一场有效面试后，这里会显示能力对比。'));
+    const topicContainer = $('#topicDeltas');
+    topicContainer.replaceChildren(createElement('div', 'topic-empty', '未评分场次不会进入成长曲线或知识点变化。'));
+    return;
+  }
+  const current = comparableReports.find((item) => item.id === $('#currentCompare').value) || comparableReports[0];
+  const previous = comparableReports.find((item) => item.id === $('#previousCompare').value && item.id !== current.id) || null;
   drawRadar(current, previous);
   renderScoreComparison(current, previous);
   renderTopicDeltas(current, previous);
@@ -479,10 +548,13 @@ function renderHistoryList() {
   $('#historyCount').textContent = `${historyReports.length} 场`;
   historyReports.forEach((report) => {
     const item = createElement('article', 'history-item');
-    const score = createElement('span', 'history-score', report.overall.toFixed(1));
+    const score = createElement('span', `history-score${report.scored ? '' : ' is-unscored'}`, report.scored ? report.overall.toFixed(1) : '—');
     const copy = createElement('div', 'history-copy');
     const durationLabel = report.unlimited ? '不限时' : (report.duration ? `${report.duration} 分钟` : '');
-    copy.append(createElement('strong', '', `${companyLabel(report.company)} · ${report.specialization}一面`), createElement('small', '', `${formatDate(report.endedAt)}${durationLabel ? ` · ${durationLabel}` : ''}`));
+    copy.append(
+      createElement('strong', '', `${companyLabel(report.company)} · ${report.specialization}一面`),
+      createElement('small', '', `${formatDate(report.endedAt)}${durationLabel ? ` · ${durationLabel}` : ''}${report.scored ? '' : ' · 数据不足'}`),
+    );
     const tags = createElement('div', 'history-tags');
     tags.append(createElement('span', '', ['无压力', '温和压力', '标准压力', '高压'][report.stressLevel]));
     if (report.endReason) tags.append(createElement('span', '', /poor|early|提前/i.test(report.endReason) ? '提前结束' : '已完成'));
@@ -516,6 +588,8 @@ function mergeHistory(remoteRows) {
       end_reason: currentReport.endReason,
       memory_enabled: currentReport.memoryEnabled,
       hint_events: currentReport.hintEvents,
+      scored: currentReport.scored,
+      score_status: currentReport.scoreStatus,
     });
   }
   const byId = new Map();
@@ -574,6 +648,8 @@ async function loadCurrentReport() {
           ended_at: currentReport.endedAt,
           memory_enabled: currentReport.memoryEnabled,
           hint_events: currentReport.hintEvents,
+          scored: currentReport.scored,
+          score_status: currentReport.scoreStatus,
         }, sessionId);
         renderCurrent(currentReport);
         await loadHistory();
@@ -638,7 +714,7 @@ async function retryWeaknesses() {
   if (!currentReport?.id) return;
   const button = $('#retryWeakButton');
   try {
-    setButtonBusy(button, true, '正在创建弱项复练…');
+    setButtonBusy(button, true, currentReport.scored ? '正在创建弱项复练…' : '正在重新创建面试…');
     const session = await apiFetch(`/api/interviews/${encodeURIComponent(currentReport.id)}/retry`, {
       method: 'POST',
       timeout: 65_000,
@@ -656,7 +732,10 @@ async function retryWeaknesses() {
       memory_enabled: true,
       created_at: session?.created_at || new Date().toISOString(),
     });
-    showToast('已复用原简历，并把本场弱项加入新剧本。', 'success');
+    showToast(
+      currentReport.scored ? '已复用原简历，并把本场弱项加入新剧本。' : '已复用原简历，开始一场新的完整练习。',
+      'success',
+    );
     window.location.assign(`/interview?session=${encodeURIComponent(id)}`);
   } catch (error) {
     setButtonBusy(button, false);
@@ -667,7 +746,7 @@ async function retryWeaknesses() {
 $$('.report-tab').forEach((tab) => tab.addEventListener('click', () => showView(tab.dataset.view)));
 $('#currentCompare').addEventListener('change', () => {
   if ($('#previousCompare').value === $('#currentCompare').value) {
-    $('#previousCompare').value = historyReports.find((item) => item.id !== $('#currentCompare').value)?.id || '';
+    $('#previousCompare').value = historyReports.find((item) => item.scored && item.id !== $('#currentCompare').value)?.id || '';
   }
   updateComparison();
 });
@@ -680,7 +759,8 @@ $('#clearHistory').addEventListener('click', clearHistory);
 $('#retryWeakButton').addEventListener('click', retryWeaknesses);
 $('#copySummary').addEventListener('click', async () => {
   if (!currentReport) return;
-  const text = `${companyLabel(currentReport.company)}后端一面：${currentReport.overall.toFixed(1)} 分\n${currentReport.summary}`;
+  const scoreLabel = currentReport.scored ? `${currentReport.overall.toFixed(1)} 分` : '数据不足';
+  const text = `${companyLabel(currentReport.company)}后端一面：${scoreLabel}\n${currentReport.summary}`;
   try {
     await navigator.clipboard.writeText(text);
     showToast('报告总结已复制。', 'success');
