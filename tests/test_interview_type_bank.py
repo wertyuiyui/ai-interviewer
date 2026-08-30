@@ -21,6 +21,7 @@ from app.interview_engine import InterviewEngine
 from app.practice import PracticeService, PracticeSessionCreate
 from app.prompt_engine import (
     build_system_prompt,
+    is_vague_answer,
     is_internal_interview_instruction,
     select_questions,
     select_server_questions,
@@ -28,50 +29,10 @@ from app.prompt_engine import (
 from app.schemas import InterviewCreate, Project, ResumeData, TurnAssessment, TurnDecision
 
 
-def test_bank_phase_pairs_reviewed_questions_with_one_safe_followup() -> None:
-    technical = [
-        InterviewEngine._bank_phase(
-            "technical",
-            completed_turns=completed,
-            drill_target=4,
-            combined_hr_stages=0,
-        )
-        for completed in range(5, 9)
-    ]
-    assert [
-        (phase.next_track, phase.next_index, phase.next_followup)
-        for phase in technical
-    ] == [
-        ("technical", 0, False),
-        ("technical", 0, True),
-        ("technical", 1, False),
-        ("technical", 1, True),
-    ]
-
-    combined = [
-        InterviewEngine._bank_phase(
-            "technical_hr",
-            completed_turns=completed,
-            drill_target=3,
-            combined_hr_stages=3,
-        )
-        for completed in range(4, 13)
-    ]
-    assert [
-        (phase.next_track, phase.next_index, phase.next_followup)
-        for phase in combined
-    ] == [
-        ("technical", 0, False),
-        ("technical", 0, True),
-        ("hr", 0, False),
-        ("hr", 0, True),
-        ("hr", 1, False),
-        ("hr", 1, True),
-        ("hr", 2, False),
-        ("hr", 2, True),
-        ("technical", 1, False),
-    ]
-
+def test_bank_followup_stays_anchored_to_reviewed_question() -> None:
+    assert not is_vague_answer(
+        "This internship lets me test that plan through real delivery and load-test results."
+    )
     unrelated = InterviewEngine._anchored_bank_followup(
         "请解释另一个无关的数据库问题。",
         answer="我会用 Redis Lua 保证原子扣减。",

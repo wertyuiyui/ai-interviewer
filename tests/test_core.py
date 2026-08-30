@@ -1467,13 +1467,14 @@ async def test_three_layer_drill_early_end_report_and_memory(tmp_path) -> None:
     assert first.pressure_action == "none"
     failed_once = await engine.answer(stress["id"], "不知道")
     assert failed_once.breakdown_streak == 0
-    assert failed_once.pressure_action == "challenge"
-    assert "这题先跳过" in failed_once.question
-    assert "下一题" in failed_once.question
+    assert failed_once.pressure_action == "none"
+    assert failed_once.question.startswith("明白，我们换一道。")
+    assert "缺少依据" not in failed_once.question
+    assert "建议" not in failed_once.question
     failed_twice = await engine.answer(stress["id"], "不会")
     assert not failed_twice.ended
     assert failed_twice.breakdown_streak == 0
-    assert "下一题" in failed_twice.question
+    assert failed_twice.question.startswith("明白，我们换一道。")
 
 
 def test_json_parser_handles_fenced_output() -> None:
@@ -1626,7 +1627,8 @@ async def test_live_transcript_correction_rescores_target_and_report_uses_edit(t
     report = await ReportEngine(database, report_settings).generate(created["id"])
     assert report.question_feedback[0].answer == corrected_text
     assert report.question_feedback[0].transcript_edited is True
-    assert report.question_feedback[0].answer_duration_seconds == 12.0
+    assert report.question_feedback[0].answer_duration_seconds == stored.answer_duration_seconds
+    assert report.question_feedback[0].answer_duration_seconds is not None
     assert report.process_analysis.time_control.scorable is True
     assert report.process_analysis.speech_rate.scorable is True
     assert report.process_analysis.fluency.scorable is True

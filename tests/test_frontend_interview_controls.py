@@ -23,7 +23,8 @@ def test_explicit_per_question_answer_controls_contract() -> None:
         "function finishCurrentAnswer", 1
     )[0]
     assert "type: 'answer.start'" in start_block
-    assert "setAnswerState('answering', { resetElapsed: true })" in start_block
+    assert "setAnswerState('answering')" in start_block
+    assert "resetElapsed: true" not in start_block
 
     end_block = script.split("function finishCurrentAnswer(", 1)[1].split(
         "async function requestHint", 1
@@ -93,8 +94,10 @@ def test_interviewer_voice_playback_toggle_is_local_only() -> None:
 def test_interview_script_cache_busts_answer_controls() -> None:
     html = (ROOT / "public" / "interview.html").read_text(encoding="utf-8")
     script = (ROOT / "public" / "js" / "interview.js").read_text(encoding="utf-8")
-    assert "/js/interview.js?v=20260830-exit-v1" in html
-    assert "/assets/app.css?v=20260830-stage-flow-v1" in html
+    assert "/js/interview.js?v=20260830-interview-clock-v1" in html
+    assert "/assets/app.css?v=20260830-interview-clock-v1" in html
+    assert 'id="pauseButton"' in html
+    assert 'id="codingComposerHeading"' in html
     assert 'id="unknownButton"' in html
     assert 'id="advanceStageButton"' in html
     assert 'id="interviewStageList"' in html
@@ -103,9 +106,33 @@ def test_interview_script_cache_busts_answer_controls() -> None:
     assert "interview.stage.changed" in script
     assert "renderInterviewStage" in script
     assert "control_intent" in script
-    assert "进一步提示" in html
+    assert "进一步提示" in script
     assert "function submitUnknown()" in script
     assert "hintedQuestions = new Map()" in script
+    assert "interview.pause.changed" in script
+    assert "codingAnswerMode = value.current?.id === 'coding'" in script
+
+
+def test_pause_text_mode_and_coding_editor_contract() -> None:
+    html = (ROOT / "public" / "interview.html").read_text(encoding="utf-8")
+    script = (ROOT / "public" / "js" / "interview.js").read_text(encoding="utf-8")
+    styles = (ROOT / "public" / "assets" / "app.css").read_text(encoding="utf-8")
+
+    stage_actions = html.split('<div class="stage-actions">', 1)[1].split("</div>", 1)[0]
+    assert stage_actions.index('id="pauseButton"') < stage_actions.index('id="hintButton"')
+    assert 'aria-pressed="false"' in stage_actions
+    assert "type: 'interview.pause', paused: !interviewPaused" in script
+    assert "question_elapsed_seconds" in script
+    assert "voiceMode === 'L3' || codingAnswerMode" in script
+    assert "elements.answerControl.classList.toggle('is-hidden', !live || voiceMode === 'L3')" in script
+    assert "codingAnswerMode ? 10000 : 4000" in script
+    assert "event.ctrlKey || event.metaKey" in script
+    assert "setRangeText('  ', start, end, 'end')" in script
+    assert "计时会从点击时开始" not in script
+    assert "本题回答已结束，计时已停止" not in script
+    assert ".message-composer.is-coding textarea" in styles
+    assert "font-family: var(--font-mono)" in styles
+    assert "min-height: 220px" in styles
 
 
 def test_resume_mismatch_can_exit_to_home_and_clear_selected_session() -> None:

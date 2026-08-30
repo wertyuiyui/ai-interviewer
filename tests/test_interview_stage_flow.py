@@ -15,10 +15,11 @@ def test_stage_plans_follow_interview_type_boundaries() -> None:
         "self_intro", "project_deep_dive", "fundamentals", "coding", "candidate_questions"
     ]
     assert interview_stage_plan("technical_hr") == [
-        "self_intro", "project_deep_dive", "fundamentals", "coding", "behavioral", "candidate_questions"
+        "self_intro", "project_deep_dive", "fundamentals", "coding",
+        "hr_fit", "career_planning", "compensation", "candidate_questions"
     ]
     assert interview_stage_plan("hr") == [
-        "self_intro", "behavioral", "candidate_questions"
+        "self_intro", "hr_fit", "career_planning", "compensation", "candidate_questions"
     ]
 
 
@@ -138,9 +139,17 @@ async def test_hr_plan_never_emits_technical_or_coding_stage(tmp_path) -> None:
         )
     )
     assert [item["id"] for item in created["stage"]["stages"]] == [
-        "self_intro", "behavioral", "candidate_questions"
+        "self_intro", "hr_fit", "career_planning", "compensation", "candidate_questions"
     ]
     assert all(
         item["id"] not in {"project_deep_dive", "fundamentals", "coding"}
         for item in created["stage"]["stages"]
     )
+
+    await database.start_interview(created["id"])
+    fit = await engine.answer(created["id"], "我希望在真实业务中提升协作和交付能力。")
+    assert fit.stage["current"]["id"] == "hr_fit"
+    followup = await engine.answer(created["id"], "我调研了岗位要求，并按差距补项目。")
+    assert followup.stage["current"]["id"] == "hr_fit"
+    career = await engine.answer(created["id"], "我会用项目交付和复盘记录验证匹配度。")
+    assert career.stage["current"]["id"] == "career_planning"

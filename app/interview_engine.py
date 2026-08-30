@@ -25,6 +25,7 @@ from .prompt_engine import (
     initial_question,
     interview_drill_target,
     is_internal_interview_instruction,
+    is_obvious_placeholder_answer,
     is_vague_answer,
     project_followup,
     select_questions,
@@ -56,41 +57,27 @@ class EngineResult:
     turn: InterviewTurn
 
 
-@dataclass(slots=True, frozen=True)
-class _BankPhase:
-    """Server-bank position for the question just answered and the next one.
-
-    ``*_followup`` means the question stays on the same reviewed bank item but
-    is personalized from the candidate's preceding answer.  Keeping this
-    mapping independent from generated model state prevents a malformed model
-    response from skipping or reordering reviewed main questions.
-    """
-
-    next_track: str = ""
-    next_index: int = -1
-    next_followup: bool = False
-    answered_track: str = ""
-    answered_index: int = -1
-    answered_followup: bool = False
-
-
 STAGE_LABELS = {
     "self_intro": "自我介绍",
     "project_deep_dive": "项目深挖",
     "fundamentals": "基础与场景题",
     "coding": "手撕代码",
     "behavioral": "综合交流",
+    "hr_fit": "岗位匹配",
+    "career_planning": "职业规划",
+    "compensation": "薪酬沟通",
     "candidate_questions": "反问",
 }
+HR_STAGE_INDEX = {"hr_fit": 0, "career_planning": 1, "compensation": 2}
 
 
 def interview_stage_plan(interview_type: str) -> list[str]:
     normalized = "technical_hr" if interview_type == "tech_hr" else interview_type
     if normalized == "hr":
-        return ["self_intro", "behavioral", "candidate_questions"]
+        return ["self_intro", *HR_STAGE_INDEX, "candidate_questions"]
     plan = ["self_intro", "project_deep_dive", "fundamentals", "coding"]
     if normalized == "technical_hr":
-        plan.append("behavioral")
+        plan.extend(HR_STAGE_INDEX)
     return [*plan, "candidate_questions"]
 
 
@@ -256,6 +243,8 @@ class InterviewEngine:
             if interview["status"] in {"ended", "reporting", "reported"}:
                 raise AppError("INTERVIEW_ENDED", "本场面试已经结束", status_code=409)
             raise AppError("INTERVIEW_NOT_STARTED", "请先进入面试再获取提示", status_code=409)
+        if interview.get("paused"):
+            raise AppError("INTERVIEW_PAUSED", "本场面试已暂停", status_code=409)
         question = str(interview.get("last_question") or "").strip()
         if not question:
             raise AppError("QUESTION_NOT_READY", "当前问题还未准备好", status_code=409)
@@ -324,7 +313,7 @@ class InterviewEngine:
             ]
         elif stage_id == "coding":
             pool = [item for item in questions if item.get("kind") == "coding"]
-        elif stage_id == "behavioral":
+        elif stage_id == "behavioral" or stage_id in HR_STAGE_INDEX:
             pool = [item for item in questions if item.get("kind") == "behavioral"]
         else:
             return (
@@ -341,7 +330,13 @@ class InterviewEngine:
         # Fundamentals and behavioral sections use a reviewed opener followed
         # by at most one answer-anchored follow-up. This keeps the interview
         # responsive without letting a generated question replace the bank.
-        item_index = turn_count // 2 if stage_id in {"fundamentals", "behavioral"} else turn_count
+        item_index = (
+            HR_STAGE_INDEX[stage_id]
+            if stage_id in HR_STAGE_INDEX
+            else turn_count // 2
+            if stage_id in {"fundamentals", "behavioral"}
+            else turn_count
+        )
         item = pool[item_index % len(pool)]
         return str(item.get("question") or "").strip()
 
@@ -370,6 +365,8 @@ class InterviewEngine:
             raise AppError("INTERVIEW_NOT_FOUND", "面试不存在", status_code=404)
         if interview["status"] in {"ended", "reporting", "reported"}:
             raise AppError("INTERVIEW_ENDED", "本场面试已经结束", status_code=409)
+        if interview.get("paused"):
+            raise AppError("INTERVIEW_PAUSED", "本场面试已暂停", status_code=409)
         state = self._stage_state(interview)
         if expected_revision is not None and expected_revision != state["revision"]:
             raise AppError("STALE_STAGE", "面试阶段已更新，请按最新进度操作", status_code=409)
@@ -603,6 +600,8 @@ class InterviewEngine:
             raise AppError("INTERVIEW_NOT_FOUND", "面试不存在", status_code=404)
         if interview["status"] in {"ended", "reporting", "reported"}:
             raise AppError("INTERVIEW_ENDED", "本场面试已经结束", status_code=409)
+        if interview.get("paused"):
+            raise AppError("INTERVIEW_PAUSED", "本场面试已暂停", status_code=409)
         if interview.get("deadline_at") and float(interview["deadline_at"]) <= time.time():
             await self.db.finish_interview(interview_id, "time")
             raise AppError("INTERVIEW_TIMEOUT", "面试时间已到", status_code=409)
@@ -617,14 +616,20 @@ class InterviewEngine:
         resume = ResumeData.model_validate(interview["resume"])
         stage_state = self._stage_state(interview)
         current_stage = stage_state["plan"][stage_state["index"]]
+        question_elapsed = interview.get("question_elapsed_seconds")
         decision_interview = {
             **interview,
             "_answer_input_mode": "voice" if input_mode == "voice" else "text",
-            "_answer_duration_seconds": answer_duration_seconds,
+            "_answer_duration_seconds": (
+                question_elapsed
+                if question_elapsed is not None
+                else answer_duration_seconds
+            ),
         }
         decision = await self._decide(decision_interview, resume, turns, answer)
         vague_answer = is_vague_answer(answer)
         explicit_unknown = self._explicit_unknown(answer)
+        invalid_answer = is_obvious_placeholder_answer(answer)
         unknown_control = control_intent == "unknown"
         project_ownership_correction = self._explicit_project_ownership_correction(
             answer
@@ -697,7 +702,7 @@ class InterviewEngine:
         drill_target = interview_drill_target(
             interview["weak_topics"], interview_type
         )
-        question, forced_dimension, forced_depth = enforce_project_drill(
+        question, _, _ = enforce_project_drill(
             decision.next_question,
             completed_turns=project_drill_completed_turns,
             anchor=anchor,
@@ -719,45 +724,9 @@ class InterviewEngine:
             language_mode=str(interview.get("language_mode") or "bilingual"),
             interview_type=interview_type,
         )
-        technical_questions = [
-            item for item in server_questions if item.get("kind") != "behavioral"
-        ]
         hr_questions = [
             item for item in server_questions if item.get("kind") == "behavioral"
         ]
-        phase = self._bank_phase(
-            interview_type,
-            completed_turns=project_drill_completed_turns,
-            drill_target=drill_target,
-            combined_hr_stages=min(3, len(hr_questions)),
-            skipped_followups_before=sum(
-                1 for turn in turns if self._explicit_unknown(turn.answer)
-            ),
-            skip_current=explicit_unknown,
-        )
-        next_item: dict[str, Any] | None = None
-        if not forced_depth and phase.next_track:
-            bank = (
-                technical_questions
-                if phase.next_track == "technical"
-                else hr_questions
-            )
-            if bank:
-                next_item = bank[phase.next_index % len(bank)]
-                if phase.next_followup:
-                    question = self._anchored_bank_followup(
-                        decision.next_question,
-                        answer=answer,
-                        anchor=response_anchor,
-                        bank_item=next_item,
-                        track=phase.next_track,
-                        vague=vague_answer,
-                        language_mode=str(
-                            interview.get("language_mode") or "bilingual"
-                        ),
-                    )
-                else:
-                    question = str(next_item["question"])
         question = self._sanitize_question(
             question,
             interview["company"],
@@ -785,7 +754,7 @@ class InterviewEngine:
             current_drill_dimension = ""
             current_drill_depth = 0
         elif current_stage == "self_intro":
-            should_advance_stage = True
+            should_advance_stage = not invalid_answer
         elif current_stage == "project_deep_dive":
             should_advance_stage = (
                 explicit_unknown
@@ -806,10 +775,12 @@ class InterviewEngine:
             should_advance_stage = True
         elif current_stage == "behavioral":
             should_advance_stage = next_stage_state["turn_count"] >= 6
+        elif current_stage in HR_STAGE_INDEX:
+            should_advance_stage = next_stage_state["turn_count"] >= 2
 
         if (
             (explicit_unknown or unknown_control)
-            and current_stage in {"fundamentals", "behavioral"}
+            and current_stage in {"fundamentals", "behavioral", *HR_STAGE_INDEX}
             and not should_advance_stage
             and next_stage_state["turn_count"] % 2 == 1
         ):
@@ -824,6 +795,7 @@ class InterviewEngine:
         else:
             next_stage_state["revision"] = int(stage_state.get("revision") or 1) + 1
         next_stage_id = next_stage_state["plan"][next_stage_state["index"]]
+        next_item: dict[str, Any] | None = None
         if next_stage_id == current_stage and current_stage == "project_deep_dive":
             proposed = self._sanitize_question(
                 decision.next_question,
@@ -857,28 +829,37 @@ class InterviewEngine:
                     vague=vague_answer,
                 )
         elif (
-            current_stage in {"fundamentals", "behavioral"}
+            current_stage in {"fundamentals", "behavioral", *HR_STAGE_INDEX}
             and next_stage_id == current_stage
             and next_stage_state["turn_count"] % 2 == 1
         ):
             stage_pool = (
                 [item for item in server_questions if item.get("kind") == "behavioral"]
-                if current_stage == "behavioral"
+                if current_stage == "behavioral" or current_stage in HR_STAGE_INDEX
                 else [
                     item
                     for item in server_questions
                     if item.get("kind") not in {"behavioral", "coding"}
                 ]
             )
-            answered_index = int(stage_state.get("turn_count") or 0) // 2
+            answered_index = (
+                HR_STAGE_INDEX[current_stage]
+                if current_stage in HR_STAGE_INDEX
+                else int(stage_state.get("turn_count") or 0) // 2
+            )
             bank_item = stage_pool[answered_index % len(stage_pool)] if stage_pool else None
+            next_item = bank_item
             question = (
                 self._anchored_bank_followup(
                     decision.next_question,
                     answer=answer,
                     anchor=response_anchor,
                     bank_item=bank_item,
-                    track="hr" if current_stage == "behavioral" else "technical",
+                    track=(
+                        "hr"
+                        if current_stage == "behavioral" or current_stage in HR_STAGE_INDEX
+                        else "technical"
+                    ),
                     vague=vague_answer,
                     language_mode=str(interview.get("language_mode") or "bilingual"),
                 )
@@ -893,6 +874,13 @@ class InterviewEngine:
                 next_stage_state,
                 resume=drill_resume,
                 anchor="" if explicit_unknown or unknown_control else anchor,
+            )
+        if current_stage == "self_intro" and invalid_answer:
+            question = (
+                "That introduction appears incomplete or contains placeholder text. "
+                "Please introduce your actual background, current studies, and technical direction again."
+                if interview.get("language_mode") == "en"
+                else "刚才的介绍信息不完整或包含占位内容。请按实际情况重新介绍你的基本情况、当前学习进度和技术方向。"
             )
         if project_ownership_correction:
             acknowledgement = (
@@ -928,32 +916,6 @@ class InterviewEngine:
             ]
             current_dimension = "project_depth"
             current_topic = f"项目深挖·{current_drill_dimension}"
-        if phase.answered_track == "hr" and hr_questions:
-            answered_hr_index = phase.answered_index % len(hr_questions)
-            answered_bank_item = hr_questions[answered_hr_index]
-            current_dimension = "communication"
-            current_topic = f"综合面·{hr_questions[answered_hr_index]['topic']}"
-            current_drill_dimension = ""
-            current_drill_depth = 1 if phase.answered_followup else 0
-        if phase.answered_track == "technical" and technical_questions:
-            answered_item = technical_questions[
-                phase.answered_index % len(technical_questions)
-            ]
-            answered_bank_item = answered_item
-            is_coding = answered_item.get("kind") == "coding"
-            current_dimension = "coding_thought" if is_coding else "fundamentals"
-            current_topic = (
-                f"手撕思路·{answered_item.get('topic') or '数据结构与算法'}"
-                if is_coding
-                else str(
-                    answered_item.get("topic")
-                    or answered_item.get("category")
-                    or "后端基础"
-                )
-            )
-            current_drill_dimension = "手撕思路" if is_coding else "基础知识"
-            current_drill_depth = 1 if phase.answered_followup else 0
-
         if project_ownership_correction:
             current_dimension = "communication"
             current_topic = "项目归属澄清"
@@ -1000,6 +962,13 @@ class InterviewEngine:
             current_topic = f"综合面·{(answered_bank_item or {}).get('topic') or '综合交流'}"
             current_drill_dimension = ""
             current_drill_depth = int(stage_state.get("turn_count") or 0) % 2
+        elif current_stage in HR_STAGE_INDEX:
+            item_index = HR_STAGE_INDEX[current_stage]
+            answered_bank_item = hr_questions[item_index % len(hr_questions)] if hr_questions else None
+            current_dimension = "communication"
+            current_topic = f"综合面·{(answered_bank_item or {}).get('topic') or STAGE_LABELS[current_stage]}"
+            current_drill_dimension = ""
+            current_drill_depth = int(stage_state.get("turn_count") or 0) % 2
         elif current_stage == "candidate_questions":
             current_dimension = "communication"
             current_topic = "反问"
@@ -1017,25 +986,21 @@ class InterviewEngine:
         elif project_ownership_correction:
             pressure_action = "none"
         elif explicit_unknown:
-            pressure_action = (
-                "challenge" if int(interview.get("stress_level") or 0) >= 1 else "none"
-            )
+            pressure_action = "none"
             transition = (
-                "We will move on. In a real interview, briefly state what you do know before asking to skip. Next: "
+                "Understood. Let's move on. "
                 if interview.get("language_mode") == "en"
-                else "这题先跳过。真实面试中，建议先说出你能确认的边界，再坦诚不会。下一题："
+                else "明白，我们换一道。"
             )
             question = transition + question
         elif next_stage_id != current_stage:
             pressure_action = "none"
         elif (
-            current_stage in {"fundamentals", "behavioral"}
+            current_stage in {"fundamentals", "behavioral", *HR_STAGE_INDEX}
             and next_stage_state["turn_count"] % 2 == 0
         ):
             pressure_action = "none"
-        elif completed_turns == 1 or (
-            phase.next_track == "hr" and not phase.next_followup
-        ):
+        elif completed_turns == 1 or next_stage_id in HR_STAGE_INDEX:
             # The introduction-to-experience handoff and the three required HR
             # openers should sound like coherent phase transitions. Pressure
             # resumes inside technical follow-ups instead of adding a generic
@@ -1071,14 +1036,19 @@ class InterviewEngine:
             ),
             input_mode,
         )
-        normalized_duration = (
+        capture_duration = (
             round(max(0.0, min(float(answer_duration_seconds), 3600.0)), 2)
             if answer_duration_seconds is not None
             else None
         )
+        normalized_duration = (
+            round(max(0.0, min(float(question_elapsed), 3600.0)), 2)
+            if question_elapsed is not None
+            else capture_duration
+        )
         speech_rate_cpm = (
-            round(len(re.sub(r"\s+", "", answer)) * 60 / normalized_duration, 1)
-            if input_mode == "voice" and normalized_duration
+            round(len(re.sub(r"\s+", "", answer)) * 60 / capture_duration, 1)
+            if input_mode == "voice" and capture_duration
             else None
         )
         turn = InterviewTurn(
@@ -1164,65 +1134,6 @@ class InterviewEngine:
             resume_selection_warning=resume_selection_warning,
             stage=self._stage_snapshot(next_stage_state),
             turn=turn,
-        )
-
-    @staticmethod
-    def _bank_phase(
-        interview_type: str,
-        *,
-        completed_turns: int,
-        drill_target: int,
-        combined_hr_stages: int,
-        skipped_followups_before: int = 0,
-        skip_current: bool = False,
-    ) -> _BankPhase:
-        """Map the transcript ordinal to reviewed-base/follow-up pairs.
-
-        Technical interviews enter the bank after the project drill. HR
-        interviews enter immediately after the introduction. Combined
-        interviews use one technical pair, three HR pairs, and then continue
-        through technical pairs. The function is intentionally stateless: the
-        persisted turn count is sufficient to resume the correct phase.
-        """
-
-        normalized_type = (
-            "technical_hr" if interview_type == "tech_hr" else interview_type
-        )
-        origin = 1 if normalized_type == "hr" else drill_target + 1
-
-        def slot(step: int) -> tuple[str, int, bool]:
-            if step < 0:
-                return "", -1, False
-            if normalized_type == "technical":
-                return "technical", step // 2, bool(step % 2)
-            if normalized_type == "hr":
-                return "hr", step // 2, bool(step % 2)
-            if normalized_type == "technical_hr":
-                # Pair 0 is technical. It is followed by up to three distinct
-                # HR stages, then technical pair 1 onward.
-                if step < 2:
-                    return "technical", 0, bool(step % 2)
-                hr_end = 2 + (2 * max(0, combined_hr_stages))
-                if step < hr_end:
-                    hr_step = step - 2
-                    return "hr", hr_step // 2, bool(hr_step % 2)
-                technical_step = step - hr_end
-                return "technical", 1 + technical_step // 2, bool(technical_step % 2)
-            return "", -1, False
-
-        next_track, next_index, next_followup = slot(
-            completed_turns - origin + skipped_followups_before + int(skip_current)
-        )
-        answered_track, answered_index, answered_followup = slot(
-            completed_turns - origin - 1 + skipped_followups_before
-        )
-        return _BankPhase(
-            next_track=next_track,
-            next_index=next_index,
-            next_followup=next_followup,
-            answered_track=answered_track,
-            answered_index=answered_index,
-            answered_followup=answered_followup,
         )
 
     @staticmethod
@@ -1477,14 +1388,20 @@ class InterviewEngine:
         )
         if existing is not None:
             return existing
-        duration = (
+        fallback_duration = (
             round(max(0.0, min(float(answer_duration_seconds), 3600.0)), 2)
             if answer_duration_seconds is not None
             else None
         )
+        question_elapsed = interview.get("question_elapsed_seconds")
+        duration = (
+            round(max(0.0, min(float(question_elapsed), 3600.0)), 2)
+            if question_elapsed is not None
+            else fallback_duration
+        )
         speech_rate = (
-            round(len(re.sub(r"\s+", "", normalized)) * 60 / duration, 1)
-            if input_mode == "voice" and duration
+            round(len(re.sub(r"\s+", "", normalized)) * 60 / fallback_duration, 1)
+            if input_mode == "voice" and fallback_duration
             else None
         )
         question = str(interview.get("last_question") or "本轮回答")

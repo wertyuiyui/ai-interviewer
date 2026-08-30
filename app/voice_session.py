@@ -571,6 +571,17 @@ class BrowserVoiceSession:
             self._expression_interrupt_reason = ""
         await self.send("answer.state.changed", state="answering")
 
+    def shift_answer_clock(self, paused_seconds: float) -> None:
+        """Exclude an explicit interview pause from active capture clocks."""
+
+        delta = max(0.0, float(paused_seconds or 0))
+        if not delta:
+            return
+        if self.answer_capture_active and self._answer_boundary_started_at is not None:
+            self._answer_boundary_started_at += delta
+        if self._candidate_speaking and self._speech_started_at is not None:
+            self._speech_started_at += delta
+
     async def handle_answer_end(self, text: str = "") -> None:
         """Seal one answer, preserve its full elapsed time, then evaluate once."""
 

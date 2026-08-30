@@ -542,6 +542,39 @@ async def test_l3_websocket_answer_boundaries_record_server_elapsed_time(
     ready = next(event for event in websocket.sent if event["type"] == "session.ready")
     assert ready["session"]["interview_type"] == "technical_hr"
 
+    await websocket.event({"type": "interview.pause", "paused": True})
+    await wait_for(
+        lambda: any(
+            event.get("type") == "interview.pause.changed"
+            and event.get("paused") is True
+            for event in websocket.sent
+        )
+    )
+    frozen = await database.get_interview(created["id"])
+    assert frozen is not None and frozen["paused"] is True
+    frozen_elapsed = frozen["question_elapsed_seconds"]
+    await asyncio.sleep(0.02)
+    still_frozen = await database.get_interview(created["id"])
+    assert still_frozen is not None
+    assert still_frozen["question_elapsed_seconds"] == pytest.approx(frozen_elapsed)
+    await websocket.event({"type": "answer.start"})
+    await wait_for(
+        lambda: any(
+            event.get("type") == "error"
+            and event.get("code") == "INTERVIEW_PAUSED"
+            for event in websocket.sent
+        )
+    )
+    await websocket.event({"type": "interview.pause", "paused": False})
+    await wait_for(
+        lambda: any(
+            event.get("type") == "interview.pause.changed"
+            and event.get("paused") is False
+            for event in websocket.sent
+        )
+    )
+    await asyncio.sleep(0.02)
+
     await websocket.event({"type": "answer.start"})
     await wait_for(
         lambda: any(
@@ -550,12 +583,12 @@ async def test_l3_websocket_answer_boundaries_record_server_elapsed_time(
             for event in websocket.sent
         )
     )
-    await asyncio.sleep(0.02)
+    await asyncio.sleep(0.01)
     await websocket.event(
         {
             "type": "answer.end",
-            # The browser value is display-only. The durable duration is
-            # measured by the server between answer.start and answer.end.
+            # The browser value is display-only. Durable time starts when the
+            # question appears, includes thinking, and excludes explicit pause.
             "elapsed_ms": 999_999,
             "text": "我是计算机专业大三学生，学过数据结构、数据库和操作系统。",
         }
@@ -570,7 +603,8 @@ async def test_l3_websocket_answer_boundaries_record_server_elapsed_time(
     assert len(turns) == 1
     assert turns[0].input_mode == "text"
     assert turns[0].answer_duration_seconds is not None
-    assert 0 < turns[0].answer_duration_seconds < 1
+    assert turns[0].answer_duration_seconds >= 0.02
+    assert turns[0].answer_duration_seconds < 1
     assert turns[0].answer_duration_seconds != pytest.approx(999.999)
     assert turns[0].topic == "自我介绍·整体与学习情况"
     assert any(

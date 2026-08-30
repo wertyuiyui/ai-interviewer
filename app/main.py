@@ -963,8 +963,10 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                 "timer.sync",
                 remaining_seconds=remaining,
                 ends_at=interview.get("deadline_at"),
+                paused=bool(interview.get("paused")),
+                question_elapsed_seconds=interview.get("question_elapsed_seconds"),
             )
-            if interview.get("deadline_at") is not None and (
+            if not interview.get("paused") and interview.get("deadline_at") is not None and (
                 remaining is None or int(remaining) <= 0
             ):
                 await terminate("time")
@@ -1033,14 +1035,85 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                         continue
                 if voice_session:
                     await voice_session.handle_microphone_state(
-                        browser_microphone_enabled
+                        browser_microphone_enabled and not interview.get("paused")
                     )
+                effective_microphone_enabled = (
+                    browser_microphone_enabled and not interview.get("paused")
+                )
                 await send(
                     "microphone.state.changed",
-                    enabled=browser_microphone_enabled,
+                    enabled=effective_microphone_enabled,
                     state=(
-                        "enabled" if browser_microphone_enabled else "disabled"
+                        "enabled" if effective_microphone_enabled else "disabled"
                     ),
+                )
+                continue
+            if event_type == "interview.pause":
+                if not ready:
+                    await send("error", code="NOT_READY", message="请先开始面试")
+                    continue
+                requested_pause = event.get("paused")
+                if not isinstance(requested_pause, bool):
+                    await send(
+                        "error",
+                        code="INVALID_PAUSE_STATE",
+                        message="暂停状态参数不正确",
+                        recoverable=True,
+                    )
+                    continue
+                updated = await db.set_interview_paused(
+                    interview_id, requested_pause
+                )
+                if not updated:
+                    await send(
+                        "error", code="INTERVIEW_NOT_FOUND", message="面试不存在"
+                    )
+                    continue
+                if (
+                    requested_pause
+                    and not updated.get("paused")
+                    and updated.get("deadline_at") is not None
+                    and int(updated.get("remaining_seconds") or 0) <= 0
+                ):
+                    await terminate("time")
+                    continue
+                resumed_after = float(updated.pop("_resumed_after_seconds", 0) or 0)
+                interview = updated
+                if resumed_after and text_answer_started_at is not None:
+                    text_answer_started_at += resumed_after
+                if voice_session:
+                    if requested_pause:
+                        await voice_session.handle_microphone_state(False)
+                    else:
+                        voice_session.shift_answer_clock(resumed_after)
+                        await voice_session.handle_microphone_state(
+                            browser_microphone_enabled
+                        )
+                await send(
+                    "interview.pause.changed",
+                    paused=bool(interview.get("paused")),
+                    remaining_seconds=interview.get("remaining_seconds"),
+                    ends_at=interview.get("deadline_at"),
+                    question_elapsed_seconds=interview.get(
+                        "question_elapsed_seconds"
+                    ),
+                )
+                continue
+            if (
+                ready
+                and interview.get("paused")
+                and event_type in {
+                    "answer.start",
+                    "answer.end",
+                    "user.text",
+                    "interview.stage.advance",
+                }
+            ):
+                await send(
+                    "error",
+                    code="INTERVIEW_PAUSED",
+                    message="本场面试已暂停，继续后再作答",
+                    recoverable=True,
                 )
                 continue
             if event_type == "client.ready":
@@ -1067,6 +1140,9 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                     "interviewer.text.done",
                     text=interview["last_question"],
                     stage=interview_engine.stage_snapshot(interview),
+                    question_elapsed_seconds=interview.get(
+                        "question_elapsed_seconds"
+                    ),
                     recommended_answer_seconds=interview_engine.recommended_answer_seconds(
                         str(interview["last_question"])
                     ),
@@ -1083,7 +1159,7 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                     )
                     actual_mode = await voice_session.start(interview["last_question"])
                     await db.set_voice_mode(interview_id, actual_mode)
-                    if not browser_microphone_enabled:
+                    if interview.get("paused") or not browser_microphone_enabled:
                         await voice_session.handle_microphone_state(False)
                 await send("answer.state.changed", state="idle")
                 timer_task = asyncio.create_task(timer_loop())
@@ -1558,6 +1634,9 @@ def _public_interview(interview: dict[str, Any]) -> dict[str, Any]:
             "hint_events",
             "created_at",
             "started_at",
+            "question_started_at",
+            "question_elapsed_seconds",
+            "paused",
             "deadline_at",
             "remaining_seconds",
             "ended_at",

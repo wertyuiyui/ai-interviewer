@@ -50,6 +50,11 @@ VAGUE_ANSWERS = {
     "skip",
 }
 
+_OBVIOUS_PLACEHOLDER = re.compile(
+    r"(?:x{3,}|[×某]{3,}|<{0,1}(?:name|姓名|名字)>{0,1}|(?:asdf|qwer){1,}|^test$)",
+    re.I,
+)
+
 
 _INTERNAL_INTERVIEW_FIELDS = (
     "next_question",
@@ -993,7 +998,16 @@ def interview_drill_target(weak_topics: list[str], interview_type: str) -> int:
 
 def is_vague_answer(answer: str) -> bool:
     compact = re.sub(r"[\s，。！？,.!?]", "", answer).lower()
-    return len(compact) < 8 or any(term in compact for term in VAGUE_ANSWERS)
+    return (
+        len(compact) < 8
+        or any(term in compact for term in VAGUE_ANSWERS)
+        or is_obvious_placeholder_answer(answer)
+    )
+
+
+def is_obvious_placeholder_answer(answer: str) -> bool:
+    compact = re.sub(r"[\s，。！？,.!?]", "", answer).lower()
+    return bool(_OBVIOUS_PLACEHOLDER.search(compact))
 
 
 def extract_anchor_keyword(answer: str, resume: ResumeData) -> str:

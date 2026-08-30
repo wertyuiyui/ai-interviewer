@@ -8,7 +8,11 @@ from app.config import get_settings
 from app.content import COMPANIES, load_interview_skill, load_interviewer_core_skill
 from app.db import Database
 from app.interview_engine import InterviewEngine
-from app.prompt_engine import build_system_prompt
+from app.prompt_engine import (
+    build_system_prompt,
+    is_obvious_placeholder_answer,
+    is_vague_answer,
+)
 from app.schemas import InterviewCreate, Project, ResumeData
 
 
@@ -26,6 +30,40 @@ def test_core_interviewer_skill_has_auditable_runtime_contract() -> None:
     assert "do not reuse any phrase from the denial" in core["adaptive_policy"][
         "experience_ownership_correction"
     ]
+def test_obvious_placeholder_answer_requires_clarification() -> None:
+    assert is_obvious_placeholder_answer("我叫xxxxx") is True
+    assert is_obvious_placeholder_answer("My name is <name>") is True
+    assert is_obvious_placeholder_answer("我不会") is False
+    assert is_vague_answer("我叫xxxxx") is True
+    assert is_vague_answer("我叫王伟，目前大三，想做 Java 后端开发。") is False
+
+
+@pytest.mark.asyncio
+async def test_placeholder_self_intro_does_not_advance_stage(tmp_path) -> None:
+    settings = replace(
+        get_settings(),
+        mock_llm=True,
+        voice_mode="L3",
+        db_path=tmp_path / "placeholder-intro.db",
+    )
+    database = Database(settings)
+    await database.initialize()
+    engine = InterviewEngine(database, settings)
+    created = await engine.create(
+        InterviewCreate(
+            client_id="placeholder-intro-client",
+            company="bytedance",
+            language_mode="zh",
+            resume=ResumeData(项目=[Project(name="校园二手交易平台后端")]),
+        )
+    )
+    await database.start_interview(created["id"])
+
+    result = await engine.answer(created["id"], "我叫xxxxx")
+
+    assert result.stage["current"]["id"] == "self_intro"
+    assert "重新" in result.question
+    assert "校园二手交易平台" not in result.question
 
 
 def test_every_company_skill_compiles_with_the_same_core_contract() -> None:
@@ -111,4 +149,7 @@ async def test_core_contract_matches_real_anchor_and_termination_behavior(tmp_pa
     failed_again = await engine.answer(created["id"], "不会")
     assert failed_again.ended is False
     assert failed_again.breakdown_streak == 0
-    assert "下一题" in failed_again.question
+    assert failed_again.pressure_action == "none"
+    assert failed_again.question.startswith("明白，我们换一道。")
+    assert "缺少依据" not in failed_again.question
+    assert "建议" not in failed_again.question

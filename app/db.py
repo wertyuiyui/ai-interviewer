@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS interviews (
     hint_events_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     started_at REAL,
+    question_started_at REAL,
+    paused_at REAL,
     deadline_at REAL,
     ended_at REAL,
     end_reason TEXT
@@ -263,6 +265,30 @@ class Database:
                     "ALTER TABLE interviews ADD COLUMN stage_state_json TEXT "
                     "NOT NULL DEFAULT '{}'"
                 )
+            if "question_started_at" not in columns:
+                connection.execute(
+                    "ALTER TABLE interviews ADD COLUMN question_started_at REAL"
+                )
+                if "started_at" in columns:
+                    connection.execute(
+                        """
+                    UPDATE interviews
+                    SET question_started_at = COALESCE(
+                        (
+                            SELECT CAST(strftime('%s', created_at) AS REAL)
+                            FROM interview_turns
+                            WHERE interview_id = interviews.id
+                            ORDER BY ordinal DESC LIMIT 1
+                        ),
+                        started_at
+                    )
+                    WHERE started_at IS NOT NULL
+                    """
+                    )
+            if "paused_at" not in columns:
+                connection.execute(
+                    "ALTER TABLE interviews ADD COLUMN paused_at REAL"
+                )
             turn_columns = {
                 str(row["name"])
                 for row in connection.execute(
@@ -378,16 +404,75 @@ class Database:
                 connection.execute(
                     """
                     UPDATE interviews
-                    SET status = 'active', started_at = ?, deadline_at = ?
+                    SET status = 'active', started_at = ?,
+                        question_started_at = ?, deadline_at = ?
                     WHERE id = ?
                     """,
-                    (started, deadline, interview_id),
+                    (started, started, deadline, interview_id),
                 )
                 connection.commit()
                 row = connection.execute(
                     "SELECT * FROM interviews WHERE id = ?", (interview_id,)
                 ).fetchone()
             return self._decode_interview(row)
+
+        return await self._run(operation)
+
+    async def set_interview_paused(
+        self, interview_id: str, paused: bool
+    ) -> dict[str, Any] | None:
+        """Persist an idempotent pause and shift both interview clocks on resume."""
+
+        def operation(connection: sqlite3.Connection) -> dict[str, Any] | None:
+            row = connection.execute(
+                "SELECT * FROM interviews WHERE id = ?", (interview_id,)
+            ).fetchone()
+            if not row:
+                return None
+            resumed_after = 0.0
+            now = time.time()
+            if row["status"] == "active" and paused and row["paused_at"] is None:
+                deadline = row["deadline_at"]
+                if deadline is None or float(deadline) > now:
+                    connection.execute(
+                        "UPDATE interviews SET paused_at = ? WHERE id = ?",
+                        (now, interview_id),
+                    )
+                    connection.commit()
+            elif row["status"] == "active" and not paused and row["paused_at"] is not None:
+                paused_at = float(row["paused_at"])
+                resumed_after = max(0.0, now - paused_at)
+                connection.execute(
+                    """
+                    UPDATE interviews
+                    SET paused_at = NULL,
+                        deadline_at = CASE
+                            WHEN deadline_at IS NULL THEN NULL
+                            ELSE deadline_at + ?
+                        END,
+                        question_started_at = CASE
+                            WHEN question_started_at IS NULL THEN NULL
+                            WHEN question_started_at <= ? THEN question_started_at + ?
+                            ELSE ?
+                        END
+                    WHERE id = ?
+                    """,
+                    (
+                        resumed_after,
+                        paused_at,
+                        resumed_after,
+                        now,
+                        interview_id,
+                    ),
+                )
+                connection.commit()
+            updated = connection.execute(
+                "SELECT * FROM interviews WHERE id = ?", (interview_id,)
+            ).fetchone()
+            result = self._decode_interview(updated) if updated else None
+            if result is not None:
+                result["_resumed_after_seconds"] = resumed_after
+            return result
 
         return await self._run(operation)
 
@@ -444,7 +529,8 @@ class Database:
                 """
                 UPDATE interviews
                 SET breakdown_streak = ?, last_question = ?,
-                    stage_state_json = COALESCE(?, stage_state_json)
+                    stage_state_json = COALESCE(?, stage_state_json),
+                    question_started_at = ?
                 WHERE id = ?
                 """,
                 (
@@ -453,6 +539,7 @@ class Database:
                     json.dumps(stage_state, ensure_ascii=False)
                     if stage_state is not None
                     else None,
+                    time.time(),
                     interview_id,
                 ),
             )
@@ -472,12 +559,14 @@ class Database:
             connection.execute(
                 """
                 UPDATE interviews
-                SET stage_state_json = ?, last_question = ?
+                SET stage_state_json = ?, last_question = ?,
+                    question_started_at = ?
                 WHERE id = ? AND status IN ('created', 'active')
                 """,
                 (
                     json.dumps(stage_state, ensure_ascii=False),
                     question.strip(),
+                    time.time(),
                     interview_id,
                 ),
             )
@@ -592,8 +681,16 @@ class Database:
 
         def operation(connection: sqlite3.Connection) -> None:
             connection.execute(
-                "UPDATE interviews SET last_question = ? WHERE id = ?",
-                (question, interview_id),
+                """
+                UPDATE interviews
+                SET question_started_at = CASE
+                        WHEN last_question <> ? THEN ?
+                        ELSE question_started_at
+                    END,
+                    last_question = ?
+                WHERE id = ?
+                """,
+                (question, time.time(), question, interview_id),
             )
             connection.commit()
 
@@ -1043,8 +1140,17 @@ class Database:
             hint_events = []
         data["hint_events"] = hint_events if isinstance(hint_events, list) else []
         data["hint_count"] = len(data["hint_events"])
+        paused_at = data.get("paused_at")
+        data["paused"] = paused_at is not None
+        clock_now = float(paused_at) if paused_at is not None else time.time()
+        question_started_at = data.get("question_started_at")
+        data["question_elapsed_seconds"] = (
+            max(0.0, clock_now - float(question_started_at))
+            if question_started_at is not None
+            else None
+        )
         deadline = data.get("deadline_at")
         data["remaining_seconds"] = (
-            max(0, int(float(deadline) - time.time())) if deadline else None
+            max(0, int(float(deadline) - clock_now)) if deadline else None
         )
         return data

@@ -39,6 +39,24 @@
 
 ## 变更日志
 
+### INTERVIEW-008 · 2026-08-30 · 面试阶段与作答计时交互修正
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：综合面和技术+综合面不再同时使用持久化阶段与按总轮次推算的旧题库阶段；删除重复的无状态推算器，将岗位匹配、职业规划、薪酬沟通设为三个显式阶段，每个阶段使用一题审核主问题和至多一次基于回答的追问，阶段展示、题目选择和报告 topic 保持一致，旧场次已有的 `behavioral` 阶段继续兼容。面试计时改为从问题展示起连续计算思考、输入或作答时间；暂停状态与两套时钟持久化，刷新重连仍保持暂停且恢复时顺延；暂停时禁止提示、跳题和提交。文字作答可直接提交，手撕阶段提供代码输入区，语音语速仍只按实际录音时长计算。
+- 实际文件：`app/db.py`、`app/interview_engine.py`、`app/main.py`、`app/prompt_engine.py`、`app/report_engine.py`、`app/voice_session.py`、`public/assets/app.css`、`public/interview.html`、`public/js/interview.js`、`tests/test_api.py`、`tests/test_core.py`、`tests/test_frontend_audio_ui.py`、`tests/test_frontend_interview_controls.py`、`tests/test_interview_stage_flow.py`、`tests/test_interview_timing.py`、`tests/test_interview_type_bank.py`、`process.md`。
+- 验证：共享工作区全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `264 passed`；`node --check public/js/interview.js`、Python compileall 与 `git diff --check` 通过。回归覆盖综合面显式三阶段、技术+综合面阶段顺序、审核主问题锚定、英文回答中普通 `test/load-test` 不误判占位、暂停期间两套时钟冻结并在恢复后顺延、暂停态 API 拦截和前端输入状态。
+- 风险或后续事项：旧场次已持久化的 `behavioral` 阶段按兼容路径继续完成，不在中途重写阶段计划；SQLite 启动迁移只补列和可用时间基线，不修改既有问答。共享工作区仍保留 `REPORT-001` 的未提交改动，本任务集成时不得覆盖。
+
+### INTERVIEW-009 · 2026-08-30 · 不会回答的自然换题与占位输入澄清
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：根因是明确“不知道/不会”虽已被识别为跳题，高压模式仍强制将该轮设为 `challenge`，统一压力文案因此在换题前错误追加“这个结论目前还缺少依据”。现在明确不会在所有压力等级都不施压，只用“明白，我们换一道”自然承接后进入服务端既定下一题，不再现场说教或换一种说法追问同一知识点；该轮仍作为本题可观察知识缺口保留，但不累计连续答崩。自我介绍只对明确占位文本留在原阶段并要求重答，普通短回答不再被一概拦截。删除开发中新增的重复核心 skill 条款和长 prompt 约束，确定性行为由服务端及测试负责，`interview_skills/interviewer_core.json` 最终无净改动。
+- 实际文件：`app/interview_engine.py`、`app/prompt_engine.py`、`tests/test_core.py`、`tests/test_interviewer_skill.py`、`process.md`。
+- 验证：核心 skill/阶段/题库专项 `23 passed`；共享工作区全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `264 passed`；核心 skill JSON 解析、Python compileall、`node --check public/js/interview.js` 与 `git diff --check` 均通过。回归覆盖高压模式连续回答“不知道/不会”均为 `pressure_action=none`、不出现“缺少依据/建议”说教文案，以及占位自我介绍不推进阶段。
+- 风险或后续事项：明确不会仍按现有评分契约记录为本题知识缺口，只取消不合语境的现场质疑；本任务与进行中的 `INTERVIEW-008` 共用业务文件，未单独 commit、push 或部署，避免把其未收口改动混入发布。
+
 ### DEPLOY-019 · 2026-08-30 · 简历完整条目识别生产发布
 
 - Agent：`/root`。

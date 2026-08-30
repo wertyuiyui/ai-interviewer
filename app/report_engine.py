@@ -927,11 +927,12 @@ class ReportEngine:
     ) -> ProcessAnalysis:
         """Analyze delivery without mixing text timing and voice-only signals.
 
-        A duration recorded between the explicit start/end-answer controls is
-        valid timing evidence for both text and voice answers.  Speech rate and
-        transcript fluency remain voice-only.  Chinese uses characters per
-        minute, English uses words per minute, and bilingual answers are scored
-        per turn with the matching unit before their scores are averaged.
+        Per-question duration includes thinking time from question delivery to
+        submission for both text and voice answers. Speech rate uses the
+        capture-only rate persisted for voice turns, while transcript fluency
+        remains voice-only. Chinese uses characters per minute, English uses
+        words per minute, and bilingual answers are scored per turn with the
+        matching unit before their scores are averaged.
         """
 
         mode = language_mode if language_mode in {"zh", "en", "bilingual"} else "bilingual"
@@ -1000,7 +1001,14 @@ class ReportEngine:
             )
             if units <= 0:
                 continue
-            rate = units * 60 / float(turn.answer_duration_seconds)
+            captured_units = len(re.sub(r"\s+", "", turn.answer))
+            rate = (
+                units * float(turn.speech_rate_cpm) / captured_units
+                if turn.speech_rate_cpm is not None
+                and turn.speech_rate_cpm > 0
+                and captured_units > 0
+                else units * 60 / float(turn.answer_duration_seconds)
+            )
             if sample_language == "en":
                 score = 9.0 if 110 <= rate <= 180 else 7.0 if 85 <= rate <= 210 else 4.5
             else:
