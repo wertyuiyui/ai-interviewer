@@ -43,7 +43,7 @@
 
 - Agent：`/root`。
 - 状态：`completed`。
-- 摘要：将 `INTERVIEW-011` 在包含并行报告与计时提交的最新远端上重放为固定提交 `df381a2`，全量复测后推送并以 `git archive` 隔离部署至 `/opt/ai-interviewer-mvp`。部署保留已完成清理的生产 `data/`、`.env`、`.venv`、`.deps`、`.git` 与缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 摘要：将 `INTERVIEW-012` 在包含并行报告与计时提交的最新远端上重放为固定提交 `df381a2`，全量复测后推送并以 `git archive` 隔离部署至 `/opt/ai-interviewer-mvp`。部署保留已完成清理的生产 `data/`、`.env`、`.venv`、`.deps`、`.git` 与缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
 - 验证：生产面试、问答、报告表均为 `0`；生产引擎不存在旧 `behavioral` 阶段标签或运行分支。服务为 `active/running`，主进程 PID `806267`，本机 8000、正式域名 HTTPS 443 和 3000 健康检查均返回 `{"status":"ok"}`；隔离提交全量 `264 passed`，JavaScript 语法、Python compileall 与 `git diff --check` 通过。
 - 回滚与风险：代码回滚包为 `/tmp/ai-interviewer-mvp-pre-df381a2-20260830.tar.gz`，清理前数据库备份为 `/tmp/interviews-pre-purge-20260830.db`。按用户要求不再兼容旧场次；浏览器保存的旧场次 ID 已失效，用户需新建面试。
 
@@ -64,7 +64,7 @@
 - 验证：计时/API/前端专项 `16 passed`；共享工作区全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `264 passed`；`node --check public/js/interview.js`、Python compileall 与 `git diff --check` 通过。
 - 风险或后续事项：无；报告中的可信用时仍由服务端“题目出现到提交”计量，前端只负责同步展示。
 
-### INTERVIEW-011 · 2026-08-30 · 清空旧场次并移除旧阶段兼容
+### INTERVIEW-012 · 2026-08-30 · 清空旧场次并移除旧阶段兼容
 
 - Agent：`/root`。
 - 状态：`completed`。
