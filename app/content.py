@@ -114,6 +114,26 @@ def load_question_bank(company: str) -> list[dict[str, Any]]:
     return _normalize_questions(_load_json(str(path)), path)
 
 
+def load_hr_question_bank(company: str) -> list[dict[str, Any]]:
+    """Return company-specific behavioral questions for combined interviews.
+
+    These prompts are intentionally written for undergraduate internship
+    candidates.  They look for concrete choices and self-awareness rather
+    than importing experienced-hire assumptions about management scope.
+    """
+
+    if company not in COMPANIES:
+        raise AppError("INVALID_COMPANY", "暂不支持该公司", status_code=422)
+    path = ROOT_DIR / "questions" / "hr_internship.json"
+    if not path.exists():
+        return []
+    value = _load_json(str(path))
+    companies = value.get("companies") if isinstance(value, dict) else None
+    if not isinstance(companies, dict):
+        raise RuntimeError(f"综合面题库格式错误：{path}")
+    return _normalize_questions(companies.get(company, []), path)
+
+
 def is_ai_specialization(specialization: str) -> bool:
     compact = " ".join(str(specialization or "").strip().lower().split())
     return any(keyword in compact for keyword in AI_SPECIALIZATION_KEYWORDS)

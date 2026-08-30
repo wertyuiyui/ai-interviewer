@@ -57,6 +57,10 @@ class InterviewCreate(BaseModel):
     resume: ResumeData
     company: Company
     role: Literal["backend"] = "backend"
+    # Keep the original technical interview as the compatibility default.
+    # ``technical_hr`` is a combined technical + behavioral/HR first round,
+    # not a standalone recruiter screen.
+    interview_type: Literal["technical", "technical_hr"] = "technical"
     specialization: str = Field(default="通用后端", min_length=1, max_length=80)
     language_mode: Literal["zh", "bilingual"] = "bilingual"
     # ``stress`` is retained as a compatibility alias for older clients. New

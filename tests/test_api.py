@@ -62,6 +62,10 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
             2,
             3,
         ]
+        assert [item["id"] for item in config_payload["interview_types"]] == [
+            "technical",
+            "technical_hr",
+        ]
         assert "references" not in config_payload
         assert config.headers["cache-control"] == "no-store"
 
@@ -109,6 +113,7 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
         assert unlimited.status_code == 201
         unlimited_payload = unlimited.json()
         assert unlimited_payload["specialization"] == "Go 微服务"
+        assert unlimited_payload["interview_type"] == "technical"
         assert unlimited_payload["stress"] is True
         assert unlimited_payload["stress_level"] == 1
         assert unlimited_payload["duration_minutes"] is None
@@ -147,6 +152,9 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
             },
         )
         assert created.status_code == 201
+        assert "学习" in created.json()["initial_question"]
+        assert "项目" in created.json()["initial_question"]
+        assert "不用展开" in created.json()["initial_question"]
         interview_id = created.json()["id"]
         await database.start_interview(interview_id)
         result = await main_module.interview_engine.answer(
@@ -154,7 +162,10 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
             "我负责 Redis Lua 库存预扣，入口经过网关，异步写入 MySQL，峰值 QPS 3000。",
         )
         assert result.turn.drill_depth == 0
-        assert "业务" in result.question
+        assert result.turn.category == "communication"
+        assert result.turn.topic == "自我介绍·整体与学习情况"
+        assert "单独聊一段经历" in result.question
+        assert resume["项目"][0]["name"] in result.question
 
         finished = await client.post(
             f"/api/interviews/{interview_id}/finish", json={"reason": "time"}
@@ -375,3 +386,122 @@ async def test_voice_end_disconnect_still_commits_and_queues_report(
     assert reports == [created["id"]]
     assert voice.announce_started.is_set()
     assert voice.closed is True
+
+
+@pytest.mark.asyncio
+async def test_l3_websocket_answer_boundaries_record_server_elapsed_time(
+    tmp_path, monkeypatch
+) -> None:
+    settings = replace(
+        get_settings(),
+        mock_llm=True,
+        voice_mode="L3",
+        db_path=tmp_path / "answer-boundary.db",
+        daily_interview_limit=20,
+        client_daily_interview_limit=5,
+    )
+    database = Database(settings)
+    await database.initialize()
+    engine = InterviewEngine(database, settings)
+    created = await engine.create(
+        InterviewCreate(
+            client_id="answer-boundary-client",
+            company="tencent",
+            interview_type="technical_hr",
+            resume=ResumeData(
+                项目=[Project(name="课程订单系统", technologies=["Java", "MySQL"])]
+            ),
+        )
+    )
+
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.incoming: asyncio.Queue[dict] = asyncio.Queue()
+            self.sent: list[dict] = []
+
+        async def accept(self) -> None:
+            return None
+
+        async def receive(self) -> dict:
+            return await self.incoming.get()
+
+        async def send_json(self, payload: dict) -> None:
+            self.sent.append(payload)
+
+        async def close(self, code: int = 1000) -> None:
+            return None
+
+        async def event(self, payload: dict) -> None:
+            await self.incoming.put(
+                {"type": "websocket.receive", "text": json.dumps(payload)}
+            )
+
+        async def disconnect(self) -> None:
+            await self.incoming.put({"type": "websocket.disconnect"})
+
+    async def wait_for(predicate) -> None:
+        deadline = asyncio.get_running_loop().time() + 1
+        while not predicate():
+            if asyncio.get_running_loop().time() >= deadline:
+                raise AssertionError("condition not reached")
+            await asyncio.sleep(0.001)
+
+    monkeypatch.setattr(main_module, "settings", settings)
+    monkeypatch.setattr(main_module, "db", database)
+    monkeypatch.setattr(main_module, "interview_engine", engine)
+
+    websocket = FakeWebSocket()
+    socket_task = asyncio.create_task(
+        main_module.interview_socket(websocket, created["id"])
+    )
+    await websocket.event({"type": "client.ready"})
+    await wait_for(
+        lambda: any(event.get("type") == "session.ready" for event in websocket.sent)
+    )
+    ready = next(event for event in websocket.sent if event["type"] == "session.ready")
+    assert ready["session"]["interview_type"] == "technical_hr"
+
+    await websocket.event({"type": "answer.start"})
+    await wait_for(
+        lambda: any(
+            event.get("type") == "answer.state.changed"
+            and event.get("state") == "answering"
+            for event in websocket.sent
+        )
+    )
+    await asyncio.sleep(0.02)
+    await websocket.event(
+        {
+            "type": "answer.end",
+            # The browser value is display-only. The durable duration is
+            # measured by the server between answer.start and answer.end.
+            "elapsed_ms": 999_999,
+            "text": "我是计算机专业大三学生，学过数据结构、数据库和操作系统。",
+        }
+    )
+    await wait_for(
+        lambda: len(
+            [event for event in websocket.sent if event.get("type") == "interviewer.text.done"]
+        )
+        >= 2
+    )
+    turns = await database.list_turns(created["id"])
+    assert len(turns) == 1
+    assert turns[0].input_mode == "text"
+    assert turns[0].answer_duration_seconds is not None
+    assert 0 < turns[0].answer_duration_seconds < 1
+    assert turns[0].answer_duration_seconds != pytest.approx(999.999)
+    assert turns[0].topic == "自我介绍·整体与学习情况"
+    assert any(
+        event.get("type") == "answer.state.changed"
+        and event.get("state") == "sealing"
+        for event in websocket.sent
+    )
+    assert sum(
+        event.get("type") == "answer.state.changed"
+        and event.get("state") == "idle"
+        for event in websocket.sent
+    ) >= 2
+
+    await websocket.disconnect()
+    await asyncio.wait_for(socket_task, timeout=1)

@@ -35,6 +35,7 @@ NON_SILENT_PCM_RMS = 64
 MICROPHONE_TAIL_SILENCE_SECONDS = 1.6
 MICROPHONE_TAIL_SILENCE_TIMEOUT_SECONDS = 2.5
 VOICE_CLEANUP_TIMEOUT_SECONDS = 5.0
+ANSWER_FINAL_TRANSCRIPT_TIMEOUT_SECONDS = 4.5
 
 
 # A child of uvicorn.error inherits the server's configured journal handler.
@@ -135,6 +136,24 @@ class BrowserVoiceSession:
         self.microphone_enabled = True
         self._microphone_state_lock = asyncio.Lock()
         self._answer_pending = False
+        # The explicit per-question answer protocol is enabled lazily on the
+        # first answer.start event so an already-open legacy browser tab keeps
+        # working. Once enabled, PCM outside the start/end boundary is ignored.
+        self.answer_boundary_enabled = False
+        self.answer_capture_active = False
+        self._answer_boundary_lock = asyncio.Lock()
+        self._answer_finalize_lock = asyncio.Lock()
+        self._answer_boundary_generation = 0
+        self._answer_boundary_started_at: float | None = None
+        self._answer_boundary_duration_seconds: float | None = None
+        self._answer_boundary_item_id = ""
+        self._answer_boundary_segments: list[str] = []
+        self._answer_boundary_segment_ids: set[str] = set()
+        self._answer_boundary_speech_started_count = 0
+        self._answer_boundary_transcript_done_count = 0
+        self._answer_boundary_transcript_event = asyncio.Event()
+        self._answer_boundary_finalized = False
+        self._answer_boundary_text_override = False
         self._preserving_pending_transcripts = False
         self._omni_response_started = asyncio.Event()
         self._omni_response_events: dict[str, asyncio.Event] = {}
@@ -153,6 +172,8 @@ class BrowserVoiceSession:
         self._deliberate_interrupt_task: asyncio.Task[None] | None = None
         self._deliberate_interrupt_firing = False
         self._deliberate_interrupt_ordinals: set[int] = set()
+        self._latest_candidate_partial = ""
+        self._expression_interrupt_reason = ""
         self._audio_watchdog_task: asyncio.Task[None] | None = None
         self._audio_input_frames = 0
         self._audio_input_bytes = 0
@@ -329,7 +350,13 @@ class BrowserVoiceSession:
             raise
 
     async def handle_audio(self, pcm: bytes) -> None:
-        if self.closed or self.ending or not self.microphone_enabled or not pcm:
+        if (
+            self.closed
+            or self.ending
+            or not self.microphone_enabled
+            or (self.answer_boundary_enabled and not self.answer_capture_active)
+            or not pcm
+        ):
             return
         if len(pcm) % 2:
             await self.send(
@@ -447,38 +474,8 @@ class BrowserVoiceSession:
             if not was_enabled:
                 await self._candidate_speech_ended()
                 return
-
-            # getUserMedia stops producing frames immediately when the browser
-            # releases its track. Feed a short, duration-accurate PCM tail so
-            # provider/server VAD can still close the last utterance. The
-            # entire flush is bounded; microphone shutdown must never wait on
-            # a stuck provider transport.
-            frame_samples = 1600  # 100 ms at 16 kHz
-            frame = b"\x00\x00" * frame_samples
-            frame_count = max(
-                1,
-                int(math.ceil(MICROPHONE_TAIL_SILENCE_SECONDS * 10)),
-            )
-
-            async def flush_tail() -> None:
-                for _ in range(frame_count):
-                    if self.actual_mode == "L0" and self.omni:
-                        await self.omni.send_audio(frame)
-                    elif self.actual_mode in {"L1", "L2"} and self.asr:
-                        if self.vad:
-                            for event in self.vad.process(frame):
-                                if event.get("type") == "speech_ended":
-                                    await self._candidate_speech_ended()
-                        await self.asr.send_audio(frame)
-                    else:
-                        return
-                    await asyncio.sleep(0)
-
             try:
-                await asyncio.wait_for(
-                    flush_tail(),
-                    timeout=MICROPHONE_TAIL_SILENCE_TIMEOUT_SECONDS,
-                )
+                await self._flush_input_tail()
             except asyncio.TimeoutError:
                 logger.warning(
                     "voice.microphone.tail_timeout interview_id=%s mode=%s",
@@ -496,7 +493,255 @@ class BrowserVoiceSession:
                 # This also cancels a scheduled pressure interruption.
                 await self._candidate_speech_ended()
 
-    async def handle_text(self, text: str) -> None:
+    async def _flush_input_tail(self) -> None:
+        """Close the provider VAD turn without changing microphone ownership."""
+
+        frame = b"\x00\x00" * 1600  # 100 ms at 16 kHz
+        frame_count = max(
+            1,
+            int(math.ceil(MICROPHONE_TAIL_SILENCE_SECONDS * 10)),
+        )
+
+        async def flush_tail() -> None:
+            for _ in range(frame_count):
+                if self.actual_mode == "L0" and self.omni:
+                    await self.omni.send_audio(frame)
+                elif self.actual_mode in {"L1", "L2"} and self.asr:
+                    if self.vad:
+                        for event in self.vad.process(frame):
+                            if event.get("type") == "speech_ended":
+                                await self._candidate_speech_ended()
+                    await self.asr.send_audio(frame)
+                else:
+                    return
+                await asyncio.sleep(0)
+
+        await asyncio.wait_for(
+            flush_tail(),
+            timeout=MICROPHONE_TAIL_SILENCE_TIMEOUT_SECONDS,
+        )
+
+    async def handle_answer_start(self) -> None:
+        """Open one explicit answer boundary and start server-side timing."""
+
+        if self.closed or self.ending:
+            raise AppError("INTERVIEW_ENDED", "本场面试正在结束", status_code=409)
+        if self._answer_pending or self.answer_lock.locked():
+            raise AppError(
+                "ANSWER_IN_PROGRESS",
+                "上一题仍在处理中，请等面试官问完下一题",
+                status_code=409,
+            )
+        async with self._answer_boundary_lock:
+            self.answer_boundary_enabled = True
+            if self.answer_capture_active:
+                return
+            self._answer_boundary_generation += 1
+            self.answer_capture_active = True
+            self._answer_boundary_started_at = time.monotonic()
+            self._answer_boundary_duration_seconds = None
+            self._answer_boundary_item_id = f"answer-{uuid.uuid4().hex}"
+            self._answer_boundary_segments = []
+            self._answer_boundary_segment_ids = set()
+            self._answer_boundary_speech_started_count = 0
+            self._answer_boundary_transcript_done_count = 0
+            self._answer_boundary_transcript_event.clear()
+            self._answer_boundary_finalized = False
+            self._answer_boundary_text_override = False
+            self._latest_candidate_partial = ""
+            self._expression_interrupt_reason = ""
+        await self.send("answer.state.changed", state="answering")
+
+    async def handle_answer_end(self, text: str = "") -> None:
+        """Seal one answer, preserve its full elapsed time, then evaluate once."""
+
+        text = str(text or "").strip()
+        async with self._answer_boundary_lock:
+            if not self.answer_boundary_enabled or not self.answer_capture_active:
+                raise AppError(
+                    "ANSWER_NOT_STARTED",
+                    "请先点击“开始回答”",
+                    status_code=409,
+                )
+            started_at = self._answer_boundary_started_at or time.monotonic()
+            self._answer_boundary_duration_seconds = round(
+                max(0.0, min(time.monotonic() - started_at, 3600.0)),
+                2,
+            )
+            self.answer_capture_active = False
+            generation = self._answer_boundary_generation
+            # If speech is still active, wait for the final provider segment
+            # produced by the VAD tail instead of immediately consuming a
+            # segment from an earlier thinking pause.
+            if (
+                self._candidate_speaking
+                or self._answer_boundary_speech_started_count
+                > self._answer_boundary_transcript_done_count
+            ):
+                self._answer_boundary_transcript_event.clear()
+            self._answer_boundary_text_override = bool(text)
+        await self.send(
+            "answer.state.changed",
+            state="sealing",
+            elapsed_ms=int((self._answer_boundary_duration_seconds or 0) * 1000),
+        )
+
+        with suppress(asyncio.TimeoutError, Exception):
+            await self._flush_input_tail()
+        await self._candidate_speech_ended()
+
+        if text:
+            async with self._answer_finalize_lock:
+                if generation != self._answer_boundary_generation:
+                    return
+                self._answer_boundary_finalized = True
+                self._answer_boundary_segments = []
+            await self.handle_text(
+                text,
+                answer_duration_seconds=self._answer_boundary_duration_seconds,
+            )
+            return
+
+        if self.actual_mode == "L3" or (not self.omni and not self.asr):
+            await self._fail_explicit_answer(
+                "当前没有可用的实时转写，请输入文字后再结束回答。"
+            )
+            return
+
+        if not self._answer_boundary_transcript_event.is_set():
+            with suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    self._answer_boundary_transcript_event.wait(),
+                    timeout=ANSWER_FINAL_TRANSCRIPT_TIMEOUT_SECONDS,
+                )
+        await self._finalize_explicit_voice_answer(generation)
+
+    async def _collect_explicit_voice_segment(
+        self,
+        *,
+        text: str,
+        provider_item_id: str,
+    ) -> bool:
+        """Collect VAD segments until the candidate clicks end answer."""
+
+        if not self.answer_boundary_enabled:
+            return False
+        normalized = text.strip()
+        if self._answer_boundary_finalized or self._answer_boundary_text_override:
+            logger.info(
+                "voice.transcript.after_boundary interview_id=%s chars=%d",
+                self.interview_id,
+                len(normalized),
+            )
+            return True
+        if provider_item_id and provider_item_id in self._answer_boundary_segment_ids:
+            return True
+        if provider_item_id:
+            self._answer_boundary_segment_ids.add(provider_item_id)
+        self._answer_boundary_transcript_done_count += 1
+        if not normalized:
+            self._answer_boundary_transcript_event.set()
+            return True
+        self._answer_boundary_segments.append(normalized)
+        self._answer_boundary_transcript_event.set()
+        combined = "；".join(self._answer_boundary_segments)
+        await self.send(
+            "candidate.transcript.partial",
+            text=combined,
+            item_id=self._answer_boundary_item_id,
+        )
+        if not self.answer_capture_active:
+            await self._finalize_explicit_voice_answer(
+                self._answer_boundary_generation
+            )
+        return True
+
+    async def _finalize_explicit_voice_answer(self, generation: int) -> None:
+        async with self._answer_finalize_lock:
+            if (
+                generation != self._answer_boundary_generation
+                or self._answer_boundary_finalized
+                or self._answer_boundary_text_override
+            ):
+                return
+            text = "；".join(
+                segment.strip()
+                for segment in self._answer_boundary_segments
+                if segment.strip()
+            ).strip()
+            if not text:
+                self._answer_boundary_finalized = True
+                should_fail = True
+            else:
+                should_fail = False
+                self._answer_boundary_finalized = True
+                item_id = self._answer_boundary_item_id or f"answer-{uuid.uuid4().hex}"
+                duration = self._answer_boundary_duration_seconds
+                ordinal = len(await self.db.list_turns(self.interview_id)) + 1
+                self._transcript_items[item_id] = {
+                    "ordinal": None,
+                    "predicted_ordinal": ordinal,
+                    "text": text,
+                    "original_text": text,
+                    "input_mode": "voice",
+                    "answer_duration_seconds": duration,
+                }
+        if should_fail:
+            await self._fail_explicit_answer(
+                "没有识别到有效回答，请重新开始回答，或改用文字输入。"
+            )
+            return
+        await self.send(
+            "candidate.transcript.done",
+            text=text,
+            item_id=item_id,
+            ordinal=ordinal,
+            source="voice",
+            editable=True,
+        )
+        if self.actual_mode == "L0" and self.omni:
+            scheduled = await self._schedule_evaluation(
+                self._evaluate_l0(
+                    text,
+                    input_mode="voice",
+                    item_id=item_id,
+                    answer_duration_seconds=duration,
+                ),
+                item_id=item_id,
+            )
+        else:
+            scheduled = await self._schedule_evaluation(
+                self._pipeline_answer(
+                    text,
+                    input_mode="voice",
+                    item_id=item_id,
+                    answer_duration_seconds=duration,
+                ),
+                item_id=item_id,
+            )
+        if not scheduled:
+            await self.send("answer.state.changed", state="idle")
+
+    async def _fail_explicit_answer(self, message: str) -> None:
+        self._transcript_failed_count += 1
+        await self.send(
+            "candidate.transcript.failed",
+            item_id=self._answer_boundary_item_id or None,
+        )
+        await self.send(
+            "error",
+            code="ANSWER_TRANSCRIPT_EMPTY",
+            message=message,
+            recoverable=True,
+        )
+        await self.send("answer.state.changed", state="idle")
+
+    async def handle_text(
+        self,
+        text: str,
+        *,
+        answer_duration_seconds: float | None = None,
+    ) -> None:
         text = text.strip()
         if not text:
             raise AppError("EMPTY_ANSWER", "回答不能为空", status_code=422)
@@ -521,17 +766,33 @@ class BrowserVoiceSession:
                 )
                 await self._runtime_fallback("L0 文字上行不可用")
                 await self._schedule_evaluation(
-                    self._pipeline_answer(text, input_mode="text")
+                    self._pipeline_answer(
+                        text,
+                        input_mode="text",
+                        answer_duration_seconds=answer_duration_seconds,
+                    )
                 )
                 return
-            await self._schedule_evaluation(self._evaluate_l0(text, input_mode="text"))
+            await self._schedule_evaluation(
+                self._evaluate_l0(
+                    text,
+                    input_mode="text",
+                    answer_duration_seconds=answer_duration_seconds,
+                )
+            )
             return
         if self.actual_mode in {"L1", "L2"}:
             await self.send(
                 "candidate.transcript.done", text=text, source="text", ordinal=ordinal
             )
             await self._interrupt_for_typed_input()
-            await self._schedule_evaluation(self._pipeline_answer(text, input_mode="text"))
+            await self._schedule_evaluation(
+                self._pipeline_answer(
+                    text,
+                    input_mode="text",
+                    answer_duration_seconds=answer_duration_seconds,
+                )
+            )
             return
         # A voice session that degraded at runtime keeps this lock so a still
         # finishing voice evaluation cannot race a second L3 engine.answer.
@@ -539,7 +800,13 @@ class BrowserVoiceSession:
         await self.send(
             "candidate.transcript.done", text=text, source="text", ordinal=ordinal
         )
-        await self._schedule_evaluation(self._pipeline_answer(text, input_mode="text"))
+        await self._schedule_evaluation(
+            self._pipeline_answer(
+                text,
+                input_mode="text",
+                answer_duration_seconds=answer_duration_seconds,
+            )
+        )
 
     async def handle_transcript_correction(
         self,
@@ -600,6 +867,16 @@ class BrowserVoiceSession:
     async def prepare_end(self, *, drain_timeout: float = 20.0) -> None:
         """Stop input while preserving every accepted voice transcript."""
 
+        if self.answer_boundary_enabled and self.answer_capture_active:
+            with suppress(AppError, asyncio.TimeoutError):
+                await asyncio.wait_for(
+                    self.handle_answer_end(),
+                    timeout=(
+                        MICROPHONE_TAIL_SILENCE_TIMEOUT_SECONDS
+                        + ANSWER_FINAL_TRANSCRIPT_TIMEOUT_SECONDS
+                        + 1
+                    ),
+                )
         await self.handle_microphone_state(False)
         if self.ending:
             return
@@ -778,6 +1055,9 @@ class BrowserVoiceSession:
                         text=event.get("text", ""),
                         item_id=event.get("item_id"),
                     )
+                    await self._observe_candidate_partial(
+                        str(event.get("text") or "")
+                    )
                 elif event_type == "user_done":
                     await self._candidate_speech_ended()
                     item_id = str(event.get("item_id") or "").strip()
@@ -807,6 +1087,12 @@ class BrowserVoiceSession:
                     )
                     self._speech_started_at = None
                     self._speech_duration_seconds = None
+                    if self.answer_boundary_enabled:
+                        await self._collect_explicit_voice_segment(
+                            text=text,
+                            provider_item_id=item_id,
+                        )
+                        continue
                     if text:
                         ordinal = len(await self.db.list_turns(self.interview_id)) + 1
                         if item_id:
@@ -1296,6 +1582,9 @@ class BrowserVoiceSession:
                     await self.send(
                         "candidate.transcript.partial", text=event.get("text", "")
                     )
+                    await self._observe_candidate_partial(
+                        str(event.get("text") or "")
+                    )
                 elif event_type == "user_done":
                     await self._candidate_speech_ended()
                     text = str(event.get("text", "")).strip()
@@ -1315,6 +1604,12 @@ class BrowserVoiceSession:
                     )
                     self._speech_started_at = None
                     self._speech_duration_seconds = None
+                    if self.answer_boundary_enabled:
+                        await self._collect_explicit_voice_segment(
+                            text=text,
+                            provider_item_id=str(event.get("item_id") or ""),
+                        )
+                        continue
                     if text:
                         item_id = str(event.get("item_id") or uuid.uuid4().hex)
                         ordinal = len(await self.db.list_turns(self.interview_id)) + 1
@@ -1680,6 +1975,12 @@ class BrowserVoiceSession:
     async def _candidate_speech_started(
         self, *, source: str, cancel_provider: bool = True
     ) -> None:
+        if self.answer_boundary_enabled and not self.answer_capture_active:
+            # A provider event can arrive after the explicit answer boundary
+            # has closed.  It may still deliver the pending final transcript,
+            # but it must not barge into the next interviewer question.
+            return
+        was_speaking = self._candidate_speaking
         self._speech_duration_seconds = None
         if source != "server_vad":
             self._vad_started_count += 1
@@ -1693,28 +1994,67 @@ class BrowserVoiceSession:
                 self._omni_responding or bool(self.tts_task),
             )
         self._candidate_speaking = True
+        if (
+            self.answer_boundary_enabled
+            and self.answer_capture_active
+            and not was_speaking
+        ):
+            self._answer_boundary_speech_started_count += 1
+        self._latest_candidate_partial = ""
+        self._expression_interrupt_reason = ""
         await self._barge_in(source=source, cancel_provider=cancel_provider)
+
+    async def _observe_candidate_partial(self, text: str) -> None:
+        """Only arm a pressure interruption when expression has clearly failed."""
+
+        self._latest_candidate_partial = text.strip()
         raw_stress_level = self.interview.get("stress_level")
         stress_level = int(
             raw_stress_level
             if raw_stress_level is not None
             else (2 if self.interview.get("stress") else 0)
         )
-        if stress_level < 2 or self.ending or self.closed:
+        if (
+            stress_level < 2
+            or self.ending
+            or self.closed
+            or (self.answer_boundary_enabled and not self.answer_capture_active)
+        ):
+            return
+        reason = self._expression_issue(self._latest_candidate_partial)
+        if not reason:
             return
         turns = await self.db.list_turns(self.interview_id)
         ordinal = len(turns) + 1
-        should_interrupt = (
-            ordinal % 2 == 0 if stress_level >= 3 else ordinal % 4 == 3
-        )
-        if not should_interrupt or ordinal in self._deliberate_interrupt_ordinals:
+        if ordinal in self._deliberate_interrupt_ordinals:
             return
         if self._deliberate_interrupt_task and not self._deliberate_interrupt_task.done():
             return
+        self._expression_interrupt_reason = reason
         self._deliberate_interrupt_task = asyncio.create_task(
-            self._deliberate_interrupt_after_delay(ordinal),
+            self._deliberate_interrupt_after_delay(ordinal, reason),
             name=f"pressure-interrupt-{self.interview_id}-{ordinal}",
         )
+
+    def _expression_issue(self, text: str) -> str:
+        compact = re.sub(r"[\s，,。.!！？?；;：:]", "", text)
+        elapsed = (
+            time.monotonic() - self._speech_started_at
+            if self._speech_started_at is not None
+            else 0.0
+        )
+        filler_pattern = r"(?:嗯+|呃+|额+|那个|这个|就是|然后|怎么说|大概吧)"
+        fillers = re.findall(filler_pattern, text)
+        repeated_filler = re.search(
+            r"(然后|就是|这个|那个)(?:[，,、\s]*(?:然后|就是|这个|那个)){2,}",
+            text,
+        )
+        if len(compact) >= 36 and (len(fillers) >= 5 or repeated_filler):
+            return "rambling"
+        meaningful = re.sub(filler_pattern, "", compact)
+        if elapsed >= 12 and len(meaningful) < 10:
+            return "stalled"
+        return ""
 
     async def _candidate_speech_ended(self) -> None:
         if self._candidate_speaking and self._speech_started_at is not None:
@@ -1730,7 +2070,11 @@ class BrowserVoiceSession:
             if self._deliberate_interrupt_task is task:
                 self._deliberate_interrupt_task = None
 
-    async def _deliberate_interrupt_after_delay(self, ordinal: int) -> None:
+    async def _deliberate_interrupt_after_delay(
+        self,
+        ordinal: int,
+        reason: str = "rambling",
+    ) -> None:
         try:
             delay = max(
                 0.0,
@@ -1739,9 +2083,16 @@ class BrowserVoiceSession:
             await asyncio.sleep(delay)
             if not self._candidate_speaking or self.ending or self.closed:
                 return
+            if self._expression_issue(self._latest_candidate_partial) != reason:
+                return
             self._deliberate_interrupt_firing = True
             self._deliberate_interrupt_ordinals.add(ordinal)
-            text = "先停一下，请先用一句话给出结论，再补最关键的依据。"
+            text = (
+                "我先打断一下，你这段有点绕。先用一句话说清结论，"
+                "再按做法、依据和结果展开。"
+                if reason == "rambling"
+                else "先停一下，你还没有进入有效回答。先明确要回答的核心结论。"
+            )
             await self.send(
                 "pressure.interrupt", text=text, ordinal=ordinal
             )
@@ -1895,6 +2246,12 @@ class BrowserVoiceSession:
                         await self._fail_pending_transcript(normalized_item_id)
                 finally:
                     self._answer_pending = False
+                    if (
+                        self.answer_boundary_enabled
+                        and not self.closed
+                        and not self.ending
+                    ):
+                        await self.send("answer.state.changed", state="idle")
 
         task = asyncio.create_task(
             run(), name=f"voice-answer-{self.interview_id}"

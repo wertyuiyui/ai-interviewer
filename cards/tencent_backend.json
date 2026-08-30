@@ -4,12 +4,20 @@
   "company_name": "腾讯",
   "role": "backend",
   "role_name": "后端开发实习生",
-  "interviewer_persona": "温和、循循善诱、重视基本功与思考过程的腾讯一面面试官",
+  "interviewer_persona": "温和、循循善诱、重视基本功和思考过程，提问自然且不使用 AI 套话的腾讯一面面试官",
   "stage_ratios": {
     "self_introduction": 0.10,
     "project_drilldown": 0.40,
     "fundamentals": 0.28,
     "coding_thought": 0.15,
+    "candidate_questions": 0.07
+  },
+  "technical_hr_stage_ratios": {
+    "self_introduction": 0.10,
+    "project_drilldown": 0.30,
+    "fundamentals": 0.18,
+    "coding_thought": 0.12,
+    "behavioral_hr": 0.23,
     "candidate_questions": 0.07
   },
   "project_vs_fundamentals_weights": {
@@ -37,17 +45,23 @@
   "minimum_project_drill_depth": 3,
   "pressure_profile": {
     "enabled_tactics": [
-      "chain_followup",
-      "challenge_and_denial",
-      "deliberate_interruption",
-      "ten_second_silence"
+      "high_difficulty_chain_followup",
+      "evidence_challenge",
+      "boundary_change",
+      "conditional_interruption_on_expression_problem"
     ],
     "tone": "calm",
     "max_consecutive_same_tactic": 1,
     "silence_seconds": 10,
-    "failure_streak_to_end": 2
+    "failure_streak_to_end": 2,
+    "interruption_policy": "不得按轮次盲目打断；仅在明显跑题、重复绕圈、长时间无结论或前后矛盾时打断"
   },
-  "transition_style": "先确认候选人的思路，再自然切换，不在面中判断对错",
+  "transition_style": "承接候选人的具体思路自然切换，不机械复述，也不在面中判断对错",
+  "technical_hr_focus": [
+    "意见不一致时的协作方式和事实判断",
+    "长期方向、选择逻辑和学习意愿",
+    "薪酬、导师带教和方向匹配之间的取舍"
+  ],
   "closing_sentence": "今天的面试就到这里。",
   "never_do_during_interview": [
     "点评候选人表现",

@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from .config import Settings, get_settings
 from .content import (
     load_current_research_question_bank,
+    load_hr_question_bank,
     load_question_bank,
     load_style_card,
 )
@@ -24,6 +25,7 @@ from .prompt_engine import (
     enforce_project_drill,
     extract_anchor_keyword,
     initial_question,
+    interview_drill_target,
     is_vague_answer,
     select_questions,
 )
@@ -34,7 +36,7 @@ from .schemas import (
     TurnAssessment,
     TurnDecision,
 )
-from .topics import canonical_topic, project_depth_target
+from .topics import canonical_topic
 
 
 @dataclass(slots=True)
@@ -91,6 +93,7 @@ class InterviewEngine:
         prompt = build_system_prompt(
             company=request.company,
             resume=request.resume,
+            interview_type=request.interview_type,
             stress=request.stress,
             stress_level=request.stress_level,
             specialization=request.specialization,
@@ -105,6 +108,7 @@ class InterviewEngine:
             client_id=request.client_id,
             company=request.company,
             role=request.role,
+            interview_type=request.interview_type,
             specialization=request.specialization,
             language_mode=request.language_mode,
             stress=request.stress,
@@ -127,6 +131,7 @@ class InterviewEngine:
             "recommended_answer_seconds": self.recommended_answer_seconds(first_question),
             "company": request.company,
             "role": request.role,
+            "interview_type": request.interview_type,
             "specialization": request.specialization,
             "language_mode": request.language_mode,
             "stress": request.stress,
@@ -175,6 +180,7 @@ class InterviewEngine:
             resume=ResumeData.model_validate(source["resume"]),
             company=source["company"],
             role="backend",
+            interview_type=source.get("interview_type") or "technical",
             specialization=source.get("specialization") or "通用后端",
             language_mode=source.get("language_mode") or "bilingual",
             stress_level=int(source.get("stress_level") or 0),
@@ -193,6 +199,42 @@ class InterviewEngine:
         """Return an answer scaffold, never a factual or complete answer."""
 
         lowered = question.lower()
+        if "薪酬" in question:
+            return (
+                "先坦诚给出你的预期或可接受范围，再说明参考信息；"
+                "随后把薪酬、成长、团队/导师和方向匹配排个顺序，解释排序依据，"
+                "最后说明哪些条件可以沟通。不要猜公司标准答案。"
+            )
+        if any(
+            marker in question
+            for marker in (
+                "接下来两三年",
+                "未来两三年",
+                "毕业前",
+                "毕业前后",
+                "为什么在这个阶段选择后端",
+                "为什么选择后端方向",
+            )
+        ):
+            return (
+                "按“当前选择 → 选择依据 → 两三年目标 → 最近行动”组织；"
+                "目标不要只写职位名称，要落到一两项能力和可验证的学习/实践计划，"
+                "再补如果现实与预期不同你会怎样调整。"
+            )
+        if any(
+            marker in question
+            for marker in (
+                "需求变化很快",
+                "技术方案看起来很漂亮",
+                "方案没有被采用",
+                "意见不一致",
+                "怎么判断先做什么",
+            )
+        ):
+            return (
+                "选一个真实的小场景，按“当时约束 → 你的判断 → 具体沟通/行动 → 结果与复盘”回答；"
+                "明确你如何兼顾用户/业务结果、事实依据和团队协作，不要只说抽象价值观。"
+            )
         if any(marker in lowered for marker in ("手撕", "算法", "复杂度", "lru", "代码", "实现")):
             return (
                 "按四步拆解：先复述输入、输出和边界；再说朴素方案的瓶颈；"
@@ -301,7 +343,10 @@ class InterviewEngine:
                 anchor = resume.projects[0].name
 
         completed_turns = len(turns) + 1
-        drill_target = project_depth_target(interview["weak_topics"])
+        interview_type = str(interview.get("interview_type") or "technical")
+        drill_target = interview_drill_target(
+            interview["weak_topics"], interview_type
+        )
         question, forced_dimension, forced_depth = enforce_project_drill(
             decision.next_question,
             completed_turns=completed_turns,
@@ -325,6 +370,18 @@ class InterviewEngine:
                 "请口述一个 O(1) LRU Cache 的数据结构、操作和边界。",
             )
             question = str(coding_question)
+        hr_questions = (
+            load_hr_question_bank(interview["company"])
+            if interview_type == "technical_hr"
+            else []
+        )
+        # After the self introduction, >=3 project layers and one additional
+        # technical question, a combined interview deterministically covers
+        # all three behavioral areas instead of hoping the model happens to
+        # select them before a short interview times out.
+        next_hr_index = completed_turns - (drill_target + 2)
+        if 0 <= next_hr_index < len(hr_questions):
+            question = str(hr_questions[next_hr_index]["question"])
         question = self._sanitize_question(question, interview["company"])
 
         # A row represents the question that was just answered, not the next
@@ -334,7 +391,12 @@ class InterviewEngine:
         current_topic = decision.assessment.topic
         current_drill_dimension = decision.drill_dimension
         current_drill_depth = decision.drill_depth
-        if 2 <= completed_turns <= drill_target + 1:
+        if completed_turns == 1:
+            current_dimension = "communication"
+            current_topic = "自我介绍·整体与学习情况"
+            current_drill_dimension = ""
+            current_drill_depth = 0
+        elif 2 <= completed_turns <= drill_target + 1:
             current_drill_depth = completed_turns - 1
             current_drill_dimension = SEVEN_DRILL_DIMENSIONS[
                 min(current_drill_depth - 1, len(SEVEN_DRILL_DIMENSIONS) - 1)
@@ -349,13 +411,31 @@ class InterviewEngine:
             current_topic = "手撕思路·LRU"
             current_drill_dimension = "手撕思路"
             current_drill_depth = 0
+        answered_hr_index = completed_turns - (drill_target + 3)
+        if 0 <= answered_hr_index < len(hr_questions):
+            current_dimension = "communication"
+            current_topic = f"综合面·{hr_questions[answered_hr_index]['topic']}"
+            current_drill_dimension = ""
+            current_drill_depth = 0
 
-        pressure_action = self._pressure_action(
-            stress_level=interview["stress_level"],
-            ordinal=completed_turns,
-            proposed=decision.pressure_action,
+        if completed_turns == 1 or 0 <= next_hr_index < len(hr_questions):
+            # The introduction-to-experience handoff and the three required HR
+            # openers should sound like coherent phase transitions. Pressure
+            # resumes inside technical follow-ups instead of adding a generic
+            # confrontational prefix at these boundaries.
+            pressure_action = "none"
+        else:
+            pressure_action = self._pressure_action(
+                stress_level=interview["stress_level"],
+                ordinal=completed_turns,
+                proposed=decision.pressure_action,
+                expression_problem=self._has_expression_problem(
+                    answer, decision.assessment.deductions
+                ),
+            )
+        question = self._apply_pressure_copy(
+            question, pressure_action, ordinal=completed_turns
         )
-        question = self._apply_pressure_copy(question, pressure_action)
         recommended_seconds = self.recommended_answer_seconds(question)
         current_recommended_seconds = self.recommended_answer_seconds(
             str(interview["last_question"])
@@ -542,6 +622,7 @@ class InterviewEngine:
         system_prompt = build_system_prompt(
             company=interview["company"],
             resume=resume,
+            interview_type=interview.get("interview_type") or "technical",
             stress=interview["stress"],
             stress_level=interview["stress_level"],
             specialization=interview["specialization"],
@@ -686,28 +767,49 @@ class InterviewEngine:
         return False
 
     @staticmethod
-    def _pressure_action(stress_level: int, ordinal: int, proposed: str) -> str:
-        del proposed
+    def _pressure_action(
+        stress_level: int,
+        ordinal: int,
+        proposed: str,
+        expression_problem: bool = False,
+    ) -> str:
         if stress_level <= 0:
             return "none"
+        # Interruption is evidence-triggered, never a round-robin pressure
+        # tactic.  Live voice has a separate partial-transcript guard; this
+        # branch keeps text/L3 behavior aligned.
+        if proposed == "interrupt" and expression_problem:
+            return "interrupt"
         if stress_level == 1:
             if ordinal % 2:
                 return "none"
-            return ("chain", "challenge")[((ordinal // 2) - 1) % 2]
-        if stress_level == 2:
-            cycle = {1: "chain", 2: "challenge", 3: "interrupt", 0: "silence"}
-            return cycle[ordinal % 4]
-        # High pressure retains every technique but deliberately interrupts on
-        # every other round. The live voice path mirrors the same cadence.
-        cycle = (
-            "chain",
-            "interrupt",
-            "challenge",
-            "interrupt",
-            "silence",
-            "interrupt",
+            return "challenge" if proposed == "challenge" else "chain"
+        # Standard/high pressure stays difficult on every round. Evidence is
+        # challenged only when the model found an actual gap; otherwise the
+        # pressure remains a deeper scenario follow-up.
+        if proposed == "challenge":
+            return "challenge"
+        return "chain"
+
+    @staticmethod
+    def _has_expression_problem(answer: str, deductions: list[str]) -> bool:
+        compact = re.sub(r"\s+", "", answer)
+        evidence = " ".join(str(item) for item in deductions)
+        if any(
+            marker in evidence
+            for marker in ("跑题", "冗长", "重复", "表述混乱", "逻辑混乱", "前后矛盾")
+        ):
+            return True
+        if any(
+            marker in answer
+            for marker in ("我说乱了", "有点乱", "不对不对", "我重新说", "不知道怎么表达")
+        ):
+            return True
+        filler_count = sum(
+            answer.count(marker)
+            for marker in ("嗯", "呃", "那个", "就是说", "怎么说呢")
         )
-        return cycle[(ordinal - 1) % len(cycle)]
+        return len(compact) >= 220 and filler_count >= 4
 
     @staticmethod
     def _breakdown_threshold(stress_level: int) -> int:
@@ -716,6 +818,12 @@ class InterviewEngine:
     @staticmethod
     def _sanitize_question(question: str, company: str) -> str:
         question = re.sub(r"```.*?```", "", question, flags=re.S)
+        question = re.sub(
+            r"^(?:(?:好的|很好|非常好|明白了|感谢(?:你的)?分享|"
+            r"让我们(?:继续|深入)(?:聊聊|探讨)?)[，,。.!！\s]*)+",
+            "",
+            question.strip(),
+        )
         question = re.sub(
             r"(?:你的得分|评分|扣分点|正确答案|参考答案)[:：]?.*", "", question
         ).strip()
@@ -730,13 +838,18 @@ class InterviewEngine:
         return question
 
     @staticmethod
-    def _apply_pressure_copy(question: str, action: str) -> str:
+    def _apply_pressure_copy(question: str, action: str, *, ordinal: int = 0) -> str:
         if action == "chain":
-            return f"不要停留在结论，请沿着刚才的细节继续回答：{question}"
+            transitions = (
+                "这个点我再往下追一步。",
+                "沿着刚才的实现，我再问深一点。",
+                "我们把条件再收紧一点。",
+            )
+            return f"{transitions[ordinal % len(transitions)]}{question}"
         if action == "challenge":
-            return f"我不接受没有证据的结论。这个前提我存疑，{question}"
+            return f"这个结论目前还缺少依据。{question}"
         if action == "interrupt":
-            return f"先停一下，请直接给结论和依据。{question}"
+            return f"我先打断一下，你刚才这段有些绕。请先用一句话给结论，再回答：{question}"
         return question
 
     @staticmethod

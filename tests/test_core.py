@@ -15,6 +15,7 @@ from app.content import (
     is_ai_specialization,
     load_current_research_question_bank,
     load_experience_question_bank,
+    load_hr_question_bank,
     load_project_question_bank,
     load_question_bank,
     load_source_catalog,
@@ -26,7 +27,12 @@ from app.db import Database
 from app.errors import AppError
 from app.interview_engine import InterviewEngine
 from app.llm import parse_json_content
-from app.prompt_engine import SEVEN_DRILL_DIMENSIONS, build_system_prompt, select_questions
+from app.prompt_engine import (
+    SEVEN_DRILL_DIMENSIONS,
+    build_system_prompt,
+    interview_drill_target,
+    select_questions,
+)
 from app.report_engine import ReportEngine
 from app.resume import ResumeParser, extract_pdf_text
 from app.schemas import InterviewCreate, InterviewTurn, Project, ResumeData
@@ -95,6 +101,7 @@ def test_static_cards_banks_and_resource_allowlist() -> None:
     for company in ("bytedance", "meituan", "tencent"):
         card = load_style_card(company)
         assert sum(card["stage_ratio"].values()) == pytest.approx(1.0)
+        assert sum(card["technical_hr_stage_ratios"].values()) == pytest.approx(1.0)
         assert card["project_weight"] + card["fundamentals_weight"] == pytest.approx(1.0)
         assert card["minimum_project_drill_depth"] >= 3
         bank = load_question_bank(company)
@@ -103,6 +110,14 @@ def test_static_cards_banks_and_resource_allowlist() -> None:
         for category, count in expected_counts.items():
             assert sum(item["category"] == category for item in bank) == count
         assert all(len(item["followups"]) >= 2 for item in bank)
+        hr_bank = load_hr_question_bank(company)
+        assert len(hr_bank) == 3
+        assert {item["topic"] for item in hr_bank} == {
+            "价值观与公司契合",
+            "人生规划与选择",
+            "薪酬期待",
+        }
+        assert all(len(item["followups"]) >= 2 for item in hr_bank)
 
     for resource in load_topic_links().values():
         assert urlparse(resource["url"]).hostname in {"javaguide.cn", "codetop.cc"}
@@ -120,7 +135,8 @@ def test_prompt_contains_non_negotiable_interview_rules() -> None:
     assert all(dimension in prompt for dimension in SEVEN_DRILL_DIMENSIONS)
     assert "至少 3 层" in prompt
     assert "绝不点评" in prompt
-    assert "沉默10秒" in prompt
+    assert "施压的主要方式是更难、更深" in prompt
+    assert "不能因为压力等级或轮次自动选择" in prompt
     assert "qwen" not in prompt.lower()
     assert "source_ids" not in prompt
     assert "source_ref" not in prompt
@@ -232,17 +248,20 @@ def test_interview_parameter_contract_and_pressure_levels() -> None:
     )
     assert legacy.stress is True
     assert legacy.stress_level == 2
+    assert legacy.interview_type == "technical"
 
     customized = InterviewCreate(
         client_id="custom-client-001",
         resume=sample_resume(),
         company="tencent",
+        interview_type="technical_hr",
         specialization="  Java 高并发与中间件  ",
         stress=False,
         stress_level=3,
         duration_minutes=None,
     )
     assert customized.specialization == "Java 高并发与中间件"
+    assert customized.interview_type == "technical_hr"
     assert customized.stress is True
     assert customized.stress_level == 3
     assert customized.duration_minutes is None
@@ -279,6 +298,13 @@ def test_interview_parameter_contract_and_pressure_levels() -> None:
                 "stress_level": True,
             }
         )
+    with pytest.raises(ValidationError):
+        InterviewCreate.model_validate(
+            {
+                **customized.model_dump(),
+                "interview_type": "hr_only",
+            }
+        )
 
     injection_prompt = build_system_prompt(
         company="tencent",
@@ -295,6 +321,7 @@ def test_interview_parameter_contract_and_pressure_levels() -> None:
         company="tencent",
         resume=sample_resume(),
         specialization=customized.specialization,
+        interview_type=customized.interview_type,
         stress_level=3,
         duration_minutes=None,
         weak_topics=[],
@@ -302,15 +329,113 @@ def test_interview_parameter_contract_and_pressure_levels() -> None:
     assert "Java 高并发与中间件" in prompt
     assert "3（高压）" in prompt
     assert "无限（不自动截止" in prompt
+    assert "价值观与公司契合" in prompt
+    assert "人生规划与选择" in prompt
+    assert "薪酬期待" in prompt
+    assert "项目经历我们等会儿单独聊" not in prompt
+    assert interview_drill_target([], "technical") == 4
+    assert interview_drill_target([], "technical_hr") == 3
 
     assert InterviewEngine._pressure_action(0, 1, "interrupt") == "none"
     assert InterviewEngine._pressure_action(1, 1, "chain") == "none"
     assert InterviewEngine._pressure_action(1, 2, "none") == "chain"
-    assert InterviewEngine._pressure_action(1, 4, "none") == "challenge"
-    assert InterviewEngine._pressure_action(2, 3, "none") == "interrupt"
-    assert InterviewEngine._pressure_action(3, 2, "none") == "interrupt"
+    assert InterviewEngine._pressure_action(1, 4, "none") == "chain"
+    assert InterviewEngine._pressure_action(2, 3, "interrupt") == "chain"
+    assert InterviewEngine._pressure_action(3, 2, "interrupt") == "chain"
+    assert InterviewEngine._pressure_action(3, 2, "challenge") == "challenge"
+    assert (
+        InterviewEngine._pressure_action(
+            3, 2, "interrupt", expression_problem=True
+        )
+        == "interrupt"
+    )
     assert InterviewEngine._breakdown_threshold(1) == 3
     assert InterviewEngine._breakdown_threshold(2) == 2
+    assert "参考信息" in InterviewEngine._build_hint(
+        "你对这段实习的薪酬有什么期待？"
+    )
+    assert "两三年目标" in InterviewEngine._build_hint(
+        "接下来两三年最想积累的能力是什么？"
+    )
+    assert "真实的小场景" in InterviewEngine._build_hint(
+        "团队讨论中如果你的方案没有被采用，你会怎么做？"
+    )
+    assert (
+        InterviewEngine._sanitize_question(
+            "好的，感谢你的分享。让我们深入探讨 Redis 的淘汰策略",
+            "tencent",
+        )
+        == "Redis 的淘汰策略？"
+    )
+
+
+@pytest.mark.asyncio
+async def test_combined_interview_separates_intro_and_covers_hr_topics(tmp_path) -> None:
+    settings = mock_settings(tmp_path)
+    db = Database(settings)
+    await db.initialize()
+    engine = InterviewEngine(db, settings)
+    created = await engine.create(
+        InterviewCreate(
+            client_id="combined-client-001",
+            resume=sample_resume(),
+            company="tencent",
+            interview_type="technical_hr",
+            stress_level=0,
+            duration_minutes=15,
+        )
+    )
+    assert created["interview_type"] == "technical_hr"
+    assert "学习" in created["initial_question"]
+    assert "项目先不用展开" in created["initial_question"]
+    stored = await db.get_interview(created["id"])
+    assert stored is not None
+    assert stored["interview_type"] == "technical_hr"
+    assert "技术/综合（HR）面" in stored["system_prompt"]
+    assert "不要频繁使用" in stored["system_prompt"]
+
+    await db.start_interview(created["id"])
+    answers = [
+        "我是计算机专业大三学生，目前学过数据结构、操作系统和数据库，希望找后端开发实习。",
+        "我选择校园秒杀系统，目标是解决抢票高峰的超卖问题，我负责库存和订单链路。",
+        "库存设计和 Redis Lua 脚本是我本人完成的，团队同学负责前端和部署。",
+        "请求先到网关，再校验活动状态，用 Lua 原子预扣库存，最后异步写入 MySQL。",
+        "我会先确认超时发生在哪一段，再结合日志、指标和链路追踪缩小范围。",
+        "我会先按用户影响和交付风险排序，和负责人确认最小可用范围，再记录后续项。",
+        "我选择后端是因为喜欢系统问题，未来两三年想补齐并发、存储和工程化能力。",
+        "我会参考同类实习信息，薪酬、导师带教和方向匹配里更看重后两项。",
+    ]
+    questions: list[str] = []
+    for answer in answers:
+        result = await engine.answer(created["id"], answer)
+        questions.append(result.question)
+
+    # The first follow-up is a standalone experience opener, rather than a
+    # continuation embedded in the self-introduction prompt.
+    assert "单独聊一段经历" in questions[0]
+    assert "价值观" not in questions[0]
+    assert questions[4:7] == [
+        item["question"] for item in load_hr_question_bank("tencent")
+    ]
+
+    turns = await db.list_turns(created["id"])
+    assert turns[0].category == "communication"
+    assert turns[0].topic == "自我介绍·整体与学习情况"
+    assert [turn.drill_depth for turn in turns[1:4]] == [1, 2, 3]
+    assert [turn.topic for turn in turns[5:8]] == [
+        "综合面·价值观与公司契合",
+        "综合面·人生规划与选择",
+        "综合面·薪酬期待",
+    ]
+
+    await db.finish_interview(created["id"], "manual")
+    history = await ReportEngine(db, settings).generate(created["id"])
+    assert history.scored is True
+    assert "预期范围" in history.question_feedback[7].better_answer
+    stored_history = await db.history("combined-client-001")
+    assert stored_history[0]["interview_type"] == "technical_hr"
+    retry = await engine.retry(created["id"], "combined-client-001")
+    assert retry["interview_type"] == "technical_hr"
 
 
 @pytest.mark.asyncio
@@ -373,11 +498,12 @@ async def test_initialize_migrates_legacy_stress_to_standard_level(tmp_path) -> 
     connection = sqlite3.connect(settings.db_path)
     connection.row_factory = sqlite3.Row
     row = connection.execute(
-        "SELECT specialization, stress_level FROM interviews WHERE id = ?",
+        "SELECT interview_type, specialization, stress_level FROM interviews WHERE id = ?",
         ("legacy-row",),
     ).fetchone()
     connection.close()
     assert row is not None
+    assert row["interview_type"] == "technical"
     assert row["specialization"] == "通用后端"
     assert row["stress_level"] == 2
 
@@ -705,14 +831,14 @@ async def test_three_layer_drill_early_end_report_and_memory(tmp_path) -> None:
     await db.start_interview(stress["id"])
     first = await engine.answer(stress["id"], "我用 Redis 做了缓存和库存控制。")
     assert not first.ended
-    assert first.pressure_action == "chain"
+    assert first.pressure_action == "none"
     failed_once = await engine.answer(stress["id"], "不知道")
     assert failed_once.breakdown_streak == 1
-    assert failed_once.pressure_action == "challenge"
-    assert failed_once.question.startswith("我不接受没有证据的结论")
+    assert failed_once.pressure_action == "chain"
+    assert failed_once.question.startswith("我们把条件再收紧一点")
     failed_twice = await engine.answer(stress["id"], "不会")
     assert failed_twice.ended
-    assert failed_twice.pressure_action == "interrupt"
+    assert failed_twice.pressure_action == "chain"
     assert failed_twice.end_reason == "poor_performance"
     assert "今天的面试就到这里" in failed_twice.question
 
@@ -892,6 +1018,6 @@ async def test_legacy_default_dimensions_are_removed_and_overall_recomputed(tmp_
     assert repaired["rubric"]["fundamentals"]["score"] is None
     assert repaired["rubric"]["coding_thought"]["score"] is None
     assert repaired["rubric"]["fundamentals"]["scorable"] is False
-    assert repaired["rubric"]["communication"]["score"] is None
-    assert repaired["scoring_coverage"] == 0.4
+    assert repaired["rubric"]["communication"]["score"] is not None
+    assert repaired["scoring_coverage"] == 0.1
     assert repaired["overall_score"] != 5.0

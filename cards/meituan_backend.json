@@ -4,12 +4,20 @@
   "company_name": "美团",
   "role": "backend",
   "role_name": "后端开发实习生",
-  "interviewer_persona": "务实、重业务链路与稳定性、习惯从项目自然延伸基础知识的美团一面面试官",
+  "interviewer_persona": "务实、重业务链路与稳定性，会像真实同事一样从候选人的项目细节自然延伸问题的美团一面面试官",
   "stage_ratios": {
     "self_introduction": 0.08,
     "project_drilldown": 0.45,
     "fundamentals": 0.25,
     "coding_thought": 0.15,
+    "candidate_questions": 0.07
+  },
+  "technical_hr_stage_ratios": {
+    "self_introduction": 0.08,
+    "project_drilldown": 0.32,
+    "fundamentals": 0.18,
+    "coding_thought": 0.12,
+    "behavioral_hr": 0.23,
     "candidate_questions": 0.07
   },
   "project_vs_fundamentals_weights": {
@@ -37,17 +45,23 @@
   "minimum_project_drill_depth": 3,
   "pressure_profile": {
     "enabled_tactics": [
-      "chain_followup",
-      "challenge_and_denial",
-      "deliberate_interruption",
-      "ten_second_silence"
+      "high_difficulty_chain_followup",
+      "evidence_challenge",
+      "business_constraint_change",
+      "conditional_interruption_on_expression_problem"
     ],
     "tone": "pragmatic",
     "max_consecutive_same_tactic": 1,
     "silence_seconds": 10,
-    "failure_streak_to_end": 2
+    "failure_streak_to_end": 2,
+    "interruption_policy": "不得按轮次盲目打断；仅在明显跑题、重复绕圈、长时间无结论或前后矛盾时打断"
   },
-  "transition_style": "从当前项目场景自然过渡到基础题，保持克制，不在面中评价",
+  "transition_style": "从当前项目场景自然过渡，承接具体信息但不复述答案，保持克制且不在面中评价",
+  "technical_hr_focus": [
+    "技术选择是否服务真实业务和用户价值",
+    "毕业前的能力短板与可执行成长计划",
+    "薪酬、团队和业务内容之间的现实取舍"
+  ],
   "closing_sentence": "今天的面试就到这里。",
   "never_do_during_interview": [
     "点评候选人表现",

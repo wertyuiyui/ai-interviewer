@@ -1038,7 +1038,7 @@ def test_runtime_tts_failure_downgrades_to_text_mode() -> None:
     asyncio.run(scenario())
 
 
-def test_stress_interrupt_speaks_while_candidate_is_still_talking() -> None:
+def test_stress_interrupt_requires_persistent_expression_problem() -> None:
     async def scenario() -> None:
         recorder = EventRecorder()
         database = FakeDatabase(turn_count=2)
@@ -1053,6 +1053,18 @@ def test_stress_interrupt_speaks_while_candidate_is_still_talking() -> None:
         session.tts = FakeTTS()  # type: ignore[assignment]
 
         await session._candidate_speech_started(source="silero")
+        await session._observe_candidate_partial(
+            "我先给结论，再按请求链路、方案依据和验证结果分别说明。"
+        )
+        await asyncio.sleep(0)
+        assert recorder.first("pressure.interrupt") is None
+
+        # Repeated fillers and circular wording are observable expression
+        # evidence. Only then may high pressure arm a live interruption.
+        await session._observe_candidate_partial(
+            "嗯，那个，就是，然后，然后，然后，我想说这个方案，那个，这个，"
+            "实际上就是说我们可能还需要再看看具体情况再决定怎么处理。"
+        )
         await wait_until(lambda: recorder.first("pressure.interrupt") is not None)
         await wait_until(
             lambda: any(event["type"] == "audio.chunk" for event in recorder.events)
@@ -1062,8 +1074,102 @@ def test_stress_interrupt_speaks_while_candidate_is_still_talking() -> None:
         assert interrupt is not None
         assert interrupt["ordinal"] == 3
         assert session._candidate_speaking is True
-        assert "先停一下" in interrupt["text"]
+        assert "我先打断一下" in interrupt["text"]
         await session._candidate_speech_ended()
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_explicit_answer_boundary_waits_for_last_segment_and_scores_once() -> None:
+    async def scenario() -> None:
+        class CapturingEngine:
+            def __init__(self) -> None:
+                self.calls: list[dict[str, Any]] = []
+
+            async def answer(
+                self,
+                _interview_id: str,
+                text: str,
+                *,
+                input_mode: str,
+                answer_duration_seconds: float | None,
+            ) -> Any:
+                self.calls.append(
+                    {
+                        "text": text,
+                        "input_mode": input_mode,
+                        "answer_duration_seconds": answer_duration_seconds,
+                    }
+                )
+                return SimpleNamespace(
+                    turn=SimpleNamespace(ordinal=1),
+                    question="请继续说明这个方案的故障边界。",
+                    pressure_action="chain",
+                    silence_seconds=0,
+                    ended=False,
+                    end_reason=None,
+                )
+
+        async def no_flush() -> None:
+            return None
+
+        recorder = EventRecorder()
+        engine = CapturingEngine()
+        session = make_session(recorder, engine=engine)
+        session.actual_mode = "L2"
+        # Presence of an ASR transport tells answer.end to wait for its final
+        # transcript. Audio transport behavior is not needed in this unit test.
+        session.asr = SimpleNamespace()
+        session._flush_input_tail = no_flush  # type: ignore[method-assign]
+
+        await session.handle_answer_start()
+        await asyncio.sleep(0.01)
+        await session._candidate_speech_started(source="silero")
+        await session._collect_explicit_voice_segment(
+            text="第一段先说明请求经过网关和 Redis。",
+            provider_item_id="segment-1",
+        )
+        await session._candidate_speech_ended()
+
+        # Reproduce the narrow production race: VAD has ended the second
+        # utterance, but its final ASR text has not reached the application.
+        await session._candidate_speech_started(source="silero")
+        await session._candidate_speech_ended()
+        ending = asyncio.create_task(session.handle_answer_end())
+        await asyncio.sleep(0.01)
+        assert not ending.done()
+        assert engine.calls == []
+
+        await session._collect_explicit_voice_segment(
+            text="第二段补充异步落库和失败补偿。",
+            provider_item_id="segment-2",
+        )
+        await asyncio.wait_for(ending, timeout=1)
+        await wait_until(lambda: not session.evaluation_tasks)
+
+        assert len(engine.calls) == 1
+        assert engine.calls[0]["text"] == (
+            "第一段先说明请求经过网关和 Redis。；第二段补充异步落库和失败补偿。"
+        )
+        assert engine.calls[0]["input_mode"] == "voice"
+        assert engine.calls[0]["answer_duration_seconds"] is not None
+        done = recorder.first("candidate.transcript.done")
+        assert done is not None
+        assert done["text"] == engine.calls[0]["text"]
+
+        # A delayed provider speech_started event after answer.end must not
+        # clear or barge into the next interviewer question.
+        before = len(
+            [event for event in recorder.events if event["type"] == "input.speech_started"]
+        )
+        await session._candidate_speech_started(source="silero")
+        after = len(
+            [event for event in recorder.events if event["type"] == "input.speech_started"]
+        )
+        assert after == before
+
+        session.asr = None
         await session.close()
 
     asyncio.run(scenario())

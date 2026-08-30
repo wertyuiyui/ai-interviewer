@@ -34,6 +34,7 @@ from .content import (
 )
 from .db import Database
 from .errors import AppError
+from .hardware_test import HARDWARE_TEST_MAX_SECONDS, HardwareTranscriptionSession
 from .interview_engine import InterviewEngine
 from .report_engine import ReportEngine
 from .resume import ResumeParser, extract_pdf_text
@@ -77,6 +78,7 @@ class SlidingWindowLimiter:
 
 
 resume_limiter = SlidingWindowLimiter()
+hardware_test_limiter = SlidingWindowLimiter()
 
 
 @asynccontextmanager
@@ -214,8 +216,148 @@ async def config() -> dict[str, Any]:
             {"id": "zh", "name": "全程中文"},
             {"id": "bilingual", "name": "中英双语"},
         ],
+        "interview_types": [
+            {"id": "technical", "name": "技术面"},
+            {"id": "technical_hr", "name": "技术 / 综合（HR）面"},
+        ],
         "daily_interview_limit": settings.daily_interview_limit,
     }
+
+
+@app.websocket("/ws/hardware-test")
+async def hardware_test_socket(websocket: WebSocket) -> None:
+    """Run a short ASR-only microphone check without creating an interview."""
+
+    await websocket.accept()
+    send_lock = asyncio.Lock()
+    session: HardwareTranscriptionSession | None = None
+
+    async def send(event_type: str, **payload: Any) -> None:
+        async with send_lock:
+            await websocket.send_json({"type": event_type, **payload})
+
+    try:
+        first = await asyncio.wait_for(websocket.receive(), timeout=10)
+        if first.get("type") == "websocket.disconnect":
+            return
+        raw = first.get("text")
+        if not raw:
+            await send(
+                "hardware.error",
+                code="READY_REQUIRED",
+                message="请先初始化麦克风测试",
+                recoverable=False,
+            )
+            await websocket.close(code=4400)
+            return
+        try:
+            event = json.loads(raw)
+        except json.JSONDecodeError:
+            event = {}
+        if event.get("type") != "client.ready":
+            await send(
+                "hardware.error",
+                code="READY_REQUIRED",
+                message="请先初始化麦克风测试",
+                recoverable=False,
+            )
+            await websocket.close(code=4400)
+            return
+        client_id = str(event.get("client_id") or "").strip()
+        try:
+            _validate_client_id(client_id)
+        except AppError as exc:
+            await send(
+                "hardware.error",
+                code=exc.code,
+                message=exc.message,
+                recoverable=False,
+            )
+            await websocket.close(code=4400)
+            return
+        client_host = websocket.client.host if websocket.client else "unknown"
+        host_allowed = await hardware_test_limiter.allow(
+            f"hardware-host:{client_host}", 20, 3600
+        )
+        client_allowed = await hardware_test_limiter.allow(
+            f"hardware-client:{client_id}", 8, 3600
+        )
+        if not host_allowed or not client_allowed:
+            await send(
+                "hardware.error",
+                code="HARDWARE_TEST_RATE_LIMIT",
+                message="语音测试过于频繁，请稍后再试",
+                recoverable=False,
+            )
+            await websocket.close(code=4408)
+            return
+
+        session = HardwareTranscriptionSession(settings, send)
+        await session.start()
+        deadline = time.monotonic() + HARDWARE_TEST_MAX_SECONDS
+        while not session.stopped:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                await session.stop(reason="limit")
+                break
+            try:
+                message = await asyncio.wait_for(
+                    websocket.receive(),
+                    timeout=remaining,
+                )
+            except asyncio.TimeoutError:
+                await session.stop(reason="limit")
+                break
+            if message.get("type") == "websocket.disconnect":
+                break
+            pcm = message.get("bytes")
+            if pcm is not None:
+                await session.handle_audio(pcm)
+                continue
+            raw = message.get("text")
+            if not raw:
+                continue
+            try:
+                event = json.loads(raw)
+            except json.JSONDecodeError:
+                await send(
+                    "hardware.error",
+                    code="INVALID_EVENT",
+                    message="语音测试消息格式错误",
+                    recoverable=True,
+                )
+                continue
+            event_type = event.get("type")
+            if event_type == "hardware.stop":
+                await session.stop(reason="manual")
+                break
+            if event_type == "ping":
+                await send("pong", timestamp=time.time())
+                continue
+            await send(
+                "hardware.error",
+                code="UNKNOWN_EVENT",
+                message="不支持的语音测试消息",
+                recoverable=True,
+            )
+    except WebSocketDisconnect:
+        pass
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        with suppress(Exception):
+            await send(
+                "hardware.error",
+                code="HARDWARE_TEST_FAILED",
+                message="语音测试暂时不可用，请稍后重试",
+                recoverable=False,
+            )
+    finally:
+        if session:
+            with suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(session.close(), timeout=7)
+        with suppress(Exception):
+            await websocket.close()
 
 
 @app.get("/api/resources/catalog")
@@ -364,6 +506,8 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
     ready = False
     requested_end_reason = "manual"
     browser_microphone_enabled = True
+    text_answer_started_at: float | None = None
+    text_answer_protocol_enabled = False
 
     async def send(event_type: str, **payload: Any) -> None:
         async with send_lock:
@@ -617,7 +761,105 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                     await db.set_voice_mode(interview_id, actual_mode)
                     if not browser_microphone_enabled:
                         await voice_session.handle_microphone_state(False)
+                await send("answer.state.changed", state="idle")
                 timer_task = asyncio.create_task(timer_loop())
+            elif event_type == "answer.start":
+                if not ready:
+                    await send("error", code="NOT_READY", message="请先开始面试")
+                    continue
+                if ending.is_set():
+                    await send(
+                        "error",
+                        code="INTERVIEW_ENDING",
+                        message="本场面试正在结束",
+                        recoverable=False,
+                    )
+                    continue
+                try:
+                    if voice_session:
+                        await voice_session.handle_answer_start()
+                    else:
+                        lock = session_locks.setdefault(interview_id, asyncio.Lock())
+                        if any(not task.done() for task in answer_tasks) or lock.locked():
+                            raise AppError(
+                                "ANSWER_IN_PROGRESS",
+                                "上一题仍在处理中，请等面试官问完下一题",
+                                status_code=409,
+                            )
+                        text_answer_protocol_enabled = True
+                        if text_answer_started_at is None:
+                            text_answer_started_at = time.monotonic()
+                        await send("answer.state.changed", state="answering")
+                except AppError as exc:
+                    await send(
+                        "error",
+                        code=exc.code,
+                        message=exc.message,
+                        recoverable=True,
+                    )
+            elif event_type == "answer.end":
+                if not ready:
+                    await send("error", code="NOT_READY", message="请先开始面试")
+                    continue
+                text = str(event.get("text") or "").strip()
+                try:
+                    if voice_session:
+                        await voice_session.handle_answer_end(text)
+                    else:
+                        if (
+                            not text_answer_protocol_enabled
+                            or text_answer_started_at is None
+                        ):
+                            raise AppError(
+                                "ANSWER_NOT_STARTED",
+                                "请先点击“开始回答”",
+                                status_code=409,
+                            )
+                        if not text:
+                            # This attempt is over even though it contained no
+                            # text.  A retry gets a fresh server-side clock
+                            # instead of inheriting time from the empty attempt.
+                            text_answer_started_at = None
+                            raise AppError(
+                                "EMPTY_ANSWER",
+                                "请输入回答后再点击“结束回答”",
+                                status_code=422,
+                            )
+                        duration = round(
+                            max(
+                                0.0,
+                                min(
+                                    time.monotonic() - text_answer_started_at,
+                                    3600.0,
+                                ),
+                            ),
+                            2,
+                        )
+                        text_answer_started_at = None
+                        await send(
+                            "answer.state.changed",
+                            state="sealing",
+                            elapsed_ms=int(duration * 1000),
+                        )
+                        track(
+                            _handle_text_answer(
+                                interview_id=interview_id,
+                                answer=text,
+                                answer_duration_seconds=duration,
+                                send=send,
+                                stop_event=ending,
+                                on_end=finalize,
+                            ),
+                            answer_tasks,
+                            f"text-answer-{interview_id}",
+                        )
+                except AppError as exc:
+                    await send(
+                        "error",
+                        code=exc.code,
+                        message=exc.message,
+                        recoverable=exc.status_code < 500,
+                    )
             elif event_type == "user.text":
                 if not ready:
                     await send("error", code="NOT_READY", message="请先开始面试")
@@ -631,9 +873,24 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                     )
                     continue
                 text = str(event.get("text", "")).strip()
+                legacy_duration = (
+                    round(
+                        max(
+                            0.0,
+                            min(time.monotonic() - text_answer_started_at, 3600.0),
+                        ),
+                        2,
+                    )
+                    if text_answer_started_at is not None
+                    else None
+                )
+                text_answer_started_at = None
                 if voice_session:
                     try:
-                        await voice_session.handle_text(text)
+                        await voice_session.handle_text(
+                            text,
+                            answer_duration_seconds=legacy_duration,
+                        )
                     except AppError as exc:
                         await send(
                             "error",
@@ -646,6 +903,7 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                         _handle_text_answer(
                             interview_id=interview_id,
                             answer=text,
+                            answer_duration_seconds=legacy_duration,
                             send=send,
                             stop_event=ending,
                             on_end=finalize,
@@ -768,6 +1026,7 @@ async def _handle_text_answer(
     *,
     interview_id: str,
     answer: str,
+    answer_duration_seconds: float | None = None,
     send: Any,
     stop_event: asyncio.Event,
     on_end: Any,
@@ -789,7 +1048,12 @@ async def _handle_text_answer(
         await send("interviewer.state", state="thinking")
         persisted = False
         try:
-            result = await interview_engine.answer(interview_id, answer)
+            result = await interview_engine.answer(
+                interview_id,
+                answer,
+                input_mode="text",
+                answer_duration_seconds=answer_duration_seconds,
+            )
             persisted = True
         except asyncio.CancelledError:
             if not persisted:
@@ -798,6 +1062,7 @@ async def _handle_text_answer(
                         interview_id,
                         answer,
                         input_mode="text",
+                        answer_duration_seconds=answer_duration_seconds,
                         ordinal=predicted_ordinal,
                     )
                 )
@@ -819,6 +1084,8 @@ async def _handle_text_answer(
                 message=exc.message,
                 recoverable=exc.code != "INTERVIEW_ENDED",
             )
+            if exc.code != "INTERVIEW_ENDED":
+                await send("answer.state.changed", state="idle")
             return
         if stop_event.is_set():
             if result.ended:
@@ -846,6 +1113,7 @@ async def _handle_text_answer(
         if result.ended:
             await on_end(result.end_reason or "poor_performance")
         else:
+            await send("answer.state.changed", state="idle")
             await send("interviewer.state", state="listening")
 
 
@@ -898,6 +1166,7 @@ def _public_interview(interview: dict[str, Any]) -> dict[str, Any]:
             "id",
             "company",
             "role",
+            "interview_type",
             "specialization",
             "language_mode",
             "stress",

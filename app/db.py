@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS interviews (
     client_id TEXT NOT NULL,
     company TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'backend',
+    interview_type TEXT NOT NULL DEFAULT 'technical',
     specialization TEXT NOT NULL DEFAULT '通用后端',
     language_mode TEXT NOT NULL DEFAULT 'bilingual',
     stress INTEGER NOT NULL DEFAULT 0,
@@ -225,6 +226,11 @@ class Database:
                     "ALTER TABLE interviews ADD COLUMN specialization TEXT "
                     "NOT NULL DEFAULT '通用后端'"
                 )
+            if "interview_type" not in columns:
+                connection.execute(
+                    "ALTER TABLE interviews ADD COLUMN interview_type TEXT "
+                    "NOT NULL DEFAULT 'technical'"
+                )
             if "language_mode" not in columns:
                 connection.execute(
                     "ALTER TABLE interviews ADD COLUMN language_mode TEXT "
@@ -283,6 +289,7 @@ class Database:
         client_id: str,
         company: str,
         role: str,
+        interview_type: str,
         specialization: str,
         language_mode: str,
         stress: bool,
@@ -301,6 +308,7 @@ class Database:
             client_id,
             company,
             role,
+            interview_type,
             specialization,
             language_mode,
             int(stress),
@@ -322,11 +330,11 @@ class Database:
             connection.execute(
                 """
                 INSERT INTO interviews (
-                    id, client_id, company, role, specialization, language_mode, stress,
-                    stress_level, duration_minutes, memory_enabled, voice_mode, resume_json,
-                    style_json, weak_topics_json, system_prompt, last_question,
-                    created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    id, client_id, company, role, interview_type, specialization,
+                    language_mode, stress, stress_level, duration_minutes,
+                    memory_enabled, voice_mode, resume_json, style_json,
+                    weak_topics_json, system_prompt, last_question, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 values,
             )
@@ -759,8 +767,8 @@ class Database:
         def operation(connection: sqlite3.Connection) -> list[dict[str, Any]]:
             rows = connection.execute(
                 """
-                SELECT r.report_json, i.role, i.specialization, i.language_mode, i.stress,
-                       i.stress_level, i.duration_minutes, i.ended_at,
+                SELECT r.report_json, i.role, i.interview_type, i.specialization,
+                       i.language_mode, i.stress, i.stress_level, i.duration_minutes, i.ended_at,
                        i.end_reason, i.memory_enabled, i.hint_events_json,
                        (SELECT COUNT(*) FROM interview_turns t
                         WHERE t.interview_id = r.interview_id
@@ -814,6 +822,11 @@ class Database:
                     hint_events = []
                 report.update(
                     role=row["role"],
+                    interview_type=(
+                        "technical_hr"
+                        if row["interview_type"] == "technical_hr"
+                        else "technical"
+                    ),
                     specialization=row["specialization"],
                     language_mode=row["language_mode"],
                     stress_level=int(row["stress_level"]),
@@ -951,6 +964,11 @@ class Database:
         )
         data["stress_level"] = stress_level
         data["stress"] = stress_level > 0
+        data["interview_type"] = (
+            "technical_hr"
+            if data.get("interview_type") == "technical_hr"
+            else "technical"
+        )
         data["specialization"] = str(data.get("specialization") or "通用后端")
         data["language_mode"] = (
             "zh" if data.get("language_mode") == "zh" else "bilingual"

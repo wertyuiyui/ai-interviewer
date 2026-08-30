@@ -4,12 +4,20 @@
   "company_name": "字节跳动",
   "role": "backend",
   "role_name": "后端开发实习生",
-  "interviewer_persona": "节奏快、结果导向、对含糊回答零容忍的字节一面面试官",
+  "interviewer_persona": "节奏快、结果导向，会顺着候选人的具体表述自然追问、但不使用机械套话的字节一面面试官",
   "stage_ratios": {
     "self_introduction": 0.08,
     "project_drilldown": 0.32,
     "fundamentals": 0.30,
     "coding_thought": 0.23,
+    "candidate_questions": 0.07
+  },
+  "technical_hr_stage_ratios": {
+    "self_introduction": 0.08,
+    "project_drilldown": 0.30,
+    "fundamentals": 0.17,
+    "coding_thought": 0.15,
+    "behavioral_hr": 0.23,
     "candidate_questions": 0.07
   },
   "project_vs_fundamentals_weights": {
@@ -37,17 +45,23 @@
   "minimum_project_drill_depth": 3,
   "pressure_profile": {
     "enabled_tactics": [
-      "chain_followup",
-      "challenge_and_denial",
-      "deliberate_interruption",
-      "ten_second_silence"
+      "high_difficulty_chain_followup",
+      "evidence_challenge",
+      "changing_constraints",
+      "conditional_interruption_on_expression_problem"
     ],
     "tone": "direct",
     "max_consecutive_same_tactic": 1,
     "silence_seconds": 10,
-    "failure_streak_to_end": 2
+    "failure_streak_to_end": 2,
+    "interruption_policy": "不得按轮次盲目打断；仅在明显跑题、重复绕圈、长时间无结论或前后矛盾时打断"
   },
-  "transition_style": "短句切换，不总结上一题，不给正确答案",
+  "transition_style": "承接上一答中的具体词自然切换，不复述整段回答，不用客服式过渡语，也不给正确答案",
+  "technical_hr_focus": [
+    "面对快速变化时的优先级和结果判断",
+    "后端方向的选择依据与两到三年成长规划",
+    "薪酬、成长空间和业务方向之间的真实排序"
+  ],
   "closing_sentence": "今天的面试就到这里。",
   "never_do_during_interview": [
     "点评候选人表现",

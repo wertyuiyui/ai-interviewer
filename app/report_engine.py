@@ -137,13 +137,20 @@ class ReportEngine:
             "interview_id": interview["id"],
             "report_id": report_id,
             "company": interview["company"],
+            "interview_type": interview.get("interview_type") or "technical",
             "ended_reason": interview["end_reason"],
             "specialization": interview.get("specialization"),
             "resume": interview.get("resume"),
             "transcript": transcript,
             "required": (
                 "输出每题扣分点、改写示范、四维 rubric、知识点分数、下次必练清单，"
-                "并分析简历内容、时间把握、措辞与岗位契合度；没有语音证据时不要猜语速或流畅度"
+                "并分析简历内容、时间把握、措辞与岗位契合度；没有语音证据时不要猜语速或流畅度。"
+                + (
+                    "本场是技术/综合（HR）面，还要基于对应问答分析价值观与公司契合、"
+                    "人生规划和选择逻辑、薪酬预期的依据与沟通方式；不得因薪酬数值本身扣分。"
+                    if interview.get("interview_type") == "technical_hr"
+                    else ""
+                )
             ),
         }
         try:
@@ -484,6 +491,26 @@ class ReportEngine:
     @staticmethod
     def _better_answer(turn: InterviewTurn) -> str:
         anchor = turn.anchor_keyword or turn.topic
+        if "综合面·薪酬期待" in turn.topic:
+            return (
+                "我会先坦诚说明预期范围和参考依据；再说明薪酬、成长空间、团队带教和方向匹配"
+                "在我这里的排序，以及为什么这样排序；最后明确可协商项和会直接影响选择的条件。"
+            )
+        if "综合面·人生规划与选择" in turn.topic:
+            return (
+                "我会先说明当前选择后端实习的具体原因，再把未来两三年的目标落到一两项能力；"
+                "接着给出已经开始的课程、项目或实习行动，最后说明遇到预期变化时的判断和调整标准。"
+            )
+        if "综合面·价值观与公司契合" in turn.topic:
+            return (
+                "我会选一个真实场景，先交代当时的约束和分歧，再说明我依据哪些事实做判断、"
+                "如何与团队沟通并采取行动；最后给出结果、复盘和下一次会改进的地方。"
+            )
+        if turn.topic == "自我介绍·整体与学习情况":
+            return (
+                "我会在一分钟内依次说明学校专业和年级、已完成的核心课程与当前学习重点、"
+                "熟悉的技术方向和本次实习目标；项目细节留到面试官单独追问时再展开。"
+            )
         return (
             f"我会先明确背景与目标，再说明我本人围绕“{anchor}”做的设计；"
             "随后按请求链路解释关键原理，用基线、统计窗口和结果数据验证收益；"
