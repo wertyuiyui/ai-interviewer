@@ -1,0 +1,4 @@
+# L1/L2 的 silero-vad 本地打断检测。Torch 较大，L3/L0 不需要安装此文件。
+silero-vad>=5.1,<7
+torch>=2.2,<3
+numpy>=1.26,<3
