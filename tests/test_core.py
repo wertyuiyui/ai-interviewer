@@ -784,6 +784,45 @@ async def test_mock_resume_parser_extracts_only_evidenced_candidate_name(tmp_pat
 
 
 @pytest.mark.asyncio
+async def test_resume_parser_separates_internship_from_generic_project_headings(tmp_path) -> None:
+    settings = mock_settings(tmp_path)
+    parsed = await ResumeParser(settings).parse(
+        "王小明 | 后端开发\n"
+        "xiaoming@example.com | 13800000000\n"
+        "某大学计算机本科\n"
+        "实习经历\n"
+        "某科技公司后端实习，负责订单系统和缓存服务的开发与排障。\n"
+        "项目介绍\n"
+        "技能：Java、Redis、MySQL"
+    )
+
+    assert parsed.candidate_name == "王小明"
+    assert len(parsed.internships) == 1
+    assert "某科技公司" in parsed.internships[0].company
+    assert parsed.projects == []
+
+
+def test_resume_normalization_rejects_hallucinated_name_and_section_projects() -> None:
+    normalized = ResumeParser._normalize(
+        {
+            "姓名": "某科技公司",
+            "教育": [],
+            "实习经历": [{"company": "实习经历", "highlights": ["负责订单链路"]}],
+            "项目": [
+                {"name": "项目介绍", "highlights": ["章节说明"]},
+                {"name": "订单平台", "highlights": ["实现幂等创建"]},
+            ],
+            "技能": [],
+        },
+        source_text="姓名：李明\n邮箱：liming@example.com\n项目介绍\n订单平台",
+    )
+
+    assert normalized["姓名"] == "李明"
+    assert normalized["实习经历"][0]["company"] == ""
+    assert [item["name"] for item in normalized["项目"]] == ["订单平台"]
+
+
+@pytest.mark.asyncio
 async def test_zero_turn_report_is_unscored_without_llm_or_memory_pollution(
     tmp_path,
 ) -> None:

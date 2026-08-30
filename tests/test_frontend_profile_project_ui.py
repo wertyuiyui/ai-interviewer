@@ -88,6 +88,9 @@ def test_standalone_profile_integrates_assets_mistakes_and_history() -> None:
         "profileMistakeList",
         "profileInterviewHistory",
         "profilePracticeHistory",
+        "resumeRenameDialog",
+        "editResumeName",
+        "saveResumeRename",
         "projectEditDialog",
         "editProjectName",
         "editProjectFiles",
@@ -115,6 +118,12 @@ def test_standalone_profile_integrates_assets_mistakes_and_history() -> None:
     assert "apiFetch('/api/profile'" in script
     assert "apiFetch('/api/profile/resumes'" in script
     assert "apiFetch('/api/profile/resumes/text'" in script
+    assert "function saveResumeRename()" in script
+    assert "/api/profile/resumes/${encodeURIComponent(editingResumeId)}`" in script
+    assert "/api/profile/resumes/${encodeURIComponent(id)}/reparse`" in script
+    assert "重新识别" in script
+    assert "method: 'PATCH'" in script
+    assert "【实习经历】" in script and "resume-internship-strip" in style
     assert "apiFetch('/api/profile/projects'" in script
     assert "'/api/profile/projects/github'" in script
     assert "'/api/profile/projects/links'" in script
@@ -122,6 +131,9 @@ def test_standalone_profile_integrates_assets_mistakes_and_history() -> None:
     assert "/api/history?client_id=" in script
     assert "/api/practice/history?client_id=" in script
     assert "Promise.allSettled" in script
+    assert "profile-scope-toggle-card" in page
+    assert 'input[type="checkbox"]' in style
+    assert "/js/profile.js?v=20260830-resume-structure-v2" in page
     assert "@media (max-width: 720px)" in style
     assert ".profile-edit-dialog" in style
     assert "font-family: var(--font-serif)" in style

@@ -6,6 +6,7 @@ import {
 const RESUME_SELECTION_KEY = 'mock_interview.profile_resume.v1';
 const state = { profile: { resumes: [], projects: [], selected_project_id: '' }, mistakes: [], interviews: [], practice: [] };
 let editingProjectId = '';
+let editingResumeId = '';
 
 function element(tag, className = '', text = '') {
   const node = document.createElement(tag);
@@ -185,6 +186,12 @@ function renderResumes() {
     const avatar = element('span', 'resume-avatar', resumeSurname(resume));
     const copy = element('span', 'resume-card-copy');
     copy.append(element('strong', '', itemName(resume, '未命名简历')), element('small', '', `${formatDate(resume.created_at, false)} · ${resume.source_type === 'text' ? '文字简历' : 'PDF 简历'}`));
+    const internships = Array.isArray(resume?.parsed_resume?.['实习经历']) ? resume.parsed_resume['实习经历'] : [];
+    if (internships.length) {
+      const first = internships[0] || {};
+      const internshipLabel = [first.company, first.role].filter(Boolean).join(' · ');
+      copy.append(element('span', 'resume-internship-strip', `【实习经历】${internships.length} 段${internshipLabel ? ` · ${internshipLabel}` : ''}`));
+    }
     const actions = element('span', 'resume-card-actions');
     const choose = element('button', chosen ? 'is-selected' : '', chosen ? '模拟面试已选' : '设为开面简历');
     choose.type = 'button';
@@ -195,17 +202,67 @@ function renderResumes() {
       renderCounts();
       showToast('已设为下一场模拟面试使用的简历。', 'success');
     });
+    const rename = element('button', '', '重命名');
+    rename.type = 'button';
+    rename.addEventListener('click', (event) => {
+      event.preventDefault();
+      openResumeRename(resume);
+    });
+    const reparse = element('button', '', '重新识别');
+    reparse.type = 'button';
+    reparse.addEventListener('click', async (event) => {
+      event.preventDefault();
+      setButtonBusy(reparse, true, '识别中…');
+      try {
+        await apiFetch(`/api/profile/resumes/${encodeURIComponent(id)}/reparse`, {
+          method: 'POST', timeout: 65_000, json: { client_id: getClientId() },
+        });
+        await loadProfile();
+        showToast('简历已按最新规则重新识别；旧项目关联已清除，请核对后重新关联。', 'success', 5200);
+      } catch (error) {
+        showToast(error?.message || '简历重新识别失败。', 'error', 5200);
+        setButtonBusy(reparse, false);
+      }
+    });
     const remove = element('button', 'is-danger', '删除');
     remove.type = 'button';
     remove.addEventListener('click', (event) => {
       event.preventDefault();
       deleteProfileItem('resumes', resume);
     });
-    actions.append(choose, remove);
+    actions.append(choose, rename, reparse, remove);
     summary.append(avatar, copy, actions);
     card.append(summary, renderResumeDetails(resume));
     list.append(card);
   });
+}
+
+function openResumeRename(resume) {
+  editingResumeId = itemId(resume);
+  $('#editResumeName').value = itemName(resume, '未命名简历');
+  $('#resumeRenameStatus').textContent = '';
+  const dialog = $('#resumeRenameDialog');
+  if (!dialog.open) dialog.showModal();
+  window.requestAnimationFrame(() => $('#editResumeName').select());
+}
+
+async function saveResumeRename() {
+  const name = $('#editResumeName').value.trim();
+  if (!editingResumeId || !name) return showToast('请填写简历名称。', 'error');
+  const button = $('#saveResumeRename');
+  setButtonBusy(button, true, '正在保存…');
+  try {
+    await apiFetch(`/api/profile/resumes/${encodeURIComponent(editingResumeId)}`, {
+      method: 'PATCH', timeout: 15_000, json: { client_id: getClientId(), name },
+    });
+    await loadProfile();
+    $('#resumeRenameStatus').textContent = '名称已保存。';
+    $('#resumeRenameDialog').close();
+    showToast('简历已重命名。', 'success');
+  } catch (error) {
+    $('#resumeRenameStatus').textContent = '保存失败';
+    showToast(error?.message || '简历重命名失败。', 'error');
+  } finally { setButtonBusy(button, false); }
 }
 
 function projectTypeLabel(project) {
@@ -662,6 +719,7 @@ $('#profileProjectType').addEventListener('change', () => {
 });
 $('#saveProjectFiles').addEventListener('click', uploadProjectFiles);
 $('#saveProjectLinks').addEventListener('click', saveProjectLinks);
+$('#saveResumeRename').addEventListener('click', saveResumeRename);
 $('#editProjectPartialScope').addEventListener('change', () => $('#editProjectResponsibility').classList.toggle('is-hidden', !$('#editProjectPartialScope').checked));
 $('#saveProjectEdit').addEventListener('click', saveProjectEdit);
 $('#appendProjectFiles').addEventListener('click', appendEditingProjectFiles);

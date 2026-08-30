@@ -78,6 +78,22 @@ async def test_profile_routes_project_analysis_and_interview_snapshot(
         resume = resume_response.json()["resume"]
         assert resume["parsed_resume"]["项目"]
 
+        renamed_resume = await client.patch(
+            f"/api/profile/resumes/{resume['id']}",
+            json={"client_id": client_id, "name": "后端实习简历 · 主投版"},
+        )
+        assert renamed_resume.status_code == 200
+        assert renamed_resume.json()["resume"]["name"] == "后端实习简历 · 主投版"
+        assert renamed_resume.json()["resume"]["parsed_resume"] == resume["parsed_resume"]
+
+        reparsed_resume = await client.post(
+            f"/api/profile/resumes/{resume['id']}/reparse",
+            json={"client_id": client_id},
+        )
+        assert reparsed_resume.status_code == 200
+        assert reparsed_resume.json()["resume"]["name"] == "后端实习简历 · 主投版"
+        assert reparsed_resume.json()["resume"]["parsed_resume"]["项目"]
+
         text_resume_response = await client.post(
             "/api/profile/resumes/text",
             json={
@@ -243,6 +259,13 @@ async def test_profile_routes_project_analysis_and_interview_snapshot(
                 headers={"X-Profile-Key": "different-client-0000001"},
         )
         assert unauthorized.status_code == 404
+
+        unauthorized_resume_rename = await client.patch(
+            f"/api/profile/resumes/{resume['id']}",
+            json={"client_id": "different-client-0000001", "name": "越权改名"},
+            headers={"X-Profile-Key": "different-client-0000001"},
+        )
+        assert unauthorized_resume_rename.status_code == 404
 
         missing_stream = await client.post(
             "/api/profile/projects/missing-project/analysis/stream",

@@ -7,7 +7,7 @@
     <meta name="description" content="管理砺面匿名个人档案、简历、论文项目、错题本与练习历史。">
     <title>个人档案 · 砺面</title>
     <link rel="stylesheet" href="/assets/app.css?v=20260830-profile-edit-v1">
-    <link rel="stylesheet" href="/assets/profile.css?v=20260830-profile-edit-v1">
+    <link rel="stylesheet" href="/assets/profile.css?v=20260830-resume-structure-v2">
   </head>
   <body class="profile-page">
     <header class="site-header">
@@ -58,13 +58,21 @@
       </section>
     </main>
 
+    <dialog class="profile-edit-dialog profile-rename-dialog" id="resumeRenameDialog" aria-labelledby="resumeRenameTitle">
+      <form method="dialog" class="profile-edit-dialog-shell">
+        <header><div><span>RENAME RESUME</span><h2 id="resumeRenameTitle">重命名简历</h2><p>只修改档案中的显示名称，不会重新解析或改变历史面试快照。</p></div><button class="profile-dialog-close" value="cancel" aria-label="关闭重命名窗口">×</button></header>
+        <div class="profile-edit-fields profile-rename-fields"><label>简历名称<input id="editResumeName" type="text" maxlength="120" autocomplete="off"></label></div>
+        <footer><span id="resumeRenameStatus" role="status" aria-live="polite"></span><button class="primary-link" id="saveResumeRename" type="button"><span class="button-label">保存名称</span></button></footer>
+      </form>
+    </dialog>
+
     <dialog class="profile-edit-dialog" id="projectEditDialog" aria-labelledby="projectEditTitle">
       <form method="dialog" class="profile-edit-dialog-shell">
         <header><div><span>EDIT PROJECT</span><h2 id="projectEditTitle">编辑论文 / 项目</h2><p>修改基础信息，或继续追加关联文件和公开链接。</p></div><button class="profile-dialog-close" value="cancel" aria-label="关闭编辑窗口">×</button></header>
         <div class="profile-edit-fields">
           <label>名称<input id="editProjectName" type="text" maxlength="120"></label>
           <label>类型<select id="editProjectType"><option value="application">应用类项目</option><option value="technical">技术类项目</option><option value="paper">论文</option></select></label>
-          <label class="is-wide profile-scope-toggle"><span><input id="editProjectPartialScope" type="checkbox"> 我只负责其中一部分</span><textarea class="is-hidden" id="editProjectResponsibility" rows="3" maxlength="1200" placeholder="填写本人负责的模块、链路或实验"></textarea></label>
+          <label class="is-wide profile-scope-toggle profile-scope-toggle-card"><span class="profile-scope-control"><input id="editProjectPartialScope" type="checkbox"><span class="profile-scope-copy"><strong>我只负责其中一部分</strong><small>勾选后填写本人负责的模块、链路或实验</small></span></span><textarea class="is-hidden" id="editProjectResponsibility" rows="3" maxlength="1200" placeholder="填写本人负责的模块、链路或实验"></textarea></label>
         </div>
         <div class="profile-edit-assets"><section><header><h3>关联文件</h3><span id="editProjectFileCount">0 个文件</span></header><label class="profile-file-button" for="editProjectFiles">选择要追加的文件<input id="editProjectFiles" type="file" multiple></label><button class="secondary-button" id="appendProjectFiles" type="button"><span class="button-label">追加文件</span></button></section><section><header><h3>关联链接</h3><span id="editProjectLinkCount">0 个链接</span></header><textarea id="editProjectLinks" rows="3" placeholder="每行一个新的 GitHub / arXiv 链接"></textarea><button class="secondary-button" id="appendProjectLinks" type="button"><span class="button-label">追加链接</span></button></section></div>
         <div class="profile-edit-current" id="editProjectCurrentAssets"></div>
@@ -72,6 +80,6 @@
       </form>
     </dialog>
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-    <script type="module" src="/js/profile.js?v=20260830-profile-edit-v1"></script>
+    <script type="module" src="/js/profile.js?v=20260830-resume-structure-v2"></script>
   </body>
 </html>

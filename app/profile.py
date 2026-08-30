@@ -313,6 +313,34 @@ class ProfileResumeCreate(BaseModel):
         return self
 
 
+class ProfileResumeUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_id: str = Field(min_length=8, max_length=128)
+    name: str = Field(min_length=1, max_length=120)
+
+    @field_validator("client_id")
+    @classmethod
+    def validate_client_id(cls, value: str) -> str:
+        return clean_client_id(value)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, value: str) -> str:
+        return _clean_label(value, field="简历名称")
+
+
+class ProfileResumeReparse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    client_id: str = Field(min_length=8, max_length=128)
+
+    @field_validator("client_id")
+    @classmethod
+    def validate_client_id(cls, value: str) -> str:
+        return clean_client_id(value)
+
+
 class ProfileProjectCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1914,6 +1942,64 @@ class ProfileService:
 
         if not await self.db._run(operation):
             raise AppError("PROFILE_RESUME_NOT_FOUND", "简历不存在", status_code=404)
+
+    async def update_resume(
+        self, resume_id: str, request: ProfileResumeUpdate
+    ) -> dict[str, Any]:
+        def operation(connection: sqlite3.Connection) -> int:
+            cursor = connection.execute(
+                "UPDATE profile_resumes SET name = ? WHERE id = ? AND client_id = ?",
+                (request.name, resume_id, request.client_id),
+            )
+            connection.commit()
+            return cursor.rowcount
+
+        if not await self.db._run(operation):
+            raise AppError("PROFILE_RESUME_NOT_FOUND", "简历不存在", status_code=404)
+        return await self.get_resume(resume_id, request.client_id)
+
+    async def reparse_resume(
+        self, resume_id: str, request: ProfileResumeReparse
+    ) -> dict[str, Any]:
+        def read_text(connection: sqlite3.Connection) -> str | None:
+            row = connection.execute(
+                "SELECT text_content FROM profile_resumes WHERE id = ? AND client_id = ?",
+                (resume_id, request.client_id),
+            ).fetchone()
+            return None if not row else str(row["text_content"] or "")
+
+        text = await self.db._run(read_text)
+        if text is None:
+            raise AppError("PROFILE_RESUME_NOT_FOUND", "简历不存在", status_code=404)
+        if len(re.sub(r"\s", "", text)) < 30:
+            raise AppError(
+                "PROFILE_RESUME_SOURCE_UNAVAILABLE",
+                "这份简历没有可重新识别的原始文字，请重新上传",
+                status_code=409,
+            )
+        parsed = await self.resume_parser.parse(text)
+        parsed_json = parsed.model_dump_json(by_alias=True)
+
+        def operation(connection: sqlite3.Connection) -> int:
+            cursor = connection.execute(
+                "UPDATE profile_resumes SET parsed_resume_json = ? "
+                "WHERE id = ? AND client_id = ?",
+                (parsed_json, resume_id, request.client_id),
+            )
+            if cursor.rowcount:
+                # Project positions may change when false section headings are
+                # removed. Keeping index-based links would silently associate
+                # a different experience after reparsing.
+                connection.execute(
+                    "DELETE FROM profile_resume_project_links WHERE resume_id = ?",
+                    (resume_id,),
+                )
+            connection.commit()
+            return cursor.rowcount
+
+        if not await self.db._run(operation):
+            raise AppError("PROFILE_RESUME_NOT_FOUND", "简历不存在", status_code=404)
+        return await self.get_resume(resume_id, request.client_id)
 
     @staticmethod
     def _resume_project_associations(
@@ -3681,6 +3767,8 @@ __all__ = [
     "ProfileProjectSelection",
     "ProfileProjectUpdate",
     "ProfileResumeCreate",
+    "ProfileResumeReparse",
+    "ProfileResumeUpdate",
     "ProfileResumeProjectAssociation",
     "ProfileService",
     "ProjectAnalysis",

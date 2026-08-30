@@ -21,6 +21,13 @@ it and extract only facts explicitly present in the document.
 
 - Keep education, internships, projects and skills separate. Preserve the
   document order inside each section.
+- Treat labels such as `项目介绍`, `项目经历`, `个人项目`, `Projects`, and
+  `Project Experience` as section headings, never as project names. A project
+  must have a distinct name in its own entry; drop an otherwise unnamed
+  heading instead of inventing a project.
+- Keep work performed during an internship under `实习经历`, even when its
+  bullets mention systems, services, or internal projects. Create a separate
+  project entry only when the resume presents a separately named project.
 - A project or publication needs its own name. Put only URLs printed on the
   same entry into that entry's `links`; never attach every resume URL to every
   project.

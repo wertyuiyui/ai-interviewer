@@ -32,6 +32,8 @@ from app.profile import (
     ProjectInterviewQuestion,
     ProfileResumeCreate,
     ProfileResumeProjectAssociation,
+    ProfileResumeReparse,
+    ProfileResumeUpdate,
     ProfileService,
     ProjectUpload,
     _select_github_candidates,
@@ -72,7 +74,7 @@ async def test_profile_persists_multiple_resumes_projects_and_selection(profile_
         ProfileResumeCreate(
             client_id="profile-client-001",
             name="Java 后端简历",
-            text="某大学计算机本科，项目使用 Java、Redis 和 MySQL。",
+            text="某大学计算机本科，订单服务项目使用 Java、Redis 和 MySQL。",
             parsed_resume=ResumeData(
                 项目=[Project(name="订单服务", technologies=["Java", "Redis"])]
             ),
@@ -90,6 +92,25 @@ async def test_profile_persists_multiple_resumes_projects_and_selection(profile_
     )
     assert first_resume["parsed_resume"]["项目"][0]["name"] == "订单服务"
     assert second_resume["parsed_resume"]["项目"][0]["name"] == "网关"
+
+    renamed_resume = await service.update_resume(
+        first_resume["id"],
+        ProfileResumeUpdate(client_id="profile-client-001", name="Java 后端主投版"),
+    )
+    assert renamed_resume["name"] == "Java 后端主投版"
+    assert renamed_resume["parsed_resume"] == first_resume["parsed_resume"]
+    with pytest.raises(AppError) as wrong_resume_owner:
+        await service.update_resume(
+            first_resume["id"],
+            ProfileResumeUpdate(client_id="another-client-001", name="越权改名"),
+        )
+    assert wrong_resume_owner.value.status_code == 404
+
+    reparsed_resume = await service.reparse_resume(
+        first_resume["id"], ProfileResumeReparse(client_id="profile-client-001")
+    )
+    assert reparsed_resume["name"] == "Java 后端主投版"
+    assert reparsed_resume["parsed_resume"]["项目"]
 
     uploaded = await service.create_uploaded_project(
         ProfileProjectCreate(

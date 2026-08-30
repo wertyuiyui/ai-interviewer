@@ -29,6 +29,8 @@ from .profile import (
     ProfileProjectUpdate,
     ProfileResumeCreate,
     ProfileResumeProjectAssociation,
+    ProfileResumeReparse,
+    ProfileResumeUpdate,
     ProfileService,
     ProjectUpload,
     clean_client_id,
@@ -227,6 +229,44 @@ def create_profile_router(
         )
         await service_provider().delete_resume(resume_id, client_id)
         return {"deleted": True}
+
+    @router.patch("/resumes/{resume_id}")
+    async def update_resume(
+        resume_id: str,
+        request: ProfileResumeUpdate,
+        http_request: Request,
+        profile_key: str = Header(
+            alias="X-Profile-Key", min_length=24, max_length=128
+        ),
+    ) -> dict[str, Any]:
+        _verify_profile_key(profile_key, request.client_id)
+        await require_budget(
+            http_request,
+            action="profile-resume-update",
+            client_id=request.client_id,
+            host_limit=120,
+            client_limit=60,
+        )
+        return {"resume": await service_provider().update_resume(resume_id, request)}
+
+    @router.post("/resumes/{resume_id}/reparse")
+    async def reparse_resume(
+        resume_id: str,
+        request: ProfileResumeReparse,
+        http_request: Request,
+        profile_key: str = Header(
+            alias="X-Profile-Key", min_length=24, max_length=128
+        ),
+    ) -> dict[str, Any]:
+        _verify_profile_key(profile_key, request.client_id)
+        await require_budget(
+            http_request,
+            action="profile-resume-reparse",
+            client_id=request.client_id,
+            host_limit=24,
+            client_limit=20,
+        )
+        return {"resume": await service_provider().reparse_resume(resume_id, request)}
 
     @router.put("/resumes/{resume_id}/projects/{project_index}/association")
     async def associate_resume_project(

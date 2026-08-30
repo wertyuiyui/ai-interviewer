@@ -19,7 +19,7 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
-| `PROFILE-003` | `/root` | `in_progress` | 支持简历重命名；修正姓名与项目/项目介绍边界识别；档案页补充实习经历信息栏；美化论文/项目编辑弹窗的部分负责控件 | `analysis_skills/resume-reader/SKILL.md`, `app/resume.py`, `app/profile.py`, `app/profile_routes.py`, `public/profile.html`, `public/js/profile.js`, `public/assets/profile.css`, `tests/test_api.py`, `tests/test_core.py`, `tests/test_profile.py`, `tests/test_profile_api.py`, `tests/test_frontend_profile_project_ui.py`, `process.md` | `PROJECT-009` 已完成并形成独立提交；基于其结果接续，不改写项目题目证据隔离语义 |
+| `INTERVIEW-004` | `/root` | `in_progress` | 修复面试官忽略候选人项目归属否认、把否认文本当追问锚点的问题；优先听取回答并切换到简历内经历 | `interview_skills/interviewer_core.json`, `app/interview_engine.py`, `app/prompt_engine.py`, `tests/test_interviewer_skill.py`, `tests/test_project_ownership_correction.py`, `process.md` | 与 `PROFILE-003` 仅共享 `process.md`；不修改或暂存其 Profile、resume 与 `tests/test_core.py` 文件 |
 
 登记模板：
 
@@ -38,6 +38,15 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### PROFILE-003 · 2026-08-30 · 简历重命名、可靠重识别与实习信息栏
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：简历卡片新增重命名弹窗与受匿名档案密钥约束的 PATCH 接口，只修改显示名称，不重新解析或改写历史快照；新增用户主动触发的“重新识别”，使用已保存原始文字按最新规则重建结构化简历，并清除可能因项目下标变化而错绑的旧项目关联。姓名必须由原文姓名标签或带联系方式的页眉确定性复核，模型无法复现的姓名会被回退或清空；`项目介绍/项目经历/个人项目/Projects` 等章节标题、无独立项目名的说明会被过滤，实习中提及的系统和服务默认保留在实习经历而不重复生成为项目。简历折叠卡片在识别到实习时新增【实习经历】摘要信息栏。论文/项目编辑弹窗重做“我只负责其中一部分”复选框宽度、文字层级、说明和间距，修复通用输入宽度把复选框撑开的布局问题。
+- 实际文件：`analysis_skills/resume-reader/SKILL.md`、`app/resume.py`、`app/profile.py`、`app/profile_routes.py`、`public/profile.html`、`public/js/profile.js`、`public/assets/profile.css`、`tests/test_core.py`、`tests/test_profile.py`、`tests/test_profile_api.py`、`tests/test_frontend_profile_project_ui.py`、`process.md`。
+- 验证：`resume-reader` skill quick validator、Python compileall、`node --check public/js/profile.js`、`git diff --check` 均通过；解析/Profile/API/档案前端专项 `87 passed`；包含并发 `INTERVIEW-004` 的共享工作区全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `242 passed`。
+- 风险或后续事项：已保存简历不会在后台自动产生付费重解析；用户点击“重新识别”后才更新，结构化项目顺序改变时需重新确认档案项目关联。姓名策略有意保守，无法从姓名标签或联系方式邻近页眉确认时继续显示 `?`，避免从文件名、学校或公司猜测。
 
 ### PROJECT-009 · 2026-08-30 · 首页 Profile 整合与真实项目深挖练习
 
