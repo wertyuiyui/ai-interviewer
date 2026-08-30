@@ -19,7 +19,6 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
-| `PAPER-001` | `/root` | `in_progress` | 将项目解读升级为论文/项目解读：项目类型、多链接与 arXiv、论文阅读 skill、架构组件生成、默认全责、类型化介绍与深挖提问 | `analysis_skills/paper-reader/SKILL.md`, `app/profile.py`, `app/profile_routes.py`, `public/project.html`, `public/js/project.js`, `public/assets/project.css`, `public/index.html`, `public/js/home.js`, `public/assets/app.css`, `tests/test_profile.py`, `tests/test_profile_api.py`, `tests/test_frontend_profile_project_ui.py`, `README.md`, `process.md` | 当前无其它进行中任务；保留生产 `.env`/`data`，部署前完成迁移与全量回归 |
 
 登记模板：
 
@@ -28,13 +27,13 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 已推送并部署的稳定提交：`b8e88cf`
+- 当前生产已部署提交：`4e29845`；GitHub `origin/main` 仍为 `3aeea1b`（推送因远程归属未确认被安全审查拦截）
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、中英双语、纯英文
-- 当前已部署功能的全量验证基线：`204 passed`
+- 当前已部署功能的全量验证基线：`215 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
@@ -238,3 +237,21 @@
 - 文件：`analysis_skills/paper-reader/SKILL.md`、`app/profile.py`、`app/profile_routes.py`、`public/project.html`、`public/js/project.js`、`public/assets/project.css`、`public/index.html`、`public/js/home.js`、`public/assets/app.css`、`tests/test_profile.py`、`tests/test_profile_api.py`、`tests/test_frontend_profile_project_ui.py`、`README.md`、`process.md`。
 - 验证：论文 skill quick validator 通过；`PYTHONPATH=.deps .venv/bin/python -m compileall -q app`、`node --check public/js/home.js public/js/project.js`、`git diff --check` 通过；最终全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `215 passed`。
 - 风险或后续事项：论文 PDF 仅做文本抽取，不进行版面视觉理解，复杂公式/图表仍需结合原文核实；arXiv 抓取只允许固定官方主机且不跟随重定向，重复解读可能触发一次新的百炼调用。生产同步必须保留 `.env`、`data/`、`.venv/`、`.deps/` 和 `.git/`，只重启目标应用服务并复核三处健康端点。
+
+### PAPER-001 · 2026-08-30 · 论文/项目解读完成
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：发布候选提交为 `4e29845`（`feat: add paper and typed project analysis`），实现范围、测试结果和剩余 PDF 版面局限见上一条同 ID 记录。任务已从进行中表移除，生产同步与健康检查见 `DEPLOY-004`。
+- 文件：与上一条 `PAPER-001` 相同；本条额外更新 `process.md` 的稳定基线和任务状态。
+- 验证：提交前全量 `215 passed`，skill validator、Python compileall、两份前端脚本语法检查和 `git diff --check` 均通过；生产页面和新 API 契约已做只读验证。
+- 风险或后续事项：GitHub 推送未完成；安全审查指出远程 `https://github.com/wertyuiyui/ai-interviewer.git` 的归属未获本次会话明确确认。未尝试绕过，待用户明确授权该远程 `main` 后再推送本地 `8c783bb..4e29845` 提交链。
+
+### DEPLOY-004 · 2026-08-30 · 论文/项目解读生产发布
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：将本地已提交版本 `4e29845` 同步到固定生产目录 `/opt/ai-interviewer-mvp`。同步前创建不含密钥、数据库和依赖的回滚包 `/tmp/ai-interviewer-mvp-pre-4e29845-20260830.tar.gz`；rsync 明确排除并保留 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 和测试缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 文件：生产目录中的提交 `4e29845` 工作树；生产密钥、SQLite 数据和依赖目录未修改。
+- 验证：`ai-interviewer-3000.service` 为 `active (running)`，主进程 PID `613050`；`http://127.0.0.1:8000/healthz`、以正式域名 SNI 直连本机 Caddy 的 443 与 HTTPS 3000 均返回 `{"status":"ok"}`；生产 `/project` 已包含“论文/项目解读”、类型选择和 arXiv 文案，生产 OpenAPI 已注册 `/api/profile/projects/links`；回滚包及生产 `.env`、`data/`、`.deps/` 均确认存在。
+- 风险或后续事项：服务刚重启的启动窗口内，沙箱网络命名空间两次无法连接 8000；宿主侧状态显示应用在约 2 秒后完成启动，随后三处健康检查全部正常。GitHub 同步状态见上一条 `PAPER-001`，不影响当前生产运行。
