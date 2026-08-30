@@ -61,7 +61,7 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
             2,
             3,
         ]
-        assert config_payload["references"][0]["name"] == "ARIS-in-AI-Offer"
+        assert "references" not in config_payload
         assert config.headers["cache-control"] == "no-store"
 
         catalog = await client.get("/api/resources/catalog")

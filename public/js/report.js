@@ -3,7 +3,7 @@ import {
   firstValue, formatDate, getCachedReports, getClientId, getCurrentSession,
   normalizeHistoryPayload, removeCachedReport, score10, setButtonBusy,
   setCurrentSession, showToast, toArray,
-} from './common.js';
+} from './common.js?v=20260830-hide-internals';
 
 const query = new URLSearchParams(location.search);
 const sessionId = query.get('session') || '';

@@ -13,10 +13,10 @@ export const COMPANY_LABELS = Object.freeze({
 });
 
 export const MODE_LABELS = Object.freeze({
-  L0: 'L0 · 端到端语音',
-  L1: 'L1 · 百炼语音管道',
-  L2: 'L2 · 免费语音兜底',
-  L3: 'L3 · 纯文字模式',
+  L0: '实时语音',
+  L1: '实时语音（兼容模式）',
+  L2: '语音模式（兼容模式）',
+  L3: '文字模式',
 });
 
 let fallbackClientId = '';

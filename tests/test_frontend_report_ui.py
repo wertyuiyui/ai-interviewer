@@ -52,3 +52,26 @@ def test_extended_evidence_report_and_source_visibility_contract() -> None:
     assert "localStorage.removeItem(STORAGE.legacyReports)" in common_js
     assert "firstValue(metadata, ['score_status'], '')" in report_js
     assert "firstValue(metadata, ['scored'], undefined)" in report_js
+
+
+def test_public_pages_hide_internal_source_and_voice_tier_copy() -> None:
+    public = ROOT / "public"
+    visible_source = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            public / "index.html",
+            public / "interview.html",
+            public / "report.html",
+            public / "js" / "home.js",
+            public / "js" / "interview.js",
+            public / "js" / "report.js",
+            public / "js" / "common.js",
+        )
+    )
+
+    assert "AI 工程方向会混入约 1/3 的模型服务题" not in visible_source
+    assert "精选改写自 ARIS-in-AI-Offer" not in visible_source
+    assert "ARIS-in-AI-Offer" not in visible_source
+    assert "L0 · 端到端语音" not in visible_source
+    assert "实时语音" in visible_source
+    assert "?v=20260830-hide-internals" in visible_source

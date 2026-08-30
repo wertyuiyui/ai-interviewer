@@ -210,14 +210,6 @@ async def config() -> dict[str, Any]:
             {"id": "zh", "name": "全程中文"},
             {"id": "bilingual", "name": "中英双语"},
         ],
-        "references": [
-            {
-                "name": "ARIS-in-AI-Offer",
-                "url": "https://wanshuiyin.github.io/ARIS-in-AI-Offer/",
-                "license": "MIT",
-                "scope": "AI 工程后端 / LLM Infra 精选题",
-            }
-        ],
         "daily_interview_limit": settings.daily_interview_limit,
     }
 

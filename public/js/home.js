@@ -2,7 +2,7 @@ import {
   $, $$, apiFetch, getClientId, getSavedSetup, modeLabel,
   normalizeHistoryPayload, normalizeMode, saveSetup, setButtonBusy,
   setCurrentSession, showToast, firstValue, toArray,
-} from './common.js';
+} from './common.js?v=20260830-hide-internals';
 
 const form = $('#setupForm');
 const fileInput = $('#resumeFile');
