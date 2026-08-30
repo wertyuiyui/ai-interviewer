@@ -148,15 +148,18 @@ class BrowserVoiceSession:
         self._audio_input_frames = 0
         self._audio_input_bytes = 0
         self._audio_input_peak_rms = 0
+        self._audio_level_window_peak_rms = 0
         self._audio_output_chunks = 0
         self._audio_output_bytes = 0
         self._vad_started_count = 0
         self._transcript_partial_count = 0
         self._transcript_done_count = 0
         self._transcript_failed_count = 0
+        self._completed_transcription_item_ids: set[str] = set()
         self._first_audio_input_at: float | None = None
         self._last_audio_input_at: float | None = None
         self._last_audio_health_log_at = 0.0
+        self._last_audio_level_sent_at = 0.0
         self._speech_started_at: float | None = None
         self._omni_expected_speech: str | None = None
 
@@ -318,6 +321,9 @@ class BrowserVoiceSession:
         self._audio_input_frames += 1
         self._audio_input_bytes += len(pcm)
         self._audio_input_peak_rms = max(self._audio_input_peak_rms, rms)
+        self._audio_level_window_peak_rms = max(
+            self._audio_level_window_peak_rms, rms
+        )
         self._last_audio_input_at = now
         if self._first_audio_input_at is None:
             self._first_audio_input_at = now
@@ -344,6 +350,21 @@ class BrowserVoiceSession:
                 self._transcript_failed_count,
             )
         try:
+            # Confirm what reached the server, independently of the browser's
+            # local waveform.  A one-second cadence is enough for diagnostics
+            # without adding meaningful WebSocket traffic.
+            if now - self._last_audio_level_sent_at >= 1:
+                self._last_audio_level_sent_at = now
+                window_peak_rms = self._audio_level_window_peak_rms
+                self._audio_level_window_peak_rms = 0
+                await self.send(
+                    "audio.input.level",
+                    rms=rms,
+                    window_peak_rms=window_peak_rms,
+                    peak_rms=self._audio_input_peak_rms,
+                    frames=self._audio_input_frames,
+                    signal="active" if window_peak_rms >= 64 else "quiet",
+                )
             if self.actual_mode == "L0" and self.omni:
                 await self.omni.send_audio(pcm)
                 return
@@ -563,6 +584,15 @@ class BrowserVoiceSession:
                     )
                 elif event_type == "user_done":
                     await self._candidate_speech_ended()
+                    item_id = str(event.get("item_id") or "").strip()
+                    if item_id and item_id in self._completed_transcription_item_ids:
+                        logger.info(
+                            "voice.transcript.duplicate interview_id=%s item_present=true",
+                            self.interview_id,
+                        )
+                        continue
+                    if item_id:
+                        self._completed_transcription_item_ids.add(item_id)
                     text = str(event.get("text", "")).strip()
                     self._transcript_done_count += 1
                     speech_ms = None

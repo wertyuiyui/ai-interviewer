@@ -135,7 +135,9 @@ L0/L1/L2 建议填写 `DASHSCOPE_WORKSPACE_ID`，程序会自动拼接北京地�
 
 L0 保留 Omni 的服务端 VAD、ASR、TTS 与 `interrupt_response`，但关闭供应商的自动追问；共享的服务端剧本引擎完成七维深挖、答崩计数和弱项记忆后，再显式创建对应语音响应。候选人开始说话时页面立即清空播放队列；结束语则通过 `audio.stream.done → audio.playback.done` 确认浏览器真正播完后才跳报告页。
 
-浏览器每 100 ms 上传一帧 16 kHz PCM，只在服务端完成供应商预检并发出 `mode.changed` 后开始上行；弱网时丢弃陈旧帧，把排队限制在约 1 秒内。ASR 返回空结果或单轮转写失败时会在页面明确提示重试，不会默默卡住或拆掉整条连接。服务端日志只记帧数、字节数、RMS、VAD/转写计数与耗时，不记录音频或对话正文。
+浏览器每 100 ms 上传一帧 16 kHz PCM，只在服务端完成供应商预检并发出 `mode.changed` 后开始上行；弱网时丢弃陈旧帧，把排队限制在约 1 秒内。ASR 返回空结果或单轮转写失败时会在页面明确提示重试，不会默默卡住或拆掉整条连接。面试页会显示增量实时转写、本地输入电平和服务端确认的信号状态；若持续近静音，可直接切换输入设备，或启用“原始输入”关闭浏览器降噪、回声消除与自动增益。多声道设备由 Worklet 选择有效声道后再转成单声道，避免聚合声卡首声道静音。服务端日志只记帧数、字节数、RMS、VAD/转写计数与耗时，不记录音频或对话正文。
+
+没有任何有效回答或可用转写的场次会生成“数据不足 / 不计分”报告，不会以 5.0 或 0.0 冒充真实成绩，也不会进入弱项记忆和成长曲线。
 
 ## 关键配置
 
@@ -149,7 +151,9 @@ L0 保留 Omni 的服务端 VAD、ASR、TTS 与 `interrupt_response`，但关闭
 | `QWEN_REPORT_MODEL` | `qwen-plus` | 报告生成 |
 | `QWEN_REALTIME_MODEL` | `qwen3.5-omni-flash-realtime` | L0 模型 |
 | `OMNI_TRANSCRIPTION_MODEL` | `qwen3-asr-flash-realtime` | L0 输入转写模型 |
-| `OMNI_VAD_THRESHOLD` | `0.35` | L0 服务端 VAD 灵敏度；噪声大时可调高 |
+| `OMNI_VAD_THRESHOLD` | `0.2` | L0 服务端 VAD 灵敏度；噪声大时可调高 |
+| `OMNI_PREFIX_PADDING_MS` | `300` | VAD 命中前保留的语音，避免吞掉句首 |
+| `OMNI_SILENCE_DURATION_MS` | `1500` | 判定一轮回答结束前允许的停顿，避免技术回答被切成多题 |
 | `VOICE_DIAGNOSTICS_LOG_LEVEL` | `INFO` | 无对话正文的语音帧/VAD/ASR/TTS 诊断日志级别 |
 | `PARAFORMER_MODEL` | `paraformer-realtime-v2` | L1/L2 ASR |
 | `COSYVOICE_MODEL` | `cosyvoice-v3-flash` | L1 TTS |

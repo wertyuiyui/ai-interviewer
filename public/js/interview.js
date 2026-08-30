@@ -23,15 +23,25 @@ const elements = {
   hintMeta: $('#hintMeta'),
   hintPanel: $('#hintPanel'),
   hintText: $('#hintText'),
+  inputMeter: $('#inputMeter'),
+  inputMeterFill: $('#inputMeterFill'),
   interrupt: $('#interruptLabel'),
   join: $('#joinButton'),
+  liveTranscriptBar: $('#liveTranscriptBar'),
+  liveTranscriptStatus: $('#liveTranscriptStatus'),
+  liveTranscriptText: $('#liveTranscriptText'),
   messageForm: $('#messageForm'),
   messageInput: $('#messageInput'),
+  microphoneHealth: $('#microphoneHealth'),
+  microphonePanel: $('#microphonePanel'),
+  microphoneSelect: $('#microphoneSelect'),
+  microphoneState: $('#microphoneState'),
   micToggle: $('#micToggle'),
   mode: $('#modePill'),
   permissionNote: $('#permissionNote'),
   readyDescription: $('#readyDescription'),
   readyPanel: $('#readyPanel'),
+  rawCaptureToggle: $('#rawCaptureToggle'),
   scrollLatest: $('#scrollLatest'),
   send: $('#sendButton'),
   stageHint: $('#stageHint'),
@@ -71,15 +81,29 @@ let audioEpoch = 0;
 let answerPending = false;
 let audioUplinkReady = false;
 let audioUplinkReadyAt = 0;
+let providerAudioReady = false;
 let lastAudioFrameAt = 0;
 let lastCaptureWarningAt = 0;
+let lastSilenceWarningAt = 0;
+let lastAudibleInputAt = 0;
+let inputRawLevel = 0;
+let nearSilenceWarning = false;
+let serverInputSignal = 'unknown';
+let lastServerInputLevelAt = 0;
+let serverQuietSince = 0;
 let droppedAudioFrames = 0;
 let captureWatchdogTimer = 0;
 let pendingAudioFrame = null;
 let pendingAudioFlushTimer = 0;
+let microphoneSwitching = false;
+let liveTranscriptTimer = 0;
+let candidatePartialText = '';
+let candidatePartialItemId = '';
 const MAX_AUDIO_BACKLOG_BYTES = 24 * 1024;
 let currentQuestion = '';
 let questionReady = false;
+let candidateAudioExpected = false;
+let candidateAudioExpectedSince = 0;
 let hintLoading = false;
 const hintedQuestions = new Set();
 const partialTurns = new Map();
@@ -135,26 +159,225 @@ function setStage(kind, title, hint = '') {
   if (hint) elements.stageHint.textContent = hint;
 }
 
+function expectCandidateAudio(value) {
+  const expected = Boolean(value);
+  if (expected && !candidateAudioExpected) candidateAudioExpectedSince = Date.now();
+  if (!expected) candidateAudioExpectedSince = 0;
+  candidateAudioExpected = expected;
+}
+
+function setLiveTranscript(state, status, text, autoClearMs = 0) {
+  clearTimeout(liveTranscriptTimer);
+  liveTranscriptTimer = 0;
+  elements.liveTranscriptBar.dataset.state = state;
+  elements.liveTranscriptStatus.textContent = status;
+  elements.liveTranscriptText.textContent = text;
+  if (autoClearMs > 0) {
+    liveTranscriptTimer = setTimeout(() => {
+      const textMode = voiceMode === 'L3';
+      setLiveTranscript(
+        'idle',
+        textMode ? '文字回答模式' : '等待你开口',
+        textMode ? '提交的文字回答会记录在下方' : '语音识别结果会在这里逐步出现',
+      );
+    }, autoClearMs);
+  }
+}
+
+function resetCandidateTranscript() {
+  candidatePartialText = '';
+  candidatePartialItemId = '';
+}
+
+function beginCandidateSpeech() {
+  discardPartialTurn('candidate');
+  resetCandidateTranscript();
+  setLiveTranscript('speech', '检测到你正在说话', '正在聆听并等待识别结果…');
+}
+
+function updateCandidateTranscript(event) {
+  const itemId = String(event.item_id || event.itemId || '');
+  if (itemId && candidatePartialItemId && itemId !== candidatePartialItemId) {
+    discardPartialTurn('candidate');
+    candidatePartialText = '';
+  }
+  if (itemId) candidatePartialItemId = itemId;
+  const chunk = String(extractText(event) || '');
+  const append = event.text === undefined && event.transcript === undefined;
+  candidatePartialText = append ? `${candidatePartialText}${chunk}` : chunk;
+  renderTurn('candidate', chunk, { partial: true, append });
+  setLiveTranscript(
+    'partial',
+    '正在实时转写',
+    candidatePartialText.trim() || '已检测到声音，正在识别…',
+  );
+}
+
+function finalizeCandidateTranscript(event) {
+  const finalText = String(extractText(event) || '').trim() || candidatePartialText.trim();
+  renderTurn('candidate', finalText);
+  resetCandidateTranscript();
+  setLiveTranscript('final', '本轮回答已记录', finalText || '本轮没有识别到有效文字', 1800);
+}
+
+function selectedMicrophoneLabel() {
+  return elements.microphoneSelect.selectedOptions?.[0]?.textContent?.trim() || '当前麦克风';
+}
+
+function renderInputMeter(value = inputRawLevel) {
+  const raw = Number.isFinite(Number(value)) ? Math.max(0, Number(value)) : 0;
+  const percent = Math.min(100, Math.round(Math.sqrt(raw) * 500));
+  elements.inputMeterFill.style.transform = `scaleX(${percent / 100})`;
+  elements.inputMeter.setAttribute('aria-valuenow', String(percent));
+}
+
+function updateMicrophoneHealth() {
+  const textOnly = voiceMode === 'L3';
+  elements.microphonePanel.classList.toggle('is-hidden', textOnly);
+  if (textOnly) return;
+  let state = 'idle';
+  let label = '进入面试后检测输入';
+  if (microphoneSwitching) {
+    state = 'pending';
+    label = '正在切换输入设备…';
+  } else if (!audio?.hasMicrophone) {
+    state = phase === 'ready' || phase === 'preparing' ? 'idle' : 'error';
+    label = phase === 'ready' || phase === 'preparing' ? '进入面试后检测输入' : '未取得麦克风输入';
+  } else if (audio.muted) {
+    state = 'muted';
+    label = '麦克风已静音';
+  } else if (audio.trackMuted) {
+    state = 'error';
+    label = '系统暂停了这支麦克风';
+  } else if (nearSilenceWarning) {
+    state = 'warning';
+    label = `${selectedMicrophoneLabel()}：服务端仍检测为近静音`;
+  } else if (!providerAudioReady && ['connecting', 'live'].includes(phase)) {
+    state = 'pending';
+    label = '麦克风已就绪，等待语音服务';
+  } else {
+    state = 'live';
+    label = `${selectedMicrophoneLabel()}${audio.rawCapture ? ' · 原始输入' : ''}`;
+  }
+  elements.microphoneHealth.dataset.state = state;
+  elements.microphoneState.textContent = label;
+  elements.microphoneSelect.disabled = microphoneSwitching;
+  elements.rawCaptureToggle.disabled = microphoneSwitching || !audio?.context;
+  elements.micToggle.classList.toggle('is-muted', Boolean(audio?.muted || audio?.trackMuted || !audio?.hasMicrophone));
+}
+
+function syncAudioUplink() {
+  const wasReady = audioUplinkReady;
+  audioUplinkReady = Boolean(
+    providerAudioReady
+    && phase === 'live'
+    && voiceMode !== 'L3'
+    && audio?.hasMicrophone
+    && !audio.muted
+    && !audio.trackMuted
+  );
+  if (audioUplinkReady && !wasReady) {
+    audioUplinkReadyAt = Date.now();
+    lastAudioFrameAt = 0;
+    lastAudibleInputAt = audioUplinkReadyAt;
+    nearSilenceWarning = false;
+    serverQuietSince = 0;
+  } else if (!audioUplinkReady) {
+    audioUplinkReadyAt = 0;
+    clearPendingAudioFrame();
+  }
+  updateMicrophoneHealth();
+}
+
+async function refreshMicrophoneDevices() {
+  if (voiceMode === 'L3') return;
+  if (!audio) audio = createAudio();
+  try {
+    const devices = await audio.listInputDevices();
+    const preferred = audio.selectedDeviceId || elements.microphoneSelect.value;
+    const fragment = document.createDocumentFragment();
+    const defaultOption = document.createElement('option');
+    defaultOption.value = '';
+    defaultOption.textContent = '系统默认麦克风';
+    fragment.append(defaultOption);
+    const seen = new Set(['']);
+    devices.forEach((device) => {
+      if (!device.deviceId || seen.has(device.deviceId)) return;
+      seen.add(device.deviceId);
+      const option = document.createElement('option');
+      option.value = device.deviceId;
+      option.textContent = device.label;
+      fragment.append(option);
+    });
+    elements.microphoneSelect.replaceChildren(fragment);
+    if (preferred && seen.has(preferred)) elements.microphoneSelect.value = preferred;
+  } catch {
+    // Device enumeration can be blocked before permission; the default option remains usable.
+  }
+  updateMicrophoneHealth();
+}
+
+async function switchMicrophoneDevice() {
+  if (voiceMode === 'L3' || microphoneSwitching) return;
+  microphoneSwitching = true;
+  updateMicrophoneHealth();
+  try {
+    if (!audio) audio = createAudio();
+    if (!audio.context) await audio.initialize({ capture: false });
+    await audio.enableMicrophone(elements.microphoneSelect.value, {
+      force: true,
+      raw: elements.rawCaptureToggle.checked,
+    });
+    audio.setMuted(false);
+    elements.rawCaptureToggle.checked = Boolean(audio.rawCapture);
+    nearSilenceWarning = false;
+    serverInputSignal = 'unknown';
+    serverQuietSince = 0;
+    syncAudioUplink();
+    await refreshMicrophoneDevices();
+    showToast(`已切换到“${selectedMicrophoneLabel()}”${audio.rawCapture ? '（原始输入）' : ''}。`, 'success');
+  } catch (error) {
+    elements.rawCaptureToggle.checked = Boolean(audio?.rawCapture);
+    await refreshMicrophoneDevices();
+    const detail = error?.message || '无法切换麦克风。';
+    const recovery = audio?.hasMicrophone
+      ? '已保留原输入设备。'
+      : '采集已停止，请重新选择或点击麦克风按钮。';
+    showToast(`${detail} ${recovery}`, 'error', 6000);
+  } finally {
+    microphoneSwitching = false;
+    updateMicrophoneHealth();
+  }
+}
+
 function setMode(mode, notify = false) {
   const previous = voiceMode;
   voiceMode = normalizeMode(mode);
   $('span', elements.mode).textContent = modeLabel(voiceMode);
   const textOnly = voiceMode === 'L3';
   elements.micToggle.classList.toggle('is-hidden', textOnly || phase === 'preparing');
+  elements.microphonePanel.classList.toggle('is-hidden', textOnly);
   elements.permissionNote.textContent = textOnly
     ? '本场为纯文字模式，不会请求麦克风权限。'
     : '语音模式会请求麦克风权限，建议佩戴耳机。';
   elements.messageInput.placeholder = textOnly ? '输入你的回答…' : '也可以在这里打字回答…';
+  if (phase !== 'live' || previous !== voiceMode) {
+    setLiveTranscript(
+      'idle',
+      textOnly ? '文字回答模式' : '等待你开口',
+      textOnly ? '提交的文字回答会记录在下方' : '语音识别结果会在这里逐步出现',
+    );
+  }
   if (textOnly && audio) {
-    audioUplinkReady = false;
-    audioUplinkReadyAt = 0;
-    clearPendingAudioFrame();
+    providerAudioReady = false;
+    syncAudioUplink();
     const previousAudio = audio;
     invalidateAudioPlayback();
     audio = null;
     previousAudio.setMuted(true);
     previousAudio.close();
   }
+  updateMicrophoneHealth();
   if (notify && previous !== voiceMode) showToast(`服务已切换为 ${modeLabel(voiceMode)}`, 'info', 4500);
 }
 
@@ -279,7 +502,8 @@ function discardPartialTurn(role) {
 }
 
 function renderTurn(role, value, { partial = false, append = false, suppressDuplicate = false } = {}) {
-  const text = String(value || '').trim();
+  const rawText = String(value || '');
+  const text = append ? rawText : rawText.trim();
   const existing = partialTurns.get(role);
   if (partial && role === 'candidate' && lastTyped && Date.now() - lastTyped.at < 12_000
       && lastTyped.text.replace(/\s/g, '').startsWith(text.replace(/\s/g, ''))) return;
@@ -333,33 +557,89 @@ function handleCaptureState(event = {}) {
   const type = String(event.type || 'unknown');
   const state = String(event.state || 'unknown');
   console.info(`[voice.capture] type=${type} state=${state}`);
-  if (phase !== 'live' || voiceMode === 'L3') return;
   if (type === 'audio-context' && ['suspended', 'interrupted'].includes(state)) {
     audio?.resume().catch(() => {});
   }
-  if (!['microphone-ended', 'microphone-error'].includes(type)) return;
-  audioUplinkReady = false;
-  clearPendingAudioFrame();
-  elements.micToggle.classList.add('is-muted');
-  elements.micToggle.setAttribute('aria-label', '重新启用麦克风');
-  const now = Date.now();
-  if (now - lastCaptureWarningAt > 5000) {
-    showToast('麦克风输入已中断，请点击麦克风按钮重新启用；也可继续打字。', 'error', 6500);
-    lastCaptureWarningAt = now;
+  if (['microphone-ready', 'microphone-unmuted'].includes(type)) {
+    nearSilenceWarning = false;
+    syncAudioUplink();
+    refreshMicrophoneDevices();
+    return;
+  }
+  if (type === 'microphone-muted') {
+    syncAudioUplink();
+    if (phase === 'live' && Date.now() - lastCaptureWarningAt > 5000) {
+      showToast('系统暂时停止了麦克风音轨，请检查设备和系统权限；也可继续打字。', 'error', 6500);
+      lastCaptureWarningAt = Date.now();
+    }
+    return;
+  }
+  if (type === 'microphone-switch-error') {
+    updateMicrophoneHealth();
+    return;
+  }
+  if (['microphone-ended', 'microphone-error'].includes(type)) {
+    syncAudioUplink();
+    elements.micToggle.setAttribute('aria-label', '重新启用麦克风');
+    const now = Date.now();
+    if (phase === 'live' && now - lastCaptureWarningAt > 5000) {
+      showToast('麦克风输入已中断，请重新选择输入设备或检查系统权限；也可继续打字。', 'error', 6500);
+      lastCaptureWarningAt = now;
+    }
   }
 }
 
 function checkCaptureHealth() {
-  if (phase !== 'live' || voiceMode === 'L3' || !audioUplinkReady) return;
+  if (phase !== 'live' || voiceMode === 'L3') return;
   if (['suspended', 'interrupted'].includes(audio?.context?.state)) audio.resume().catch(() => {});
+  if (!audioUplinkReady) {
+    updateMicrophoneHealth();
+    return;
+  }
   const baseline = lastAudioFrameAt || audioUplinkReadyAt;
-  if (!baseline || Date.now() - baseline <= 3000) return;
   const now = Date.now();
-  if (now - lastCaptureWarningAt <= 8000) return;
-  console.warn(`[voice.capture] stalled_ms=${now - baseline} context=${audio?.context?.state || 'missing'}`);
-  showToast('暂未收到麦克风音频，请检查系统输入设备或重新开启麦克风。', 'error', 6500);
-  lastCaptureWarningAt = now;
-  audio?.resume().catch(() => {});
+  if (baseline && now - baseline > 3000) {
+    if (now - lastCaptureWarningAt > 8000) {
+      console.warn(`[voice.capture] stalled_ms=${now - baseline} context=${audio?.context?.state || 'missing'}`);
+      showToast('暂未收到麦克风音频，请切换输入设备或检查系统权限。', 'error', 6500);
+      lastCaptureWarningAt = now;
+      audio?.resume().catch(() => {});
+    }
+    return;
+  }
+
+  // Do not warn while the candidate is expected to listen to the interviewer.
+  if (!candidateAudioExpected || answerPending) {
+    if (nearSilenceWarning) {
+      nearSilenceWarning = false;
+      updateMicrophoneHealth();
+    }
+    return;
+  }
+
+  const expectedSince = candidateAudioExpectedSince || now;
+  const quietFor = now - Math.max(lastAudibleInputAt || 0, audioUplinkReadyAt || 0, expectedSince);
+  const localQuiet = quietFor >= 8000;
+  const serverQuiet = serverQuietSince > 0
+    && now - Math.max(serverQuietSince, expectedSince) >= 8000
+    && serverInputSignal === 'quiet'
+    && now - lastServerInputLevelAt < 3500;
+  if (!localQuiet && !serverQuiet) {
+    if (nearSilenceWarning) {
+      nearSilenceWarning = false;
+      updateMicrophoneHealth();
+    }
+    return;
+  }
+  nearSilenceWarning = true;
+  updateMicrophoneHealth();
+  if (now - lastSilenceWarningAt <= 15_000) return;
+  showToast(
+    `“${selectedMicrophoneLabel()}”持续近静音：请切换设备或检查系统麦克风权限；也可打开“原始输入”。`,
+    'error',
+    8500,
+  );
+  lastSilenceWarningAt = now;
 }
 
 function clearPendingAudioFrame() {
@@ -410,10 +690,24 @@ function createAudio() {
       lastAudioFrameAt = Date.now();
       sendRealtimeAudioFrame(buffer);
     },
-    onInputLevel: (value) => { inputLevel = Math.min(1, value * 4.2); },
+    onInputLevel: (value) => {
+      inputRawLevel = Math.max(0, Number(value) || 0);
+      inputLevel = Math.min(1, inputRawLevel * 4.2);
+      renderInputMeter(inputRawLevel);
+      if (inputRawLevel >= .0015) {
+        lastAudibleInputAt = Date.now();
+        if (nearSilenceWarning) {
+          nearSilenceWarning = false;
+          updateMicrophoneHealth();
+        }
+      }
+    },
     onOutputLevel: (value) => {
       outputLevel = Math.min(1, value * 3.4);
-      if (outputLevel > .035 && phase === 'live') setStage('speaking', '面试官正在提问', '你可以随时开口打断，播放会立即停止。');
+      if (outputLevel > .035 && phase === 'live') {
+        expectCandidateAudio(false);
+        setStage('speaking', '面试官正在提问', '你可以随时开口打断，播放会立即停止。');
+      }
     },
     onPlaybackDrained: () => {
       outputLevel = 0;
@@ -425,18 +719,20 @@ function createAudio() {
       if (announcementId) sendJson({ type: 'audio.playback.done', announcement_id: announcementId });
       outputLevel = 0;
       if (phase === 'live' && !answerPending) {
+        expectCandidateAudio(true);
         setStage('listening', '轮到你回答', '请尽量给出具体链路、数据口径和技术取舍。');
       }
     },
     onCaptureState: handleCaptureState,
+    onDevicesChanged: refreshMicrophoneDevices,
   });
 }
 
-async function initializeAudio(capture = true) {
+async function initializeAudio(capture = true, deviceId = '') {
   if (!audio) audio = createAudio();
   if (!audio.context) {
     try {
-      return await audio.initialize({ capture });
+      return await audio.initialize({ capture, deviceId, raw: elements.rawCaptureToggle.checked });
     } catch (error) {
       const failedAudio = audio;
       audio = null;
@@ -445,9 +741,13 @@ async function initializeAudio(capture = true) {
     }
   }
   await audio.resume();
-  if (capture && !audio.hasMicrophone) {
+  const selectedDiffers = Boolean(deviceId && deviceId !== audio.selectedDeviceId);
+  if (capture && (!audio.hasMicrophone || selectedDiffers)) {
     try {
-      await audio.enableMicrophone();
+      await audio.enableMicrophone(deviceId, {
+        force: selectedDiffers,
+        raw: elements.rawCaptureToggle.checked,
+      });
       return { microphone: true, error: null };
     } catch (error) {
       return { microphone: false, error };
@@ -472,7 +772,9 @@ function setLive() {
   elements.micToggle.classList.toggle('is-hidden', voiceMode === 'L3');
   updateHintAvailability();
   setConnection('live', '面试进行中');
+  expectCandidateAudio(false);
   setStage(voiceMode === 'L3' ? 'thinking' : 'listening', '面试进行中', voiceMode === 'L3' ? '请在右侧输入框作答。' : '面试官说话时，你也可以直接开口打断。');
+  syncAudioUplink();
   if (voiceMode === 'L3') elements.messageInput.focus();
 }
 
@@ -485,6 +787,7 @@ function invalidateAudioPlayback() {
 
 function setAnswerPending(pending) {
   answerPending = Boolean(pending);
+  if (answerPending) expectCandidateAudio(false);
   const disabled = answerPending || phase !== 'live';
   elements.messageInput.disabled = disabled;
   elements.send.disabled = disabled;
@@ -505,6 +808,7 @@ async function handleAudioFile(event, epoch) {
 function handleEnded(event = {}) {
   if (phase === 'ended') return;
   phase = 'ended';
+  expectCandidateAudio(false);
   intentionallyClosed = true;
   clearTimeout(reconnectTimer);
   clearInterval(heartbeatTimer);
@@ -512,6 +816,8 @@ function handleEnded(event = {}) {
   elements.send.disabled = true;
   elements.endButton.disabled = true;
   elements.hintButton.disabled = true;
+  providerAudioReady = false;
+  syncAudioUplink();
   audio?.setMuted(true);
   clearPendingAudioFrame();
   audio?.clearPlayback();
@@ -538,37 +844,41 @@ function handleServerEvent(event) {
     case 'session.ready':
       reconnectAttempts = 0;
       answerPending = false;
+      expectCandidateAudio(false);
       // Provider preflight and fallback selection happen after session.ready.
       // Keep microphone frames local until the final mode.changed event.
-      audioUplinkReady = false;
-      audioUplinkReadyAt = 0;
-      clearPendingAudioFrame();
+      providerAudioReady = false;
+      syncAudioUplink();
       if (event.mode || event.voice_mode) setMode(event.mode || event.voice_mode, true);
       if (event.session && typeof event.session === 'object') interview = { ...interview, ...event.session };
       syncTimer(event.session || event);
       setLive();
       break;
     case 'candidate.transcript.partial':
+      expectCandidateAudio(true);
       questionReady = false;
       updateHintAvailability();
-      renderTurn('candidate', extractText(event), { partial: true, append: event.text === undefined && event.transcript === undefined });
+      updateCandidateTranscript(event);
       setStage('listening', '正在听你回答', '把关键链路、指标口径和取舍说具体。');
       break;
     case 'candidate.transcript.done':
       questionReady = false;
-      renderTurn('candidate', extractText(event));
+      finalizeCandidateTranscript(event);
       lastTyped = null;
       setAnswerPending(true);
       setStage('thinking', '面试官正在思考', '回答结束后不会即时点评。');
       break;
     case 'candidate.transcript.failed':
       discardPartialTurn('candidate');
+      resetCandidateTranscript();
+      setLiveTranscript('error', '这次没有识别清楚', '请再说一次，或改用右侧文字输入', 3200);
       setAnswerPending(false);
       questionReady = Boolean(currentQuestion);
       updateHintAvailability();
       setStage('listening', '请再说一次', '本轮转写失败，也可以直接在右侧输入框作答。');
       break;
     case 'interviewer.text.partial':
+      expectCandidateAudio(false);
       questionReady = false;
       updateHintAvailability();
       renderTurn('interviewer', extractText(event), { partial: true, append: event.text === undefined && event.transcript === undefined });
@@ -581,8 +891,10 @@ function handleServerEvent(event) {
       break;
     case 'input.speech_started':
       {
+        expectCandidateAudio(true);
         const interruptedPlayback = outputLevel > .02;
         invalidateAudioPlayback();
+        beginCandidateSpeech();
         if (interruptedPlayback) showInterrupt();
         setStage(
           'listening',
@@ -591,7 +903,26 @@ function handleServerEvent(event) {
         );
       }
       break;
+    case 'audio.input.level': {
+      const signal = String(event.signal || '').toLowerCase();
+      serverInputSignal = signal === 'active' ? 'active' : signal === 'quiet' ? 'quiet' : 'unknown';
+      lastServerInputLevelAt = Date.now();
+      if (serverInputSignal === 'active') {
+        serverQuietSince = 0;
+        lastAudibleInputAt = lastServerInputLevelAt;
+        if (nearSilenceWarning) {
+          nearSilenceWarning = false;
+          updateMicrophoneHealth();
+        }
+      } else if (serverInputSignal === 'quiet' && !serverQuietSince) {
+        serverQuietSince = lastServerInputLevelAt;
+      } else if (serverInputSignal === 'unknown') {
+        serverQuietSince = 0;
+      }
+      break;
+    }
     case 'pressure.interrupt':
+      expectCandidateAudio(false);
       showInterrupt();
       setStage('speaking', '面试官打断追问', '压力面正在要求你先给出结论。');
       break;
@@ -626,14 +957,20 @@ function handleServerEvent(event) {
     case 'mode.changed':
       clearPendingAudioFrame();
       setMode(event.mode || event.voice_mode, true);
-      audioUplinkReady = voiceMode !== 'L3' && Boolean(audio?.hasMicrophone) && !audio?.muted;
-      audioUplinkReadyAt = audioUplinkReady ? Date.now() : 0;
+      providerAudioReady = voiceMode !== 'L3';
+      syncAudioUplink();
       if (audioUplinkReady) console.info(`[voice.uplink] ready mode=${voiceMode}`);
       break;
     case 'interviewer.state':
-      if (event.state === 'thinking') setStage('thinking', '面试官正在思考', '回答结束后不会即时点评。');
-      else if (event.state === 'silent') setStage('thinking', '面试官保持沉默', '这是压力面的一部分，请保持冷静并检查刚才的回答。');
+      if (event.state === 'thinking') {
+        expectCandidateAudio(false);
+        setStage('thinking', '面试官正在思考', '回答结束后不会即时点评。');
+      } else if (event.state === 'silent') {
+        expectCandidateAudio(false);
+        setStage('thinking', '面试官保持沉默', '这是压力面的一部分，请保持冷静并检查刚才的回答。');
+      }
       else if (event.state === 'listening') {
+        expectCandidateAudio(true);
         setAnswerPending(false);
         setStage('listening', '轮到你回答', '请给出具体链路、数据口径和技术取舍。');
       }
@@ -682,9 +1019,9 @@ function scheduleReconnect() {
 
 function connectSocket() {
   clearTimeout(reconnectTimer);
-  audioUplinkReady = false;
-  audioUplinkReadyAt = 0;
-  clearPendingAudioFrame();
+  expectCandidateAudio(false);
+  providerAudioReady = false;
+  syncAudioUplink();
   const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
   socket = new WebSocket(`${scheme}//${location.host}/ws/interviews/${encodeURIComponent(sessionId)}`);
   socket.binaryType = 'arraybuffer';
@@ -716,9 +1053,8 @@ function connectSocket() {
   socket.addEventListener('error', () => setConnection('warning', '连接波动'));
   socket.addEventListener('close', ({ code }) => {
     clearInterval(heartbeatTimer);
-    audioUplinkReady = false;
-    audioUplinkReadyAt = 0;
-    clearPendingAudioFrame();
+    providerAudioReady = false;
+    syncAudioUplink();
     invalidateAudioPlayback();
     if ([4400, 4403, 4404].includes(code)) {
       intentionallyClosed = true;
@@ -738,19 +1074,23 @@ async function joinInterview() {
   setConnection('warning', '正在进入面试');
   if (voiceMode !== 'L3') {
     try {
-      const result = await initializeAudio(true);
+      const result = await initializeAudio(true, elements.microphoneSelect.value);
       if (!result.microphone) {
         showToast('没有取得麦克风权限；你仍可听取问题并用文字作答。', 'error', 6000);
         elements.permissionNote.textContent = '麦克风未启用，可使用右侧文字输入继续。';
         elements.micToggle.classList.remove('is-hidden');
         elements.micToggle.classList.add('is-muted');
         elements.micToggle.setAttribute('aria-label', '重新启用麦克风');
+      } else {
+        elements.rawCaptureToggle.checked = Boolean(audio?.rawCapture);
+        await refreshMicrophoneDevices();
       }
     } catch (error) {
       audio = null;
       showToast(`${error.message} 已自动保留文字输入。`, 'error', 6500);
     }
   }
+  updateMicrophoneHealth();
   connectSocket();
 }
 
@@ -813,6 +1153,7 @@ function submitText(event) {
   questionReady = false;
   updateHintAvailability();
   lastTyped = { text, at: Date.now() };
+  setLiveTranscript('final', '文字回答已提交', text, 1600);
   elements.messageInput.value = '';
   elements.messageInput.rows = 1;
   setStage('thinking', '面试官正在思考', '回答结束后不会即时点评。');
@@ -822,12 +1163,11 @@ async function toggleMicrophone() {
   if (voiceMode === 'L3') return;
   if (!audio || !audio.hasMicrophone) {
     try {
-      const result = await initializeAudio(true);
+      const result = await initializeAudio(true, elements.microphoneSelect.value);
       if (!result.microphone) throw result.error || new Error('未取得麦克风权限');
       audio.setMuted(false);
-      audioUplinkReady = phase === 'live' && voiceMode !== 'L3';
-      audioUplinkReadyAt = audioUplinkReady ? Date.now() : 0;
-      lastAudioFrameAt = 0;
+      syncAudioUplink();
+      await refreshMicrophoneDevices();
       elements.micToggle.classList.remove('is-muted');
       elements.micToggle.setAttribute('aria-label', '关闭麦克风');
       elements.micToggle.title = '关闭麦克风';
@@ -838,10 +1178,7 @@ async function toggleMicrophone() {
     return;
   }
   const muted = audio.setMuted(!audio.muted);
-  audioUplinkReady = !muted && phase === 'live' && voiceMode !== 'L3';
-  audioUplinkReadyAt = audioUplinkReady ? Date.now() : 0;
-  if (audioUplinkReady) lastAudioFrameAt = 0;
-  if (muted) clearPendingAudioFrame();
+  syncAudioUplink();
   elements.micToggle.classList.toggle('is-muted', muted);
   elements.micToggle.setAttribute('aria-label', muted ? '开启麦克风' : '关闭麦克风');
   elements.micToggle.title = muted ? '开启麦克风' : '关闭麦克风';
@@ -926,6 +1263,7 @@ async function initialize() {
     return;
   }
   phase = 'ready';
+  if (voiceMode !== 'L3') await refreshMicrophoneDevices();
   $('span', elements.join).textContent = ['active', 'live', 'running'].includes(status) ? '重新加入面试' : (voiceMode === 'L3' ? '开始文字面试' : '开启麦克风并开始');
   elements.readyDescription.textContent = ['active', 'live', 'running'].includes(status) ? '这场面试仍在进行，可以继续加入。' : '点击后将建立面试连接。';
   elements.join.disabled = false;
@@ -949,6 +1287,8 @@ elements.transcript.addEventListener('scroll', () => {
   if (isNearTranscriptBottom()) elements.scrollLatest.classList.remove('is-visible');
 });
 elements.micToggle.addEventListener('click', toggleMicrophone);
+elements.microphoneSelect.addEventListener('change', switchMicrophoneDevice);
+elements.rawCaptureToggle.addEventListener('change', switchMicrophoneDevice);
 elements.hintButton.addEventListener('click', requestHint);
 $('#closeHint').addEventListener('click', () => elements.hintPanel.classList.add('is-hidden'));
 elements.endButton.addEventListener('click', () => {
@@ -971,6 +1311,7 @@ window.addEventListener('pagehide', () => {
   clearInterval(heartbeatTimer);
   clearInterval(timerInterval);
   clearInterval(captureWatchdogTimer);
+  clearTimeout(liveTranscriptTimer);
   socket?.close();
   audio?.close();
 });

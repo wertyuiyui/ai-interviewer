@@ -58,10 +58,25 @@ class PcmCaptureProcessor extends AudioWorkletProcessor {
   }
 
   process(inputs, outputs) {
-    const input = inputs[0]?.[0];
+    const channels = (inputs[0] || []).filter((channel) => channel?.length);
     const output = outputs[0];
     if (output) output.forEach((channel) => channel.fill(0));
-    if (!input?.length) return true;
+    if (!channels.length) return true;
+
+    // Some aggregate/Bluetooth devices expose a silent first channel. Simple
+    // averaging also halves a healthy channel and can cancel antiphase stereo,
+    // so use the strongest channel for this render quantum as the mono source.
+    let input = channels[0];
+    let strongestEnergy = -1;
+    for (const channel of channels) {
+      let energy = 0;
+      for (let index = 0; index < channel.length; index += 1) energy += channel[index] * channel[index];
+      energy /= channel.length;
+      if (energy > strongestEnergy) {
+        strongestEnergy = energy;
+        input = channel;
+      }
+    }
 
     let sumSquares = 0;
     for (let index = 0; index < input.length; index += 1) sumSquares += input[index] * input[index];

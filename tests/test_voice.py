@@ -99,6 +99,25 @@ def test_normalize_omni_events() -> None:
         }
     ]
 
+    completed = normalize_omni_event(
+        {
+            "type": "conversation.item.input_audio_transcription.completed",
+            "transcript": "Redis 通过内存访问降低了延迟。",
+            "item_id": "u1",
+            "content_index": 0,
+        }
+    )
+    assert completed == [
+        {
+            "provider_event_id": None,
+            "type": "user_done",
+            "text": "Redis 通过内存访问降低了延迟。",
+            "item_id": "u1",
+            "language": None,
+            "emotion": None,
+        }
+    ]
+
     stopped = normalize_omni_event(
         {
             "type": "input_audio_buffer.speech_stopped",
@@ -215,6 +234,69 @@ def test_omni_client_handshake_and_commands_are_offline_testable() -> None:
                 pass
             else:
                 raise AssertionError("closed Omni client must reject restart")
+
+    asyncio.run(scenario())
+
+
+def test_omni_raw_input_transcription_sequence_is_normalized_end_to_end() -> None:
+    async def scenario() -> None:
+        ws = FakeWebSocket([{"type": "session.created", "session": {"id": "s1"}}])
+
+        async def factory(_url: str, _headers: dict[str, str]) -> FakeWebSocket:
+            return ws
+
+        client = OmniRealtimeClient(
+            "你是技术面试官", websocket_factory=factory
+        )
+        await client.start()
+        raw_events = [
+            {
+                "type": "conversation.item.input_audio_transcription.delta",
+                "event_id": "e1",
+                "item_id": "u1",
+                "content_index": 0,
+                "text": "MySQL ",
+                "stash": "MV",
+                "language": "zh",
+            },
+            {
+                "type": "conversation.item.input_audio_transcription.delta",
+                "event_id": "e2",
+                "item_id": "u1",
+                "content_index": 0,
+                "text": "MySQL ",
+                "stash": "MVCC",
+                "language": "zh",
+            },
+            {
+                "type": "conversation.item.input_audio_transcription.completed",
+                "event_id": "e3",
+                "item_id": "u1",
+                "content_index": 0,
+                "transcript": "MySQL MVCC 使用版本链。",
+            },
+        ]
+        for event in raw_events:
+            await ws.incoming.put(json.dumps(event, ensure_ascii=False))
+
+        normalized = [
+            await asyncio.wait_for(anext(client.events()), timeout=1)
+            for _ in raw_events
+        ]
+        # Realtime previews are snapshots (text + revisable stash), not token
+        # deltas to concatenate. The completed event is the authoritative text.
+        assert [event["text"] for event in normalized] == [
+            "MySQL MV",
+            "MySQL MVCC",
+            "MySQL MVCC 使用版本链。",
+        ]
+        assert [event["type"] for event in normalized] == [
+            "user_partial",
+            "user_partial",
+            "user_done",
+        ]
+        assert {event["item_id"] for event in normalized} == {"u1"}
+        await client.close()
 
     asyncio.run(scenario())
 

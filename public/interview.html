@@ -22,12 +22,24 @@
         <div class="avatar-scene" id="avatarScene"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="interviewer-avatar"><span>AI</span><i></i></div><div class="interrupt-label" id="interruptLabel">已识别打断</div></div>
         <div class="stage-status"><span class="status-dot"></span><h1 id="stageTitle">等待开始</h1><p id="stageHint">准备好后，面试官会先请你做自我介绍。</p></div>
         <canvas class="waveform" id="waveform" aria-label="实时语音波形"></canvas>
+        <section class="microphone-panel is-hidden" id="microphonePanel" aria-label="麦克风输入设置">
+          <label for="microphoneSelect"><span>输入设备</span><select id="microphoneSelect"><option value="">系统默认麦克风</option></select></label>
+          <label class="raw-capture-toggle" for="rawCaptureToggle" title="关闭浏览器降噪、回声消除和自动增益，适合电平异常低的设备"><input id="rawCaptureToggle" type="checkbox"><span>原始输入</span></label>
+          <div class="microphone-health" id="microphoneHealth" data-state="idle">
+            <span class="microphone-state"><i aria-hidden="true"></i><span id="microphoneState">进入面试后检测输入</span></span>
+            <span class="input-meter" id="inputMeter" role="meter" aria-label="麦克风输入电平" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="inputMeterFill"></i></span>
+          </div>
+        </section>
         <div class="ready-panel" id="readyPanel"><p id="readyDescription">点击后将建立面试连接。</p><button class="light-button" id="joinButton" type="button"><span>进入面试</span><span aria-hidden="true">→</span></button><small id="permissionNote">语音模式会请求麦克风权限，建议佩戴耳机。</small></div>
         <div class="stage-footer"><div class="stage-actions"><button class="hint-button" id="hintButton" type="button" disabled><span class="button-label">给我一点提示</span></button><button class="danger-link" id="endButton" type="button" disabled>提前结束面试</button></div><span>提示只拆解思路，不直接给答案</span></div>
       </section>
 
       <section class="transcript-panel" aria-labelledby="transcriptTitle">
         <header class="panel-header"><div><span class="panel-eyebrow">LIVE TRANSCRIPT</span><h2 id="transcriptTitle">实时字幕</h2></div><button class="small-text-button" id="scrollLatest" type="button">回到最新 ↓</button></header>
+        <section class="live-transcript-bar" id="liveTranscriptBar" data-state="idle" aria-live="polite" aria-atomic="true">
+          <header><span><i aria-hidden="true"></i><strong id="liveTranscriptStatus">等待你开口</strong></span><small>你的实时转写</small></header>
+          <p id="liveTranscriptText">语音识别结果会在这里逐步出现</p>
+        </section>
         <div class="transcript-list" id="transcriptList" aria-live="polite" aria-relevant="additions text"><div class="transcript-placeholder" id="transcriptPlaceholder"><span aria-hidden="true">“</span><p>面试开始后，双方的实时转写会出现在这里。</p></div></div>
         <aside class="hint-panel is-hidden" id="hintPanel" aria-live="polite"><div><span>思路提示</span><small id="hintMeta">本题提示会记录在报告中</small></div><p id="hintText"></p><button id="closeHint" type="button" aria-label="收起提示">×</button></aside>
         <form class="message-composer" id="messageForm"><label class="sr-only" for="messageInput">输入回答</label><textarea id="messageInput" rows="1" maxlength="4000" placeholder="也可以在这里打字回答…" disabled></textarea><button id="sendButton" type="submit" aria-label="发送回答" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-4 14-3-6-7-1Zm7 1 7-8"/></svg></button><small><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行</small></form>

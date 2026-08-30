@@ -273,7 +273,9 @@ def test_l0_session_enables_asr_and_disables_automatic_response() -> None:
             }
             assert session["turn_detection"]["create_response"] is False
             assert session["turn_detection"]["interrupt_response"] is True
-            assert session["turn_detection"]["threshold"] == 0.35
+            assert session["turn_detection"]["threshold"] == 0.2
+            assert session["turn_detection"]["prefix_padding_ms"] == 300
+            assert session["turn_detection"]["silence_duration_ms"] == 1500
 
             await client.close()
             assert websocket.closed
@@ -361,6 +363,13 @@ def test_l0_browser_session_mixed_language_audio_to_next_spoken_question(
         pcm = b"\x10\x00" * 1600
         await session.handle_audio(pcm)
         assert omni.sent_audio == [pcm]
+        input_level = recorder.first("audio.input.level")
+        assert input_level is not None
+        assert input_level["rms"] == 16
+        assert input_level["window_peak_rms"] == 16
+        assert input_level["peak_rms"] == 16
+        assert input_level["frames"] == 1
+        assert input_level["signal"] == "quiet"
 
         await omni.emit({"type": "speech_started", "item_id": "mixed-1"})
         await omni.emit(
@@ -459,6 +468,38 @@ def test_l0_transcription_failure_is_recoverable_and_clears_partial() -> None:
         assert error is not None
         assert error["code"] == "ASR_TRANSCRIPTION_FAILED"
         assert error["recoverable"] is True
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_l0_duplicate_completed_item_is_scored_only_once() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+        omni = FakeOmni()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+        # Keep this test focused on provider de-duplication instead of waiting
+        # for a generated follow-up response.
+        session._answer_pending = True
+        session.provider_task = asyncio.create_task(session._consume_omni())
+
+        completed = {
+            "type": "user_done",
+            "item_id": "duplicate-item-1",
+            "text": "Redis 使用惰性删除和定期删除。",
+        }
+        await omni.emit(completed)
+        await omni.emit(completed)
+        await wait_until(lambda: session._transcript_done_count == 1)
+        await asyncio.sleep(0.01)
+
+        assert sum(
+            event["type"] == "candidate.transcript.done"
+            for event in recorder.events
+        ) == 1
+        assert session._completed_transcription_item_ids == {"duplicate-item-1"}
         await session.close()
 
     asyncio.run(scenario())

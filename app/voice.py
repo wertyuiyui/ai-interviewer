@@ -17,6 +17,7 @@ import base64
 import contextlib
 import inspect
 import json
+import logging
 import math
 import os
 import sys
@@ -29,6 +30,9 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 Event = dict[str, Any]
 WebSocketFactory = Callable[[str, Mapping[str, str]], Awaitable[Any] | Any]
+
+
+logger = logging.getLogger("uvicorn.error.voice.provider")
 
 
 class VoiceConfigurationError(RuntimeError):
@@ -432,8 +436,12 @@ class OmniRealtimeClient(_EventEmitter):
         # cancellation.  A slightly more sensitive default avoids the common
         # "waveform moves but server VAD never starts" failure while retaining
         # an environment override for noisy rooms.
-        self.vad_threshold = _env_float("OMNI_VAD_THRESHOLD", 0.35)
-        self.silence_duration_ms = _env_int("OMNI_SILENCE_DURATION_MS", 800)
+        self.vad_threshold = _env_float("OMNI_VAD_THRESHOLD", 0.2)
+        self.vad_prefix_padding_ms = _env_int("OMNI_PREFIX_PADDING_MS", 300)
+        # Technical answers naturally contain short thinking pauses.  A 1.5s
+        # boundary avoids splitting one answer into multiple scored turns while
+        # keeping the interaction responsive.
+        self.silence_duration_ms = _env_int("OMNI_SILENCE_DURATION_MS", 1500)
         self.input_transcription_model = _env_first(
             "OMNI_TRANSCRIPTION_MODEL", default="qwen3-asr-flash-realtime"
         )
@@ -507,6 +515,7 @@ class OmniRealtimeClient(_EventEmitter):
                 "turn_detection": {
                     "type": self.vad_type,
                     "threshold": self.vad_threshold,
+                    "prefix_padding_ms": self.vad_prefix_padding_ms,
                     "silence_duration_ms": self.silence_duration_ms,
                     # Keep server VAD, transcription, and barge-in, but let the
                     # application state machine decide when to ask the next
@@ -598,13 +607,26 @@ class OmniRealtimeClient(_EventEmitter):
                 if frame is None:
                     break
                 event = _decode_json_frame(frame)
-                event_type = event.get("type")
+                event_type = str(event.get("type") or "")
                 if event_type == "session.created":
                     self._session_created.set()
                 elif event_type == "session.updated":
                     self._session_updated.set()
 
                 normalized = normalize_omni_event(event, self.output_sample_rate)
+                if (
+                    event_type.startswith(
+                        "conversation.item.input_audio_transcription."
+                    )
+                    and not normalized
+                ):
+                    # Protocol-drift diagnostics intentionally log only the
+                    # event name and field names, never transcript values.
+                    logger.warning(
+                        "voice.transcript.unhandled provider_event_type=%s fields=%s",
+                        event_type,
+                        ",".join(sorted(str(key) for key in event)),
+                    )
                 for item in normalized:
                     if item.get("type") == "error":
                         self._last_error = item
