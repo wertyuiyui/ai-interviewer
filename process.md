@@ -27,17 +27,24 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`bc9c737`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`778741d`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、English
-- 当前已部署功能的全量验证基线：`269 passed`
+- 当前已部署功能的全量验证基线：`270 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-033 · 2026-08-30 · 个人化推荐回答提示生产发布
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：将固定提交 `778741d` 推送至 GitHub `origin/main` 并以 `git archive` 隔离部署至 `/opt/ai-interviewer-mvp`；保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git` 与缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 验证：最新隔离基线全量 `270 passed`；使用完全虚构的校园秒杀系统资料真实调用生产 `qwen3.8-flash`，进一步提示直接围绕“Redis Lua 为什么保证库存预扣原子性”生成第一人称推荐回答，并正确使用简历中的后端负责人、Redis Lua、峰值 QPS 3000，未返回通用提纲。服务为 `active/running`，主进程 PID `868822`；本机 8000、正式域名 HTTPS 443 和 3000 均返回 `{"status":"ok"}`。
+- 回滚与风险：代码回滚包为 `/tmp/ai-interviewer-mvp-pre-778741d-20260830.tar.gz`，不含密钥、数据库、虚拟环境和依赖。二级提示会新增一次文本模型调用；SQLite 同题同级幂等记录防止重复调用。
 
 ### DEPLOY-032 · 2026-08-30 · 项目不会时切换其它经历生产发布
 
