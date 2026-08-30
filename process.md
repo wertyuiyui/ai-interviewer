@@ -38,6 +38,15 @@
 
 ## 变更日志
 
+### MODEL-001 · 2026-08-30 · 模拟面试切换 Qwen3.8-Flash
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：依据阿里云百炼官方模型 ID，将模拟面试文本决策、回答评分/追问、简历结构化与最终报告的默认文本模型由 `qwen-plus` 切换为 `qwen3.8-flash`；保留 `qwen3.5-omni-flash-realtime` 实时语音链，不把普通 HTTP 文本模型误配到 Realtime WebSocket。
+- 文件：`app/config.py`, `app/llm.py`, `.env.example`, `README.md`, `process.md`。
+- 验证：使用生产百炼配置对 `qwen3.8-flash` 发起最小 JSON Schema 请求，结构化输出探测成功；`.venv/bin/python -m compileall -q app`、`git diff --check` 通过；`PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `242 passed`。
+- 风险/后续：模型别名会随百炼服务端升级；当前请求显式关闭思考模式以维持面试实时响应速度，现有严格 JSON Schema 失败时仍保留 JSON Object 兼容回退。
+
 ### DEPLOY-011 · 2026-08-30 · 简历体验、项目深挖与归属纠正集成发布
 
 - Agent：`/root`。

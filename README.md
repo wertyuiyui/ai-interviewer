@@ -29,7 +29,7 @@
 - 语音回答会以增量字幕实时进入对话区，最终转写可在面试中手动修正；修正后按原题重新评分，报告保留“已修正”标记并使用修正版。L0 会先核对面试官完整朗读转写，发现模型改写问题时丢弃该段音频并用锁定文字精确合成，避免音文不一致。
 - 每道问题同时给出建议回答时间；语音场次记录 VAD 回答时长与转写字符速率，用于报告中的时间把握、语速、措辞和转写流畅度分析。
 - 面试页的“给我一点提示”只拆解回答路线，不直接给出事实答案，也不会替用户提交回答；同一道当前问题至多记录一次。面试仍可完整继续，最终报告会展示提示次数、对应问题和提示内容。
-- 面中不发送任何得分或扣分；报告阶段才调用 qwen-plus，根据完整转写生成结构化结果。
+- 面中不发送任何得分或扣分；报告阶段才调用 qwen3.8-flash，根据完整转写生成结构化结果。
 - rubric 固定为项目深度 40% / 基础八股 30% / 手撕思路 20% / 表达逻辑 10%，总分由后端按本场实际覆盖维度重新计算并显示评分覆盖率；没问到或评分服务失败的维度为 `null / 不可评分`，不会补成 5.0。
 - 报告另含简历内容强弱项与改写建议、排版可评估边界、面试时间/语速/措辞/流畅度、岗位契合度和多维雷达图。目标公司的公开个人面经由服务端静态精选，报告展示跨样本共性、针对性建议和可核验原帖；不把这些帖子冒充官方题库。
 - “记住本场表现”可逐场开关。开启时，SQLite 会把最近 3 场归一成 MySQL / Redis / Java 并发 / 计网 / 手撕 / 项目深度等稳定知识域并按时间加权，下一场为可命中的弱项预留约三分之一题目；项目深度较弱时从 4 层扩展到 6 层下钻。关闭时报告仍可查看和保留，但该场既不读取旧弱项，也不参与后续弱项加权。
@@ -57,10 +57,10 @@
 ## 技术栈
 
 - 后端：Python 3.10+、FastAPI、WebSocket、SQLite、httpx、PyMuPDF。
-- 文本模型：阿里云百炼 `qwen-plus`，用于简历结构化、L3 追问控制和最终报告。
+- 文本模型：阿里云百炼 `qwen3.8-flash`，用于简历结构化、L3 追问控制和最终报告。
 - L0：`qwen3.5-omni-flash-realtime` 原生 Realtime WebSocket，16 kHz PCM 输入、24 kHz PCM 输出、内置 ASR / LLM / TTS / 服务端 VAD。
-- L1：Paraformer Realtime ASR + qwen-plus + CosyVoice + Silero VAD。
-- L2：Paraformer Realtime ASR + qwen-plus + edge-tts + Silero VAD。
+- L1：Paraformer Realtime ASR + qwen3.8-flash + CosyVoice + Silero VAD。
+- L2：Paraformer Realtime ASR + qwen3.8-flash + edge-tts + Silero VAD。
 - L3：纯文字 WebSocket，与语音模式共用同一套剧本、追问、提前结束和报告引擎。
 - 前端：原生 ES Modules、AudioWorklet、Canvas；没有构建步骤、第三方 CDN 或图表依赖。
 - 公网：Caddy 自动 TLS + 单 worker Uvicorn；也提供 Docker Compose。
@@ -147,9 +147,9 @@ L0/L1/L2 建议填写 `DASHSCOPE_WORKSPACE_ID`，程序会自动拼接北京地�
 | 模式 | ASR | 追问模型 | TTS | 打断 |
 |---|---|---|---|---|
 | L0 | Omni 内置 | Omni + 服务端追问控制 | Omni 内置 | 服务端 VAD `speech_started` |
-| L1 | Paraformer Realtime | qwen-plus | CosyVoice | Silero VAD |
-| L2 | Paraformer Realtime | qwen-plus | edge-tts | Silero VAD |
-| L3 | 文字输入 | qwen-plus | 无 | 不适用 |
+| L1 | Paraformer Realtime | qwen3.8-flash | CosyVoice | Silero VAD |
+| L2 | Paraformer Realtime | qwen3.8-flash | edge-tts | Silero VAD |
+| L3 | 文字输入 | qwen3.8-flash | 无 | 不适用 |
 
 `VOICE_AUTO_FALLBACK=true` 时，从指定模式向下尝试。例如 L0 建连失败会依次尝试 L1、L2、L3；CosyVoice 单次失败也会切到 edge-tts。每次变化都会发 `mode.changed`，页面会显示真实运行模式。Silero 包不可用或推理异常时会明确报告 `vad.status` 并使用能量 VAD 保住对话，但正式 L1/L2 验收应安装 `requirements-voice.txt`。
 
@@ -169,8 +169,8 @@ L0 保留 Omni 的服务端 VAD、ASR、TTS 与 `interrupt_response`，但关闭
 | `DASHSCOPE_WORKSPACE_ID` | 空 | 北京地域业务空间 ID，推荐配置 |
 | `VOICE_MODE` | `L3` | `L0` / `L1` / `L2` / `L3` |
 | `VOICE_AUTO_FALLBACK` | `true` | 语音初始化失败时自动向下降级 |
-| `QWEN_TEXT_MODEL` | `qwen-plus` | 剧本与追问控制 |
-| `QWEN_REPORT_MODEL` | `qwen-plus` | 报告生成 |
+| `QWEN_TEXT_MODEL` | `qwen3.8-flash` | 剧本与追问控制 |
+| `QWEN_REPORT_MODEL` | `qwen3.8-flash` | 报告生成 |
 | `QWEN_REALTIME_MODEL` | `qwen3.5-omni-flash-realtime` | L0 模型 |
 | `OMNI_TRANSCRIPTION_MODEL` | `qwen3-asr-flash-realtime` | L0 输入转写模型 |
 | `OMNI_VAD_THRESHOLD` | `0.2` | L0 服务端 VAD 灵敏度；噪声大时可调高 |

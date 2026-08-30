@@ -110,8 +110,8 @@ def get_settings() -> Settings:
             if dedicated_http
             else "https://dashscope.aliyuncs.com/compatible-mode/v1",
         ).rstrip("/"),
-        qwen_text_model=os.getenv("QWEN_TEXT_MODEL", "qwen-plus"),
-        qwen_report_model=os.getenv("QWEN_REPORT_MODEL", "qwen-plus"),
+        qwen_text_model=os.getenv("QWEN_TEXT_MODEL", "qwen3.8-flash"),
+        qwen_report_model=os.getenv("QWEN_REPORT_MODEL", "qwen3.8-flash"),
         qwen_realtime_model=os.getenv(
             "QWEN_REALTIME_MODEL", "qwen3.5-omni-flash-realtime"
         ),

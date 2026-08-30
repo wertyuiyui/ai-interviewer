@@ -63,8 +63,8 @@ class BailianChatClient:
             "model": model or self.settings.qwen_text_model,
             "messages": messages,
             "temperature": temperature,
-            # qwen-plus aliases across free-tier accounts are not guaranteed
-            # to point at a generation that accepts max_completion_tokens.
+            # Qwen aliases across account plans are not guaranteed to point at
+            # a generation that accepts max_completion_tokens.
             # The compatible endpoint still supports max_tokens for all Qwen
             # chat models, so use it for the hackathon fallback chain.
             "max_tokens": max_tokens,
@@ -82,7 +82,7 @@ class BailianChatClient:
 
         response = await self._post(body)
         if response.status_code >= 400 and response_schema:
-            # Some qwen-plus snapshots only expose JSON Object. Keep the output
+            # Some Qwen snapshots only expose JSON Object. Keep the output
             # machine-readable while preserving compatibility with free quotas.
             body["response_format"] = {"type": "json_object"}
             response = await self._post(body)
