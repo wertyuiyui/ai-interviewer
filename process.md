@@ -27,17 +27,25 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`ef88381`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`67eac78`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
-- 支持流程：技术面、综合（HR）面、技术+综合面；中文、中英双语、纯英文
-- 当前已部署功能的全量验证基线：`264 passed`
+- 支持流程：技术面、综合（HR）面、技术+综合面；中文、English
+- 当前已部署功能的全量验证基线：`265 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-025 · 2026-08-30 · 中文与 English 两种面试语言生产发布
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：将固定功能提交 `67eac78` 推送到 GitHub `origin/main`，以 `git archive 67eac78` 生成隔离快照同步至 `/opt/ai-interviewer-mvp`；未带入共享工作区中的 `INTERVIEW-013` 计时改动。同步保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 与缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 验证：隔离远端基线全量 `265 passed`，JavaScript 语法、Python compileall 与 `git diff --check` 通过；部署后服务为 `active`，主进程 PID `830716`，本机 8000、正式域名 HTTPS 443 和 3000 健康检查均返回 `{"status":"ok"}`。生产 `/api/config` 只返回 `zh/中文`、`en/English`，首页仅含两个语言选项并加载 `20260830-language-v1`；生产根目录、`.env`、`data/` 权限保持 0755、0640 `root:interview`、0750 `interview:interview`。
+- 回滚与风险：代码回滚包为 `/tmp/ai-interviewer-mvp-pre-67eac78-20260830-202348.tar.gz`，不含密钥、数据库、虚拟环境和依赖。快速刷题的独立中英题目组合筛选未改；正式模拟面试已无双语选项。
 
 ### INTERVIEW-013 · 2026-08-30 · 面试页显示整场已用时间
 
