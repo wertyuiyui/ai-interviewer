@@ -94,3 +94,25 @@ def test_interview_script_cache_busts_answer_controls() -> None:
     html = (ROOT / "public" / "interview.html").read_text(encoding="utf-8")
     assert "/js/interview.js?v=20260830-profile-bank-v2" in html
     assert "/assets/app.css?v=20260830-profile-bank-v2" in html
+
+
+def test_resume_mismatch_can_exit_to_home_and_clear_selected_session() -> None:
+    html = (ROOT / "public" / "interview.html").read_text(encoding="utf-8")
+    script = (ROOT / "public" / "js" / "interview.js").read_text(encoding="utf-8")
+
+    for element_id in (
+        "resumeMismatchDialog",
+        "resumeMismatchMessage",
+        "continueWithResume",
+        "exitForResume",
+    ):
+        assert f'id="{element_id}"' in html
+    assert "是否选错了简历" in html
+    assert "function maybeShowResumeMismatch" in script
+    assert "event.resume_selection_warning === true" in script
+    exit_block = script.split("function exitForResumeMismatch()", 1)[1].split(
+        "function handleCaptureState", 1
+    )[0]
+    assert "setCurrentSession(null)" in exit_block
+    assert "type: 'interview.end'" in exit_block
+    assert "location.assign('/')" in exit_block

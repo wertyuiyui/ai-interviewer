@@ -869,6 +869,7 @@ def build_system_prompt(
 10. 说话要像真实面试官：承接候选人刚才的具体信息再提问，主谓和因果要完整；不要频繁使用“好的”“感谢分享”“让我们深入探讨”“请详细阐述”等客服或 AI 套话，不复述整段回答，不连续堆砌三四个子问题。
 11. 若抽到“前沿讨论”，只聊候选人的相关实践、理解、判断依据和 trade-off；不要求背论文数字、公式或实现细节，也不得仅因没读过指定论文就判定答崩。
 12. {hr_behavior_rule}
+13. 每轮都对照结构化简历检查回答一致性。只有学校/专业/时间、任职、项目归属、本人职责或技术事实出现明确直接矛盾时才标记 mismatch；简历没写、回答省略、同义改写或无法核实只能标记 uncertain，不得推定造假。第一轮自我介绍若与教育和主要经历整体严重不符，或候选人明确表示简历不是自己的/选错了，才设置 resume_selection_warning=true。标准/高压场次遇到明确矛盾可用 interrupt 要求先澄清，普通场次用 challenge；语气保持专业。
 
 【核心面试官契约】
 {json.dumps(interviewer_core, ensure_ascii=False)}
@@ -917,9 +918,12 @@ technical 面使用 stage_ratios；technical_hr 面使用 technical_hr_stage_rat
   "drill_dimension": "七维之一或基础知识或手撕思路",
   "drill_depth": 0到7,
   "anchor_keyword": "必须来自候选人本轮回答的原词",
+  "resume_consistency": "supported|uncertain|mismatch",
+  "resume_mismatch_reason": "仅在 mismatch 时概括简历事实与回答的明确矛盾，不作诚信定性",
+  "resume_selection_warning": false,
   "should_end": false
 }}
-failed 仅在候选人明确不会、核心原理严重错误、或追问后仍完全无有效信息时为 true。综合面问题统一把 dimension 设为 communication，topic 写成“综合面·价值观与公司契合 / 人生规划与选择 / 薪酬期待”之一。评分和扣分点绝不写进 next_question。"""
+failed 仅在候选人明确不会、核心原理严重错误、或追问后仍完全无有效信息时为 true。回答速度不能单独决定 failed；文字作答允许比语音更长的阅读、组织和输入时间，只评价提交内容。综合面问题统一把 dimension 设为 communication，topic 写成“综合面·价值观与公司契合 / 人生规划与选择 / 薪酬期待”之一。评分和扣分点绝不写进 next_question。"""
 
 
 def initial_question(

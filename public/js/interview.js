@@ -1,6 +1,7 @@
 import {
   $, apiFetch, base64ToArrayBuffer, companyLabel, formatSeconds,
   getClientId, getCurrentSession, modeLabel, normalizeMode, setButtonBusy, showToast,
+  setCurrentSession,
 } from './common.js?v=20260830-profile-bank-v2';
 import { AudioSession } from './audio-session.js?v=20260830-mic-release';
 
@@ -48,6 +49,8 @@ const elements = {
   readyDescription: $('#readyDescription'),
   readyPanel: $('#readyPanel'),
   rawCaptureToggle: $('#rawCaptureToggle'),
+  resumeMismatchDialog: $('#resumeMismatchDialog'),
+  resumeMismatchMessage: $('#resumeMismatchMessage'),
   scrollLatest: $('#scrollLatest'),
   send: $('#sendButton'),
   startAnswer: $('#startAnswerButton'),
@@ -127,6 +130,7 @@ let interviewerVoiceEnabled = readInterviewerVoicePreference();
 let interviewerAudioStreamActive = false;
 let interviewerAudioSuppressedUntilStreamEnd = false;
 let hintLoading = false;
+let resumeMismatchPrompted = false;
 const hintedQuestions = new Set();
 const partialTurns = new Map();
 const candidateTurns = new Map();
@@ -1048,6 +1052,34 @@ function showInterrupt() {
   interruptTimer = setTimeout(() => elements.interrupt.classList.remove('is-visible'), 1800);
 }
 
+function maybeShowResumeMismatch(event = {}) {
+  const warning = event.resume_selection_warning === true
+    || String(event.reason || '').toLowerCase() === 'resume_mismatch';
+  if (!warning || resumeMismatchPrompted) return;
+  resumeMismatchPrompted = true;
+  const reason = String(event.resume_mismatch_reason || '').trim();
+  elements.resumeMismatchMessage.textContent = reason
+    ? `${reason} 请确认是否选错了简历；你可以继续澄清，或退出并返回首页重新开始。`
+    : '你的基础介绍与当前简历明显不一致。请确认是否选错了简历；你可以继续澄清，或退出并返回首页重新开始。';
+  if (typeof elements.resumeMismatchDialog?.showModal === 'function') {
+    elements.resumeMismatchDialog.showModal();
+  } else if (window.confirm(`${elements.resumeMismatchMessage.textContent}\n\n确定退出并返回首页吗？`)) {
+    exitForResumeMismatch();
+  }
+}
+
+function exitForResumeMismatch() {
+  intentionallyClosed = true;
+  phase = 'ending';
+  setCurrentSession(null);
+  sendJson({ type: 'interview.end', reason: 'manual' });
+  disableMicrophoneCapture({ explicit: true, notify: true });
+  invalidateAudioPlayback();
+  socket?.close();
+  audio?.close();
+  location.assign('/');
+}
+
 function handleCaptureState(event = {}) {
   const type = String(event.type || 'unknown');
   const state = String(event.state || 'unknown');
@@ -1478,6 +1510,7 @@ function handleServerEvent(event) {
       break;
     case 'interviewer.text.done':
       {
+        maybeShowResumeMismatch(event);
         const interjection = isPressureInterjection(event);
         const messageId = interviewerMessageId(event);
         const turn = renderTurn('interviewer', extractText(event), {
@@ -1547,6 +1580,7 @@ function handleServerEvent(event) {
     }
     case 'pressure.interrupt':
       expectCandidateAudio(false);
+      maybeShowResumeMismatch(event);
       showInterrupt();
       showPressureMoment();
       setStage('speaking', '压力情境进行中', '先给结论，再补充依据与边界。');
@@ -2016,6 +2050,15 @@ $('#confirmEnd').addEventListener('click', (event) => {
   event.preventDefault();
   elements.endDialog.close();
   finishInterview('manual');
+});
+$('#continueWithResume').addEventListener('click', () => {
+  elements.resumeMismatchDialog?.close();
+  showToast('请在下一轮先澄清与当前简历不一致的地方。', 'success', 4200);
+});
+$('#exitForResume').addEventListener('click', (event) => {
+  event.preventDefault();
+  elements.resumeMismatchDialog?.close();
+  exitForResumeMismatch();
 });
 
 window.addEventListener('beforeunload', (event) => {

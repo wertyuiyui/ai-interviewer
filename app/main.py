@@ -1437,6 +1437,9 @@ async def _handle_text_answer(
             text=result.question,
             pressure_action=result.pressure_action,
             recommended_answer_seconds=result.recommended_answer_seconds,
+            resume_consistency=result.resume_consistency,
+            resume_mismatch_reason=result.resume_mismatch_reason,
+            resume_selection_warning=result.resume_selection_warning,
         )
         if result.ended:
             await on_end(result.end_reason or "poor_performance")

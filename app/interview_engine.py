@@ -48,6 +48,9 @@ class EngineResult:
     silence_seconds: int
     breakdown_streak: int
     recommended_answer_seconds: int
+    resume_consistency: str
+    resume_mismatch_reason: str
+    resume_selection_warning: bool
     turn: InterviewTurn
 
 
@@ -157,7 +160,10 @@ class InterviewEngine:
             "answer_mode": "text" if effective_voice_mode == "L3" else "voice",
             "weak_topics": weak_topics,
             "initial_question": first_question,
-            "recommended_answer_seconds": self.recommended_answer_seconds(first_question),
+            "recommended_answer_seconds": self._answer_time_allowance(
+                self.recommended_answer_seconds(first_question),
+                "text" if effective_voice_mode == "L3" else "voice",
+            ),
             "company": request.company,
             "role": request.role,
             "interview_type": request.interview_type,
@@ -383,7 +389,12 @@ class InterviewEngine:
 
         turns = await self.db.list_turns(interview_id)
         resume = ResumeData.model_validate(interview["resume"])
-        decision = await self._decide(interview, resume, turns, answer)
+        decision_interview = {
+            **interview,
+            "_answer_input_mode": "voice" if input_mode == "voice" else "text",
+            "_answer_duration_seconds": answer_duration_seconds,
+        }
+        decision = await self._decide(decision_interview, resume, turns, answer)
         vague_answer = is_vague_answer(answer)
         anchor = decision.anchor_keyword.strip()
         if not anchor or anchor.lower() not in answer.lower():
@@ -403,6 +414,20 @@ class InterviewEngine:
                 anchor = resume.projects[0].name
 
         completed_turns = len(turns) + 1
+        explicit_resume_mismatch = self._explicit_resume_mismatch(answer)
+        resume_mismatch_reason = " ".join(
+            str(decision.resume_mismatch_reason or "").replace("\x00", "").split()
+        )[:600]
+        if is_internal_interview_instruction(resume_mismatch_reason):
+            resume_mismatch_reason = ""
+        resume_mismatch = explicit_resume_mismatch or (
+            decision.resume_consistency == "mismatch" and bool(resume_mismatch_reason)
+        )
+        if explicit_resume_mismatch and not resume_mismatch_reason:
+            resume_mismatch_reason = "候选人明确表示当前简历并非本人材料或选择有误。"
+        resume_selection_warning = completed_turns == 1 and resume_mismatch and (
+            decision.resume_selection_warning or explicit_resume_mismatch
+        )
         interview_type = str(interview.get("interview_type") or "technical")
         drill_target = interview_drill_target(
             interview["weak_topics"], interview_type
@@ -512,7 +537,16 @@ class InterviewEngine:
             current_drill_dimension = "手撕思路" if is_coding else "基础知识"
             current_drill_depth = 1 if phase.answered_followup else 0
 
-        if completed_turns == 1 or (
+        if resume_selection_warning:
+            pressure_action = "none"
+            question = (
+                "Your introduction appears inconsistent with the selected resume. "
+                "Could you confirm whether you chose the wrong resume? You may clarify and continue, "
+                "or select Exit to return home and start again."
+                if interview.get("language_mode") == "en"
+                else "你的自我介绍与当前简历中的基础经历明显不一致。请确认是否选错了简历？你可以澄清后继续，也可以点击“退出”返回首页重新选择。"
+            )
+        elif completed_turns == 1 or (
             phase.next_track == "hr" and not phase.next_followup
         ):
             # The introduction-to-experience handoff and the three required HR
@@ -524,10 +558,16 @@ class InterviewEngine:
             pressure_action = self._pressure_action(
                 stress_level=interview["stress_level"],
                 ordinal=completed_turns,
-                proposed=decision.pressure_action,
+                proposed=(
+                    "interrupt"
+                    if resume_mismatch and interview["stress_level"] >= 2
+                    else "challenge"
+                    if resume_mismatch
+                    else decision.pressure_action
+                ),
                 expression_problem=self._has_expression_problem(
                     answer, decision.assessment.deductions
-                ),
+                ) or resume_mismatch,
             )
         question = self._apply_pressure_copy(
             question,
@@ -535,9 +575,14 @@ class InterviewEngine:
             ordinal=completed_turns,
             language_mode=str(interview.get("language_mode") or "bilingual"),
         )
-        recommended_seconds = self._recommended_seconds_for_item(next_item, question)
-        current_recommended_seconds = self._recommended_seconds_for_item(
-            answered_bank_item, str(interview["last_question"])
+        recommended_seconds = self._answer_time_allowance(
+            self._recommended_seconds_for_item(next_item, question), input_mode
+        )
+        current_recommended_seconds = self._answer_time_allowance(
+            self._recommended_seconds_for_item(
+                answered_bank_item, str(interview["last_question"])
+            ),
+            input_mode,
         )
         normalized_duration = (
             round(max(0.0, min(float(answer_duration_seconds), 3600.0)), 2)
@@ -558,7 +603,11 @@ class InterviewEngine:
             score=decision.assessment.score,
             scorable=decision.assessment.scorable and decision.assessment.score is not None,
             score_source=decision.assessment.score_source,
-            deductions=decision.assessment.deductions
+            deductions=(
+                [*decision.assessment.deductions, f"简历一致性待澄清：{resume_mismatch_reason}"]
+                if resume_mismatch and resume_mismatch_reason
+                else decision.assessment.deductions
+            )
             or (["回答缺少可验证的关键细节"] if decision.assessment.failed else []),
             failed=decision.assessment.failed,
             drill_dimension=current_drill_dimension,
@@ -591,6 +640,9 @@ class InterviewEngine:
             silence_seconds=10 if pressure_action == "silence" and not ended else 0,
             breakdown_streak=streak,
             recommended_answer_seconds=0 if ended else recommended_seconds,
+            resume_consistency="mismatch" if resume_mismatch else decision.resume_consistency,
+            resume_mismatch_reason=resume_mismatch_reason,
+            resume_selection_warning=resume_selection_warning,
             turn=turn,
         )
 
@@ -962,6 +1014,15 @@ class InterviewEngine:
             "recent_transcript": recent,
             "current_question": interview["last_question"],
             "candidate_answer": answer,
+            "answer_input": {
+                "mode": interview.get("_answer_input_mode") or "text",
+                "elapsed_seconds": interview.get("_answer_duration_seconds"),
+                "timing_rule": (
+                    "文字作答包含阅读、组织和输入时间，允许更长；不得仅因耗时扣分。"
+                    if interview.get("_answer_input_mode") != "voice"
+                    else "语音时长仅作表达节奏参考，不单独决定得分。"
+                ),
+            },
             "instruction": "完成私有评分并生成下一问。只输出 JSON。",
         }
         try:
@@ -1019,6 +1080,13 @@ class InterviewEngine:
         failed = (vague or obvious_error) and not research_gap
         score = 3.5 if research_gap else (2.5 if failed else (6.5 if len(answer) < 80 else 7.5))
         fallback = self._fallback_decision(interview, resume, turns, answer)
+        explicit_mismatch = self._explicit_resume_mismatch(answer)
+        fallback.resume_consistency = "mismatch" if explicit_mismatch else "supported"
+        fallback.resume_mismatch_reason = (
+            "候选人明确表示当前简历并非本人材料或选择有误。"
+            if explicit_mismatch else ""
+        )
+        fallback.resume_selection_warning = explicit_mismatch and not turns
         english = interview.get("language_mode") == "en"
         fallback.assessment = TurnAssessment(
             score=score,
@@ -1188,6 +1256,27 @@ class InterviewEngine:
     @staticmethod
     def _breakdown_threshold(stress_level: int) -> int:
         return 2 if stress_level >= 2 else 3
+
+    @staticmethod
+    def _explicit_resume_mismatch(answer: str) -> bool:
+        normalized = " ".join(str(answer or "").casefold().split())
+        return any(
+            pattern.search(normalized)
+            for pattern in (
+                re.compile(r"(?:这|当前|这个|所选)?份?简历(?:不(?:是|属于)我|选错了|拿错了)"),
+                re.compile(r"我(?:好像|可能|应该)?选错(?:了)?简历"),
+                re.compile(r"这(?:些|个)(?:项目|经历|学校|实习).{0,8}不是我的"),
+                re.compile(r"(?:wrong|incorrect) resume\b", re.I),
+                re.compile(r"(?:this|the) resume (?:isn't|is not) mine\b", re.I),
+                re.compile(r"I (?:selected|chose|uploaded) the wrong resume\b", re.I),
+            )
+        )
+
+    @staticmethod
+    def _answer_time_allowance(seconds: int, input_mode: str) -> int:
+        if input_mode == "voice":
+            return seconds
+        return min(600, max(seconds + 20, round(seconds * 1.5)))
 
     @staticmethod
     def _sanitize_question(

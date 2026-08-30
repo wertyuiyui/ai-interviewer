@@ -199,6 +199,9 @@ class TurnDecision(BaseModel):
     ] = "基础知识"
     drill_depth: int = Field(default=0, ge=0, le=7)
     anchor_keyword: str = ""
+    resume_consistency: Literal["supported", "uncertain", "mismatch"] = "supported"
+    resume_mismatch_reason: str = Field(default="", max_length=600)
+    resume_selection_warning: bool = False
     should_end: bool = False
 
 

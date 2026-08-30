@@ -1077,6 +1077,59 @@ def test_json_parser_handles_fenced_output() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resume_consistency_warning_pressure_interrupt_and_text_time_allowance(tmp_path) -> None:
+    settings = mock_settings(tmp_path)
+    database = Database(settings)
+    await database.initialize()
+    engine = InterviewEngine(database, settings)
+
+    text_session = await engine.create(
+        InterviewCreate(
+            client_id="resume-check-text-client",
+            resume=sample_resume(),
+            company="bytedance",
+            answer_mode="text",
+            stress_level=3,
+        )
+    )
+    assert text_session["recommended_answer_seconds"] == 90
+    await database.start_interview(text_session["id"])
+    warning = await engine.answer(
+        text_session["id"],
+        "我好像选错简历了，这些项目经历不是我的。",
+        input_mode="text",
+        answer_duration_seconds=78,
+    )
+    assert warning.resume_consistency == "mismatch"
+    assert warning.resume_selection_warning is True
+    assert warning.pressure_action == "none"
+    assert "是否选错了简历" in warning.question
+    assert warning.turn.recommended_answer_seconds == 90
+    assert any("简历一致性待澄清" in item for item in warning.turn.deductions)
+
+    pressure_session = await engine.create(
+        InterviewCreate(
+            client_id="resume-check-pressure-client",
+            resume=sample_resume(),
+            company="bytedance",
+            stress_level=3,
+        )
+    )
+    await database.start_interview(pressure_session["id"])
+    await engine.answer(pressure_session["id"], "我主要负责 Redis 库存预扣和压测验证。")
+    interrupted = await engine.answer(
+        pressure_session["id"], "其实这个项目不是我的，我没有参与。"
+    )
+    assert interrupted.resume_selection_warning is False
+    assert interrupted.pressure_action == "interrupt"
+    assert interrupted.question.startswith("我先打断一下")
+
+    assert InterviewEngine._answer_time_allowance(60, "voice") == 60
+    assert InterviewEngine._answer_time_allowance(60, "text") == 90
+    assert InterviewEngine._answer_time_allowance(180, "text") == 270
+
+
+@pytest.mark.asyncio
 async def test_live_transcript_correction_rescores_target_and_report_uses_edit(tmp_path) -> None:
     settings = replace(mock_settings(tmp_path), mock_llm=False)
     database = Database(settings)

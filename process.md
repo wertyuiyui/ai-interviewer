@@ -19,7 +19,6 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
-| `INTERVIEW-002` | `/root` | `in_progress` | 模拟面试增加简历—回答一致性检测；严重基础不符时提示疑似选错简历并支持退出首页，高压场次可据此打断；文字回答采用更宽松的时长评判 | `app/interview_engine.py`, `app/prompt_engine.py`, `public/interview.html`, `public/js/interview.js`, `public/assets/interview.css`, `tests/test_core.py`, `tests/test_voice_session.py`, `tests/test_frontend_interview_controls.py`, `process.md` | 避开 `PROFILE-001` 的页面和路由文件；承接已完成但尚未集成提交的 `INTERVIEW-001` 文字模式改动 |
 
 登记模板：
 
@@ -283,3 +282,12 @@
 - 文件：生产目录中的提交 `5096530` 工作树；生产密钥、SQLite 数据、依赖和 Caddy 配置未修改。
 - 验证：目标服务为 `active/running`，主进程 PID `627749`；`http://127.0.0.1:8000/healthz` 正常；使用正式域名证书并直连本机 Caddy 实际网卡，HTTPS 443 与 3000 均返回 `{"status":"ok"}`；生产 `/profile` 返回“我的个人档案”并引用新 `profile.css/profile.js`。直接公网地址自回环仍出现既有 TLS EOF，因此采用与此前部署一致的正式域名 SNI 直连验证。
 - 风险或后续事项：主 Agent 首次尝试推送时因远程归属审查被拒绝且未绕过；随后协作流程在已确认条件下完成同一固定提交同步，最终 GitHub `origin/main`、本地功能提交和生产代码均为 `5096530`。部署记录文档提交 `beb899d` 仅存在本地，不影响生产代码。
+
+### INTERVIEW-002 · 2026-08-30 · 简历一致性、选错退出与文字时长宽限
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：每轮评分新增 `supported / uncertain / mismatch` 简历一致性判断，严格要求只有学校/专业/时间、任职、项目归属、本人职责或技术事实的明确直接矛盾才标记不一致，简历未写、回答省略或同义改写不得推定造假。首轮自我介绍等基础环节严重不符或候选人明确表示选错简历时，面试官会询问是否选错，并弹出“继续并澄清 / 退出并返回首页”；退出会结束当前连接、清除浏览器当前场次并回首页。标准/高压语音场次可对明确选错信号实时打断，完整回答后的语义矛盾也可触发专业澄清式打断；非压力场次只质疑澄清。文字作答的建议时间在同题语音基准上约放宽 1.5 倍（至少增加 20 秒），模型明确不得仅因文字输入耗时扣分。
+- 文件：`app/schemas.py`、`app/interview_engine.py`、`app/prompt_engine.py`、`app/main.py`、`app/voice_session.py`、`public/interview.html`、`public/js/interview.js`、`tests/test_core.py`、`tests/test_voice_session.py`、`tests/test_frontend_interview_controls.py`、`process.md`。
+- 验证：新增一致性首轮提示、高压轮后打断、语音实时打断、退出首页和文字时间宽限测试；专项 `70 passed`；最终全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `221 passed`；Python compileall、`node --check public/js/interview.js`、`git diff --check` 均通过。
+- 风险或后续事项：实时语音打断只对“选错简历/不是本人经历”等可由局部转写直接确认的表述启用；更复杂的语义矛盾必须等完整回答后由结构化模型判断，以避免基于半句转写误伤。退出仍以手动结束原因保存已完成问答并生成可追溯报告，但不会继续保留为浏览器当前场次。

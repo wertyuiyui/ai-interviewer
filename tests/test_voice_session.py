@@ -1081,6 +1081,36 @@ def test_stress_interrupt_requires_persistent_expression_problem() -> None:
     asyncio.run(scenario())
 
 
+def test_high_pressure_can_interrupt_explicit_wrong_resume_signal() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        database = FakeDatabase(turn_count=0)
+        session = make_session(recorder, database=database)
+        session.interview["stress_level"] = 3
+        session.settings = SimpleNamespace(
+            voice_mode="L2",
+            voice_auto_fallback=False,
+            pressure_interrupt_seconds=0,
+        )
+        session.actual_mode = "L2"
+        session.tts = FakeTTS()  # type: ignore[assignment]
+
+        await session._candidate_speech_started(source="silero")
+        await session._observe_candidate_partial(
+            "等一下，我好像选错简历了，这些项目经历不是我的。"
+        )
+        await wait_until(lambda: recorder.first("pressure.interrupt") is not None)
+        interrupt = recorder.first("pressure.interrupt")
+        assert interrupt is not None
+        assert interrupt["reason"] == "resume_mismatch"
+        assert interrupt["resume_selection_warning"] is True
+        assert "简历可能不是你的" in interrupt["text"]
+        await session._candidate_speech_ended()
+        await session.close()
+
+    asyncio.run(scenario())
+
+
 def test_explicit_answer_boundary_waits_for_last_segment_and_scores_once() -> None:
     async def scenario() -> None:
         class CapturingEngine:

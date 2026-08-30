@@ -1743,6 +1743,9 @@ class BrowserVoiceSession:
                 "interviewer.text.done",
                 text=result.question,
                 pressure_action=result.pressure_action,
+                resume_consistency=getattr(result, "resume_consistency", "supported"),
+                resume_mismatch_reason=getattr(result, "resume_mismatch_reason", ""),
+                resume_selection_warning=getattr(result, "resume_selection_warning", False),
                 recommended_answer_seconds=getattr(
                     result,
                     "recommended_answer_seconds",
@@ -1815,6 +1818,9 @@ class BrowserVoiceSession:
                 "interviewer.text.done",
                 text=result.question,
                 pressure_action=result.pressure_action,
+                resume_consistency=getattr(result, "resume_consistency", "supported"),
+                resume_mismatch_reason=getattr(result, "resume_mismatch_reason", ""),
+                resume_selection_warning=getattr(result, "resume_selection_warning", False),
                 recommended_answer_seconds=getattr(
                     result,
                     "recommended_answer_seconds",
@@ -2060,6 +2066,8 @@ class BrowserVoiceSession:
         )
 
     def _expression_issue(self, text: str) -> str:
+        if InterviewEngine._explicit_resume_mismatch(text):
+            return "resume_mismatch"
         compact = re.sub(r"[\s，,。.!！？?；;：:]", "", text)
         elapsed = (
             time.monotonic() - self._speech_started_at
@@ -2112,6 +2120,10 @@ class BrowserVoiceSession:
             self._deliberate_interrupt_ordinals.add(ordinal)
             if self.interview.get("language_mode") == "en":
                 text = (
+                    "Let me pause you. You said the selected resume may not be yours. "
+                    "Please confirm it first; you can also exit and restart from the home page."
+                    if reason == "resume_mismatch"
+                    else
                     "I am going to pause you because the explanation is becoming circular. "
                     "State the conclusion in one sentence, then explain the approach, evidence, and result."
                     if reason == "rambling"
@@ -2119,19 +2131,33 @@ class BrowserVoiceSession:
                 )
             else:
                 text = (
+                    "我先打断一下。你提到当前简历可能不是你的，请先确认是否选错；"
+                    "你也可以点击“退出”返回首页重新选择。"
+                    if reason == "resume_mismatch"
+                    else
                     "我先打断一下，你这段有点绕。先用一句话说清结论，"
                     "再按做法、依据和结果展开。"
                     if reason == "rambling"
                     else "先停一下，你还没有进入有效回答。先明确要回答的核心结论。"
                 )
             await self.send(
-                "pressure.interrupt", text=text, ordinal=ordinal
+                "pressure.interrupt",
+                text=text,
+                ordinal=ordinal,
+                reason=reason,
+                resume_selection_warning=reason == "resume_mismatch",
             )
             await self.send(
                 "interviewer.text.done",
                 text=text,
                 pressure_action="interrupt",
                 interjection=True,
+                resume_consistency=("mismatch" if reason == "resume_mismatch" else "uncertain"),
+                resume_mismatch_reason=(
+                    "候选人明确表示当前简历并非本人材料或选择有误。"
+                    if reason == "resume_mismatch" else ""
+                ),
+                resume_selection_warning=reason == "resume_mismatch",
             )
             await self.send(
                 "interviewer.state", state="speaking", pressure_action="interrupt"

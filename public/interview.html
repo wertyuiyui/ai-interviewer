@@ -59,6 +59,7 @@
 
     <div class="interview-overlay is-hidden" id="endOverlay" role="status" aria-live="assertive"><div><span class="overlay-mark">✓</span><h2 id="endTitle">本场面试已结束</h2><p id="endMessage">正在整理逐题反馈报告…</p><span class="loading-line"><i></i></span></div></div>
     <dialog class="confirm-dialog" id="endDialog"><form method="dialog"><span class="dialog-icon" aria-hidden="true">■</span><h2 id="endDialogTitle">确定提前结束吗？</h2><p id="endDialogMessage">结束后将基于当前已完成的问答生成报告，本场面试不能继续。</p><div><button class="secondary-button" value="cancel">继续面试</button><button class="danger-button" id="confirmEnd" value="confirm">结束并生成报告</button></div></form></dialog>
+    <dialog class="confirm-dialog" id="resumeMismatchDialog"><form method="dialog"><span class="dialog-icon" aria-hidden="true">?</span><h2>是否选错了简历？</h2><p id="resumeMismatchMessage">你的基础介绍与当前简历明显不一致。请先核对；若选错，可退出并返回首页重新开始。</p><div><button class="secondary-button" id="continueWithResume" value="cancel">继续并澄清</button><button class="danger-button" id="exitForResume" value="confirm">退出并返回首页</button></div></form></dialog>
     <div class="toast-region toast-dark" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
     <script type="module" src="/js/interview.js?v=20260830-profile-bank-v2"></script>
   </body>
