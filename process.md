@@ -19,6 +19,7 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
+| `REPORT-002` | `/root` | `in_progress` | 中文面试报告的具体扣分点禁止回落为纯英文，并修复已有中文报告 | `app/report_engine.py`, `tests/test_report_language.py`, `process.md`；生产报告 JSON | 不修改 `INTERVIEW-013/014` 占用的主接口、前端或共享测试文件 |
 
 登记模板：
 

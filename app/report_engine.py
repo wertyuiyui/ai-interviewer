@@ -437,11 +437,11 @@ class ReportEngine:
                             )
                         )
                     ),
-                    deductions=(generated.deductions if generated else turn.deductions)
-                    or (
-                        (["The answer is missing verifiable technical detail."] if english else ["回答缺少可验证的关键细节"])
-                        if turn.scorable
-                        else (["This turn was unscorable and no points were deducted."] if english else ["本轮不可评分，未据此扣分"])
+                    deductions=self._localized_deductions(
+                        generated.deductions if generated else [],
+                        turn.deductions,
+                        english=english,
+                        scorable=turn.scorable,
                     ),
                     better_answer=(generated.better_answer if generated else "")
                     or self._better_answer(turn, english=english),
@@ -471,6 +471,33 @@ class ReportEngine:
                 )
             )
         return self._attach_extended_analysis(candidate, interview, turns)
+
+    @staticmethod
+    def _localized_deductions(
+        generated: list[str],
+        fallback: list[str],
+        *,
+        english: bool,
+        scorable: bool,
+    ) -> list[str]:
+        if english:
+            return generated or fallback or [
+                "The answer is missing verifiable technical detail."
+                if scorable
+                else "This turn was unscorable and no points were deducted."
+            ]
+        localized = [
+            item for item in generated
+            if re.search(r"[\u3400-\u9fff]", str(item))
+        ] or [
+            item for item in fallback
+            if re.search(r"[\u3400-\u9fff]", str(item))
+        ]
+        return localized or [
+            "回答缺少可验证的关键细节"
+            if scorable
+            else "本轮不可评分，未据此扣分"
+        ]
 
     @staticmethod
     def _dimension_scores(
