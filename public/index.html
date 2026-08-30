@@ -132,8 +132,12 @@
             </div>
             <div class="resume-panel saved-resume-panel is-hidden" id="savedPanel" role="tabpanel" aria-labelledby="savedTab">
               <span class="saved-resume-mark" aria-hidden="true">✓</span>
-              <span><strong id="savedResumeChoice">尚未选择已保存简历</strong><small>在上方匿名 Profile 中选择一份，开面时无需重复解析。</small></span>
-              <button id="openProfileButton" type="button">选择简历</button>
+              <span>
+                <label for="savedResumeSelect"><strong id="savedResumeChoice">本场开面简历</strong></label>
+                <select class="compact-input" id="savedResumeSelect" aria-describedby="savedResumeHelp"><option value="">正在同步已保存简历…</option></select>
+                <small id="savedResumeHelp">直接在首页选择；个人档案只用于添加或管理资料。</small>
+              </span>
+              <button id="openProfileButton" type="button">添加 / 管理</button>
             </div>
             <div class="resume-panel" id="pdfPanel" role="tabpanel" aria-labelledby="pdfTab">
               <label class="drop-zone" id="dropZone" for="resumeFile">
@@ -275,6 +279,6 @@
       </section>
     </main>
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-    <script type="module" src="/js/home.js?v=20260830-text-interview-v1"></script>
+    <script type="module" src="/js/home.js?v=20260830-home-resume-v2"></script>
   </body>
 </html>

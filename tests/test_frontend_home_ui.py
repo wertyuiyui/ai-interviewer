@@ -80,7 +80,7 @@ def test_home_can_create_a_persistent_microphone_free_text_interview() -> None:
     assert 'name="answer_mode" value="voice"' in html
     assert 'name="answer_mode" value="text"' in html
     assert 'id="hardwareTestSection"' in html
-    assert "/js/home.js?v=20260830-text-interview-v1" in html
+    assert "/js/home.js?v=20260830-home-resume-v2" in html
     assert "function getAnswerMode()" in home
     assert "serverMode === 'L3' ? 'text' : preferredAnswerMode" in home
     assert home.count("answer_mode: answerMode") == 2
@@ -92,3 +92,17 @@ def test_home_can_create_a_persistent_microphone_free_text_interview() -> None:
     join_block = interview.split("async function joinInterview", 1)[1].split("async function finishInterview", 1)[0]
     assert "if (voiceMode !== 'L3')" in join_block
     assert "initializeAudio(true" in join_block
+
+
+def test_saved_resume_can_be_selected_directly_in_home_setup() -> None:
+    html = (ROOT / "public" / "index.html").read_text(encoding="utf-8")
+    home = (ROOT / "public" / "js" / "home.js").read_text(encoding="utf-8")
+
+    assert 'id="savedResumeSelect"' in html
+    assert 'for="savedResumeSelect"' in html
+    assert "直接在首页选择；个人档案只用于添加或管理资料" in html
+    assert "function renderSavedResumeOptions()" in home
+    assert "readyResumes.forEach((resume)" in home
+    assert "savedResumeSelect?.addEventListener('change'" in home
+    assert "selectSavedResume(savedResumeSelect.value)" in home
+    assert "resumeMode === 'saved' ? savedResumeSelect" in home

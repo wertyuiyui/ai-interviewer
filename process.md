@@ -318,3 +318,12 @@
 - 文件：生产目录中的固定提交 `81aa320`；生产密钥、SQLite 数据、依赖和 Caddy 配置未修改。
 - 验证：目标服务为 `active/running`，主进程 PID `634435`；本机 8000、以正式域名证书直连本机 Caddy 的 HTTPS 443 与 3000 均返回 `{"status":"ok"}`；生产 `/interview` 已包含 `resumeMismatchDialog` 与“退出并返回首页”；回滚包、生产 `.env`、`data/`、`.deps/` 及工作目录 0755 权限均确认正常。
 - 风险或后续事项：首次 rsync 从 `mktemp` 发布根继承了 0700，服务第一次重启因工作目录不可遍历报 `CHDIR`；立即恢复为原有 0755 后 systemd 自动重启成功，最终健康检查全部通过。GitHub 推送再次因远程 `wertyuiyui/ai-interviewer` 归属未由用户明确确认而被安全审查拒绝，未绕过；待用户明确授权该远程 `main` 后再推送。
+
+### HOME-001 · 2026-08-30 · 首页直接选择本场简历
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：将首页新建模拟面试的“已保存”页签由只读摘要和跳转式选择改为可直接操作的“本场开面简历”下拉框；只列出解析完成、可直接开面的简历，空库或均未解析完成时明确禁用。首页下拉框、快捷 Profile 单选项、当前 `resumeMode` 和本地选择记忆保持同步；“添加 / 管理”保留为上传及档案维护的补充入口，不再是选择本场简历的必经步骤。
+- 文件：`public/index.html`、`public/js/home.js`、`tests/test_frontend_home_ui.py`、`process.md`。
+- 验证：`node --check public/js/home.js`、`git diff --check` 通过；首页专项 `5 passed`；首页/Profile/导航/核心面试联合回归 `46 passed`；最终全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `226 passed`。
+- 风险或后续事项：当前环境无可用 Chromium，未做真实浏览器视觉回归；控件复用既有表单样式和原有 Profile/API 数据流，不修改简历解析、面试创建协议或个人档案存储。生产发布另见后续部署记录。

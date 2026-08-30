@@ -25,6 +25,7 @@ const answerModeHint = $('#answerModeHint');
 const profilePanel = $('#profilePanel');
 const profileStatus = $('#profileStatus');
 const profileResumeFiles = $('#profileResumeFiles');
+const savedResumeSelect = $('#savedResumeSelect');
 const profileProjectFiles = $('#profileProjectFiles');
 const profileProjectName = $('#profileProjectName');
 const profileProjectType = $('#profileProjectType');
@@ -78,7 +79,7 @@ function setResumeMode(nextMode, focus = false) {
   $('#textPanel').classList.toggle('is-hidden', resumeMode !== 'text');
   hideResumeAlert();
   if (focus) {
-    const target = resumeMode === 'saved' ? $('#openProfileButton') : resumeMode === 'pdf' ? fileInput : textInput;
+    const target = resumeMode === 'saved' ? savedResumeSelect : resumeMode === 'pdf' ? fileInput : textInput;
     target?.focus();
   }
 }
@@ -180,19 +181,39 @@ function selectSavedResume(id, { switchMode = true } = {}) {
   const target = profile.resumes.find((item) => profileItemId(item) === String(id || ''));
   selectedResumeId = target && getStructuredResume(target) ? profileItemId(target) : '';
   saveSelectedResumeId(selectedResumeId);
-  const choice = $('#savedResumeChoice');
-  if (choice) choice.textContent = selectedResumeId
-    ? profileItemName(target, '已保存简历')
-    : '尚未选择可直接开面的简历';
+  if (savedResumeSelect) savedResumeSelect.value = selectedResumeId;
   $$('input[name="profile_resume"]').forEach((input) => {
     input.checked = input.value === selectedResumeId;
   });
   if (switchMode && selectedResumeId) setResumeMode('saved');
 }
 
+function renderSavedResumeOptions() {
+  if (!savedResumeSelect) return;
+  savedResumeSelect.replaceChildren();
+  const readyResumes = profile.resumes.filter((item) => getStructuredResume(item));
+  if (!readyResumes.length) {
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = profile.resumes.length ? '暂无解析完成的简历' : '还没有已保存简历';
+    savedResumeSelect.append(empty);
+    savedResumeSelect.disabled = true;
+    return;
+  }
+  readyResumes.forEach((resume) => {
+    const option = document.createElement('option');
+    option.value = profileItemId(resume);
+    option.textContent = profileItemName(resume, '未命名简历');
+    savedResumeSelect.append(option);
+  });
+  savedResumeSelect.disabled = false;
+  savedResumeSelect.value = selectedResumeId;
+}
+
 function renderProfileResumes() {
   const list = $('#profileResumeList');
   if (!list) return;
+  renderSavedResumeOptions();
   list.replaceChildren();
   if (!profile.resumes.length) {
     list.append(createProfileEmpty('还没有保存简历，可一次选择多份 PDF。'));
@@ -1003,6 +1024,12 @@ $$('input[name="answer_mode"]').forEach((input) => {
   });
 });
 profileResumeFiles?.addEventListener('change', uploadProfileResumes);
+savedResumeSelect?.addEventListener('change', () => {
+  selectSavedResume(savedResumeSelect.value);
+  renderProfileResumes();
+  const selected = profile.resumes.find((item) => profileItemId(item) === selectedResumeId);
+  showToast(`本场将使用“${profileItemName(selected, '已保存简历')}”。`, 'success');
+});
 profileProjectFiles?.addEventListener('change', uploadProfileProject);
 profileProjectPartialScope?.addEventListener('change', () => {
   profileProjectResponsibility.classList.toggle('is-hidden', !profileProjectPartialScope.checked);
