@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6f4ef">
+    <meta name="description" content="面向中国本科生的大厂后端实习一面 AI 陪练。">
+    <title>砺面 · AI 技术面试陪练</title>
+    <link rel="stylesheet" href="/assets/app.css">
+  </head>
+  <body class="home-page">
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="砺面首页">
+        <span class="brand-mark" aria-hidden="true">砺</span>
+        <span><strong>砺面</strong><small>AI 技术面试陪练</small></span>
+      </a>
+      <nav class="header-actions" aria-label="主导航">
+        <span class="mode-pill is-loading" id="modePill"><i></i><span>检测服务模式</span></span>
+        <a class="text-link" href="/report?view=history">历史报告 <span aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+
+    <main class="home-shell">
+      <section class="hero" aria-labelledby="heroTitle">
+        <div class="eyebrow"><span></span> 后端实习 · 技术一面</div>
+        <h1 id="heroTitle">把每次答不上来，<br><em>练成下一次的底气。</em></h1>
+        <p class="hero-copy">上传简历，选一家公司。AI 面试官会沿着你的项目连续下钻，结束后告诉你每一分具体扣在哪里。</p>
+
+        <div class="weakness-card is-hidden" id="weaknessCard">
+          <span class="weakness-icon" aria-hidden="true">↗</span>
+          <div><small>根据上次表现，本场自动加练</small><strong id="weaknessText">Redis · 缓存一致性</strong></div>
+        </div>
+
+        <ol class="steps" aria-label="使用步骤">
+          <li><span>01</span><div><strong>读懂你的简历</strong><small>提取教育、项目与实习经历</small></div></li>
+          <li><span>02</span><div><strong>真实连环追问</strong><small>不接受模糊答案，至少下钻三层</small></div></li>
+          <li><span>03</span><div><strong>逐题复盘扣分</strong><small>给出改写示范与下次必练项</small></div></li>
+        </ol>
+      </section>
+
+      <section class="setup-card" aria-labelledby="setupTitle">
+        <div class="setup-heading">
+          <div><span class="step-kicker">新建一场模拟面试</span><h2 id="setupTitle">从你的经历开始</h2></div>
+          <span class="privacy-note" title="报告会以匿名设备编号保存，不需要账号"><span aria-hidden="true">⌁</span> 无需登录</span>
+        </div>
+
+        <form id="setupForm" novalidate>
+          <fieldset class="form-section">
+            <legend><span>1</span> 简历</legend>
+            <div class="tab-switch" role="tablist" aria-label="简历输入方式">
+              <button type="button" class="tab-button is-active" role="tab" aria-selected="true" aria-controls="pdfPanel" id="pdfTab" data-resume-tab="pdf">上传 PDF</button>
+              <button type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="textPanel" id="textTab" data-resume-tab="text">粘贴文字</button>
+            </div>
+            <div class="resume-panel" id="pdfPanel" role="tabpanel" aria-labelledby="pdfTab">
+              <label class="drop-zone" id="dropZone" for="resumeFile">
+                <input id="resumeFile" name="file" type="file" accept="application/pdf,.pdf">
+                <span class="upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg></span>
+                <span class="drop-copy"><strong id="fileLabel">拖入 PDF，或点击选择</strong><small id="fileMeta">仅支持带文字层的 PDF，不超过 8 MB</small></span>
+                <span class="mini-button">选择文件</span>
+              </label>
+            </div>
+            <div class="resume-panel is-hidden" id="textPanel" role="tabpanel" aria-labelledby="textTab">
+              <label class="sr-only" for="resumeText">粘贴简历文字</label>
+              <textarea id="resumeText" name="text" rows="7" placeholder="粘贴教育经历、实习、项目和技能。扫描版 PDF 也可以在这里粘贴文字继续。"></textarea>
+              <div class="field-hint"><span>至少 30 个字</span><span id="textCount">0 字</span></div>
+            </div>
+            <div class="inline-alert is-hidden" id="resumeAlert" role="alert"></div>
+          </fieldset>
+
+          <fieldset class="form-section">
+            <legend><span>2</span> 目标公司</legend>
+            <div class="company-grid">
+              <label class="company-option is-selected"><input type="radio" name="company" value="bytedance" checked><span class="company-symbol byte" aria-hidden="true">字</span><span><strong>字节跳动</strong><small>追问到底 · 每轮手撕</small></span><i aria-hidden="true"></i></label>
+              <label class="company-option"><input type="radio" name="company" value="meituan"><span class="company-symbol meituan" aria-hidden="true">美</span><span><strong>美团</strong><small>项目深挖 · 基础延伸</small></span><i aria-hidden="true"></i></label>
+              <label class="company-option"><input type="radio" name="company" value="tencent"><span class="company-symbol tencent" aria-hidden="true">腾</span><span><strong>腾讯</strong><small>循循善诱 · 温和深挖</small></span><i aria-hidden="true"></i></label>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-section compact-section">
+            <legend><span>3</span> 面试设置</legend>
+            <div class="setting-row"><div class="setting-copy"><strong>岗位</strong><small>本期仅覆盖后端开发实习一面</small></div><span class="fixed-value"><span aria-hidden="true">⌘</span> 后端开发</span></div>
+            <div class="setting-row"><div class="setting-copy"><strong>压力面</strong><small id="stressHint">启用质疑、打断、沉默与连续施压</small></div><label class="switch"><input type="checkbox" id="stressToggle" checked><span aria-hidden="true"></span><b class="sr-only">开启压力面</b></label></div>
+            <div class="setting-row duration-row">
+              <div class="setting-copy"><strong>面试时长</strong><small>短场也会保留完整反馈</small></div>
+              <div class="segmented" role="radiogroup" aria-label="面试时长">
+                <label><input type="radio" name="duration" value="10"><span>10 分钟</span></label><label><input type="radio" name="duration" value="15" checked><span>15 分钟</span></label><label><input type="radio" name="duration" value="25"><span>25 分钟</span></label>
+              </div>
+            </div>
+          </fieldset>
+
+          <button class="primary-button start-button" id="startButton" type="submit"><span class="button-label">开始模拟面试</span><span class="button-arrow" aria-hidden="true">→</span></button>
+          <p class="submit-note">点击开始即表示你知悉：面试内容仅用于本次练习与本地历史复盘。</p>
+        </form>
+      </section>
+    </main>
+    <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="/js/home.js"></script>
+  </body>
+</html>

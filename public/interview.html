@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#101c2d"><meta name="description" content="砺面 AI 技术面试进行中。">
+    <title>模拟面试 · 砺面</title><link rel="stylesheet" href="/assets/app.css">
+  </head>
+  <body class="interview-page">
+    <header class="interview-header">
+      <a class="brand brand-inverse" href="/" aria-label="返回砺面首页"><span class="brand-mark" aria-hidden="true">砺</span><span><strong>砺面</strong><small>AI 技术面试陪练</small></span></a>
+      <div class="interview-meta"><span class="company-chip" id="companyChip">加载中</span><span class="stress-chip is-hidden" id="stressChip"><i></i> 压力面</span></div>
+      <div class="header-session"><span class="connection-state" id="connectionState"><i></i><span>准备中</span></span><time class="timer" id="timer" datetime="PT15M"><small>剩余</small><strong>15:00</strong></time></div>
+    </header>
+    <main class="interview-shell">
+      <section class="interviewer-stage" aria-labelledby="stageTitle">
+        <div class="stage-topline">
+          <span class="mode-pill mode-dark" id="modePill"><i></i><span>—</span></span>
+          <button class="icon-button is-hidden" id="micToggle" type="button" aria-label="关闭麦克风" title="关闭麦克风">
+            <svg class="mic-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V7a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Zm6-3a6 6 0 0 1-12 0m6 6v3m-4 0h8"/></svg>
+            <svg class="mic-off" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 4 16 16M9 9v3a3 3 0 0 0 4.9 2.3M15 11V7a3 3 0 0 0-5.1-2.1M6 12a6 6 0 0 0 10.7 3.7M18 12a6 6 0 0 1-.2 1.5M12 18v3m-4 0h8"/></svg>
+          </button>
+        </div>
+        <div class="avatar-scene" id="avatarScene"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="interviewer-avatar"><span>AI</span><i></i></div><div class="interrupt-label" id="interruptLabel">已识别打断</div></div>
+        <div class="stage-status"><span class="status-dot"></span><h1 id="stageTitle">等待开始</h1><p id="stageHint">准备好后，面试官会先请你做自我介绍。</p></div>
+        <canvas class="waveform" id="waveform" aria-label="实时语音波形"></canvas>
+        <div class="ready-panel" id="readyPanel"><p id="readyDescription">点击后将建立面试连接。</p><button class="light-button" id="joinButton" type="button"><span>进入面试</span><span aria-hidden="true">→</span></button><small id="permissionNote">语音模式会请求麦克风权限，建议佩戴耳机。</small></div>
+        <div class="stage-footer"><button class="danger-link" id="endButton" type="button" disabled>提前结束面试</button><span>面试过程中不提供点评</span></div>
+      </section>
+
+      <section class="transcript-panel" aria-labelledby="transcriptTitle">
+        <header class="panel-header"><div><span class="panel-eyebrow">LIVE TRANSCRIPT</span><h2 id="transcriptTitle">实时字幕</h2></div><button class="small-text-button" id="scrollLatest" type="button">回到最新 ↓</button></header>
+        <div class="transcript-list" id="transcriptList" aria-live="polite" aria-relevant="additions text"><div class="transcript-placeholder" id="transcriptPlaceholder"><span aria-hidden="true">“</span><p>面试开始后，双方的实时转写会出现在这里。</p></div></div>
+        <form class="message-composer" id="messageForm"><label class="sr-only" for="messageInput">输入回答</label><textarea id="messageInput" rows="1" maxlength="4000" placeholder="也可以在这里打字回答…" disabled></textarea><button id="sendButton" type="submit" aria-label="发送回答" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-4 14-3-6-7-1Zm7 1 7-8"/></svg></button><small><kbd>Enter</kbd> 发送 · <kbd>Shift</kbd> + <kbd>Enter</kbd> 换行</small></form>
+      </section>
+    </main>
+
+    <div class="interview-overlay is-hidden" id="endOverlay" role="status" aria-live="assertive"><div><span class="overlay-mark">✓</span><h2 id="endTitle">本场面试已结束</h2><p id="endMessage">正在整理逐题反馈报告…</p><span class="loading-line"><i></i></span></div></div>
+    <dialog class="confirm-dialog" id="endDialog"><form method="dialog"><span class="dialog-icon" aria-hidden="true">■</span><h2>确定提前结束吗？</h2><p>结束后将基于当前已完成的问答生成报告，本场面试不能继续。</p><div><button class="secondary-button" value="cancel">继续面试</button><button class="danger-button" id="confirmEnd" value="confirm">结束并生成报告</button></div></form></dialog>
+    <div class="toast-region toast-dark" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="/js/interview.js"></script>
+  </body>
+</html>
