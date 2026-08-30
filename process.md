@@ -47,6 +47,15 @@
 - 验证：repository-reader skill quick validator 通过；`node --check public/js/project.js`、Python 编译、`git diff --check` 通过；Profile/Profile API/项目前端专项 `50 passed`；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `224 passed`。
 - 风险或后续事项：请求链路仍基于静态材料，不执行用户代码；证据完整性继续显示在独立检查区，但不会进入候选人讲稿。未进行付费真实模型调用或浏览器视觉回归。与已登记 `PROFILE-002` 的共享文件已释放，后续任务可基于本提交继续修改，禁止覆盖本次主线排序与介绍净化逻辑。
 
+### DEPLOY-007 · 2026-08-30 · 项目主线解读生产发布
+
+- Agent：`/root`。
+- 状态：`completed`
+- 摘要：将固定提交 `4238bda` 推送至既有 GitHub `origin/main`，并由 `git archive` 生成隔离发布快照同步到 `/opt/ai-interviewer-mvp`；未使用包含并发 `HOME-001`、`PROFILE-002` 改动的共享工作区。同步前创建 `/tmp/ai-interviewer-mvp-pre-4238bda-20260830.tar.gz` 回滚包，明确保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 和缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它进程。
+- 文件：GitHub `main` 与生产目录中的固定提交 `4238bda`；生产密钥、SQLite 数据、依赖和其它协作任务文件未修改。
+- 验证：目标服务为 `active`，新主进程 PID `645616`；`http://127.0.0.1:8000/healthz` 返回正常，生产 `/project` 包含“架构与核心流程”和 `project-mainline-v1`；绕过服务器代理并以正式域名证书/SNI 直连本机 Caddy 后，HTTPS 443 与 3000 均返回 `{"status":"ok"}`。
+- 风险或后续事项：未触发付费项目重新解读，既有项目需用户主动“重新解读”后才会生成 v5 缓存；服务器代理路径仍会导致既有 TLS EOF，绕过代理的真实 Caddy 监听、证书和两处入口均已验证正常。
+
 ### PROC-001 · 2026-08-30 · 建立共享协作台账
 
 - Agent：`/root`
