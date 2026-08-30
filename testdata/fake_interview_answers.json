@@ -1,0 +1,255 @@
+{
+  "disclaimer": "完全虚构的网页测试回答，仅与 testdata/fake-resume-pdfs 中的虚构简历配套，不对应真实个人或经历。",
+  "usage": [
+    "上传 source_pdf 指定的简历并选择中文、文字回答。",
+    "面试官的问题措辞会变化，请按 intent 选择最接近的一条复制，不要机械按数组顺序提交。",
+    "前四组用于正常深挖与报告测试；第五组故意保留信息不足，用于压力追问和提前结束测试。"
+  ],
+  "profiles": [
+    {
+      "slug": "01_java_ecommerce_backend",
+      "name": "陈宇航",
+      "target": "Java 业务后端实习生",
+      "source_pdf": "testdata/fake-resume-pdfs/01_java_ecommerce_backend.pdf",
+      "test_mode": "normal",
+      "answers": [
+        {
+          "intent": "self_intro",
+          "answer": "面试官您好，我叫陈宇航，是华东示例大学计算机科学与技术专业 2023 级本科生，目前专业前 20%，已经学习了数据结构、操作系统、计算机网络和数据库系统。我主要使用 Java，最近重点学习 Spring Boot、MySQL、Redis、消息队列和 Java 并发，希望从事业务后端开发实习。"
+        },
+        {
+          "intent": "project_overview",
+          "answer": "校园二手交易平台解决的是校内闲置物品发布、检索和交易的问题，主要场景是学生发布商品、买家检索下单、支付回调以及超时取消。我担任核心开发，参与了商品、订单、支付回调和库存模块，重点处理查询性能、库存并发和订单幂等。"
+        },
+        {
+          "intent": "ownership",
+          "answer": "我负责的具体工作包括商品检索 SQL 和索引设计、Redis Lua 库存预扣、重复请求幂等校验、RocketMQ 超时取消任务，以及商品详情的线程池异步聚合。支付渠道本身不是我实现的，我处理的是支付回调进入系统后的订单状态更新和幂等边界。"
+        },
+        {
+          "intent": "request_flow",
+          "answer": "以下单为例，请求先进入 Spring Boot 接口，完成用户和商品状态校验，再执行 Redis Lua 脚本原子检查并预扣库存。预扣成功后创建订单并记录幂等标识，随后发送 RocketMQ 延迟消息；如果支付回调先到，就按订单号幂等更新为已支付，超时消息消费时再次检查状态，只取消仍未支付的订单并处理库存恢复。"
+        },
+        {
+          "intent": "tradeoff",
+          "answer": "库存预扣选择 Redis Lua，主要因为检查库存和扣减需要原子执行，而且峰值请求下比直接争抢数据库悲观锁更轻。代价是 Redis 与 MySQL 之间存在一致性窗口，所以我不会把 Redis 结果当成最终交易事实，数据库仍保存最终订单状态，并通过幂等消费、状态检查和补偿处理异常。"
+        },
+        {
+          "intent": "metrics",
+          "answer": "商品检索优化的测试集是 10 万条商品数据、20 个并发请求，P95 从 420 毫秒降到 135 毫秒。这个结果只代表测试环境，不等同于生产容量。实习中的 Redis 热点 Key 优化也只是在测试环境观察到峰值 QPS 从 900 提升到 2100。"
+        },
+        {
+          "intent": "failure_boundary",
+          "answer": "我重点考虑过 Redis 预扣成功但数据库订单创建失败的窗口，以及消息重复投递。前者需要记录失败并触发库存补偿，补偿操作本身也要幂等；后者不能看到超时消息就直接取消，而要先读取订单当前状态。简历项目没有真实生产事故数据，所以我只能说明设计和测试过的边界，不能声称线上零故障。"
+        },
+        {
+          "intent": "scaling",
+          "answer": "如果流量扩大十倍，我会先看商品检索 P95、数据库连接池等待、Redis 热点、Lua 执行耗时、MQ 堆积和订单失败率，再决定扩容。优先措施是入口限流、热点商品隔离、读路径缓存、数据库索引与容量核验，并为 MQ 消费设置幂等和积压告警，而不是直接增加线程池最大线程数。"
+        },
+        {
+          "intent": "fundamentals",
+          "answer": "商品详情聚合线程池设置核心线程 8、最大线程 16、队列 500，但这些只是当前压测下的初始值。队列满后必须有明确拒绝策略，不能无界堆积；我会监控活跃线程、队列长度、任务等待时间、拒绝次数和下游超时，并根据 CPU 型还是 IO 型任务重新校准。"
+        },
+        {
+          "intent": "hr",
+          "answer": "我希望在业务后端实习中把课程知识落到真实链路，尤其是事务、缓存一致性、异步消息和可观测性。我能独立完成模块和测试，也愿意在不确定时先说明边界再验证。短期目标是提升故障定位和容量评估能力，地点和薪酬按岗位统一标准沟通。"
+        }
+      ]
+    },
+    {
+      "slug": "02_go_high_concurrency_backend",
+      "name": "林若溪",
+      "target": "Go 高并发后端实习生",
+      "source_pdf": "testdata/fake-resume-pdfs/02_go_high_concurrency_backend.pdf",
+      "test_mode": "normal",
+      "answers": [
+        {
+          "intent": "self_intro",
+          "answer": "面试官您好，我叫林若溪，是西南示例理工大学软件工程专业 2022 级本科生，学习过操作系统、计算机网络、编译原理和分布式系统。我主要使用 Go，熟悉 Gin、gRPC、PostgreSQL、Redis 和 Kafka，希望从事高并发后端开发实习。"
+        },
+        {
+          "intent": "project_overview",
+          "answer": "多人协作文档网关解决多人同时在线编辑时的连接管理、操作广播和日志持久化问题。客户端通过 WebSocket 接入网关，房间内操作需要保持顺序，再通过 Kafka 进入操作日志服务。我是项目负责人，重点负责连接网关、房间状态并发模型和消息有序与去重。"
+        },
+        {
+          "intent": "ownership",
+          "answer": "我负责用 Go 和 Gin 实现 WebSocket 接入，为每个房间维护独立 goroutine 和 channel，并设计 30 秒心跳、90 秒离线判定。我还负责 Kafka 业务键分区和操作 ID 去重。PostgreSQL 用于持久化操作日志，但数据库内核和 Kafka 本身不是我实现的。"
+        },
+        {
+          "intent": "request_flow",
+          "answer": "用户建立 WebSocket 后完成身份和文档权限校验，再加入对应房间。客户端操作进入房间 channel，由单独 goroutine 串行更新房间状态并广播给在线成员，同时按文档 ID 作为业务键写入 Kafka；消费者读取后按操作 ID 去重，再把操作日志写入 PostgreSQL。"
+        },
+        {
+          "intent": "tradeoff",
+          "answer": "每个房间一个 goroutine 的好处是房间内写操作天然串行，减少共享锁和竞态，代码也更容易推理。代价是房间数量大时 goroutine 和 channel 会占用资源，慢消费者还可能阻塞广播，所以需要有限队列、发送超时、断开持续落后的连接，并在房间无人时及时回收。"
+        },
+        {
+          "intent": "metrics",
+          "answer": "在 4 核测试机上，系统维持过 8000 条空闲连接和每秒 1200 次广播。这个口径主要验证连接管理和广播能力，不代表 8000 个用户都在高频编辑。实习中通过 pprof 定位 JSON 编解码分配热点后，单请求分配量降低约 28%。"
+        },
+        {
+          "intent": "failure_boundary",
+          "answer": "我重点处理慢消费者、channel 堵塞、goroutine 泄漏和 Kafka 至少一次投递带来的重复消费。连接退出要触发房间清理，发送不能无限阻塞；Kafka 消费以操作 ID 去重，但如果去重记录和数据库写入不在同一可靠边界，仍可能在崩溃窗口重复，所以需要数据库唯一约束或事务化落库兜底。"
+        },
+        {
+          "intent": "scaling",
+          "answer": "如果连接和广播量扩大十倍，我会先按房间做一致性路由，把同一文档固定到一个网关实例，热点房间再单独限流和隔离。监控会关注在线连接数、房间队列长度、广播延迟、断连率、goroutine 数、GC、Kafka lag 和数据库写入耗时，再决定水平扩容或拆分热点。"
+        },
+        {
+          "intent": "fundamentals",
+          "answer": "Go 的 goroutine 由运行时 GMP 调度，数量可以很多但不是没有成本。channel 适合表达所有权转移和串行事件流，互斥锁更适合保护短小共享状态；我不会为了避免锁就把所有逻辑都塞进 channel，还要结合阻塞行为、取消传播和可观测性选择。"
+        },
+        {
+          "intent": "hr",
+          "answer": "我希望继续做 Go 高并发和分布式系统方向，提升从压测数字到容量模型、从正常链路到故障恢复的完整工程能力。团队协作中我会先明确接口和顺序语义，再通过指标和压测验证；遇到超出个人经验的故障会及时同步，而不是隐瞒风险。"
+        }
+      ]
+    },
+    {
+      "slug": "03_cloud_native_infrastructure",
+      "name": "周子墨",
+      "target": "云原生与基础架构后端实习生",
+      "source_pdf": "testdata/fake-resume-pdfs/03_cloud_native_infrastructure.pdf",
+      "test_mode": "normal",
+      "answers": [
+        {
+          "intent": "self_intro",
+          "answer": "面试官您好，我叫周子墨，是北方示例大学网络工程专业 2023 级本科生，学习过 Linux 系统编程、计算机网络、操作系统和云计算基础。我主要关注云原生与基础架构，使用过 Kubernetes、Prometheus、OpenTelemetry、Go 和 Python，希望从事平台工程或基础架构后端实习。"
+        },
+        {
+          "intent": "project_overview",
+          "answer": "实验室微服务可观测平台解决的是服务数量增加后指标、日志、链路和告警分散的问题。平台基于 Kubernetes 部署，使用 Prometheus、Grafana 和 OpenTelemetry 收集与展示数据，并通过告警聚合减少同一故障产生的大量重复通知。我负责基础架构开发。"
+        },
+        {
+          "intent": "ownership",
+          "answer": "我负责 Admission Webhook 的采集配置注入、证书轮换和失败放行策略，也负责告警聚合服务的滑动窗口与去重键，以及 readinessProbe、PodDisruptionBudget 和滚动发布参数。轻量配置中心里我完成 HTTP API、watch 长轮询和快照落盘，没有实现 Raft 核心算法。"
+        },
+        {
+          "intent": "request_flow",
+          "answer": "工作负载创建时，请求先经过 Kubernetes API Server，再调用 Admission Webhook。Webhook 根据规则返回 patch 注入采集配置，Pod 启动后遥测数据由 OpenTelemetry 链路进入后端，指标由 Prometheus 拉取并在 Grafana 展示；告警进入聚合服务后按去重键和滑动窗口合并，再输出事件。"
+        },
+        {
+          "intent": "tradeoff",
+          "answer": "Webhook 自动注入能降低业务接入成本，但它位于发布关键路径，所以我选择失败放行，避免可观测组件故障阻塞业务发布。代价是放行的 Pod 可能暂时缺少采集配置，因此需要记录失败事件、告警并支持后续补救；安全上还必须处理证书轮换和最小权限。"
+        },
+        {
+          "intent": "metrics",
+          "answer": "在一次模拟故障中，原始告警约 600 条，经过滑动窗口和去重键聚合后形成 18 个事件。这个数字说明通知降噪效果，但不直接代表故障发现准确率，还需要结合漏合并、误合并和事件确认时间评估。简历没有记录生产规模，我不会把实验室结果描述成生产数据。"
+        },
+        {
+          "intent": "failure_boundary",
+          "answer": "我遇到过探针误配带来的发布风险：如果 readinessProbe 阈值过严或检查依赖不稳定，新 Pod 会长时间不就绪，滚动发布可能卡住；如果过松，又可能提前接流量。处理时应先看事件和探针失败原因，再调整 initialDelay、timeout、failureThreshold，并结合 PDB 和最大不可用数控制影响。"
+        },
+        {
+          "intent": "scaling",
+          "answer": "规模扩大后，我会优先关注遥测数据基数、Prometheus 抓取耗时、存储增长、Webhook 延迟和告警聚合队列。高基数标签要限制，采集和查询链路需要分层或分片；Webhook 要保持无状态并水平扩容，同时设置超时和失败放行，不能让观测系统成为业务发布的单点。"
+        },
+        {
+          "intent": "fundamentals",
+          "answer": "readinessProbe 决定 Pod 是否进入 Service 端点，失败通常只停止接收新流量；livenessProbe 用于判断是否需要重启容器，配置错误会造成重启循环。startupProbe 适合启动慢的应用，在它成功前可以避免存活探针过早介入。三者不能用同一套阈值机械复制。"
+        },
+        {
+          "intent": "hr",
+          "answer": "我希望做云原生平台和基础架构方向，因为我更关注发布可靠性、可观测性和故障边界。我的优势是会明确区分自己实现的部分与依赖的开源能力，例如配置中心没有把 Raft 算法算作个人贡献。短期希望补强大规模存储和真实生产故障处理经验。"
+        }
+      ]
+    },
+    {
+      "slug": "04_python_ai_backend",
+      "name": "许嘉宁",
+      "target": "Python / AI 工程后端实习生",
+      "source_pdf": "testdata/fake-resume-pdfs/04_python_ai_backend.pdf",
+      "test_mode": "normal",
+      "answers": [
+        {
+          "intent": "self_intro",
+          "answer": "面试官您好，我叫许嘉宁，是江南示例科技大学人工智能专业 2022 级本科生，学习过机器学习、深度学习、数据库、计算机网络和软件工程。我主要使用 Python，做过 FastAPI 模型服务、异步评测和流式生成，希望从事 AI 工程后端或模型服务平台实习。"
+        },
+        {
+          "intent": "project_overview",
+          "answer": "课程问答模型服务平台解决模型版本管理、在线流式生成和离线评测分散的问题。它使用 FastAPI 提供接口，PostgreSQL 保存任务与版本信息，Redis 和 Celery 处理异步评测，并通过 SSE 返回生成结果。我负责后端和推理服务链路。"
+        },
+        {
+          "intent": "ownership",
+          "answer": "我负责模型版本、异步评测和流式生成接口，设计了鉴权、排队、prefill、decode、SSE 回传的请求状态机，并记录 TTFT、TPOT、取消率和 GPU 队列长度。我还实现了按模型与模板哈希的前缀缓存和租户隔离；底层模型与 GPU 内核不是我实现的。"
+        },
+        {
+          "intent": "request_flow",
+          "answer": "请求进入 FastAPI 后先做鉴权和参数校验，再根据租户与模型进入队列。调度到实例后执行 prefill 和逐步 decode，生成 token 通过 SSE 持续回传；客户端取消时状态机会停止后续回传并释放可释放的任务资源。全链路记录排队时间、TTFT、TPOT、取消率和 GPU 队列长度。"
+        },
+        {
+          "intent": "tradeoff",
+          "answer": "前缀缓存按模型和模板哈希复用，是因为相同系统提示词的 prefill 成本可以避免重复计算。必须把模型版本、模板内容和租户边界放入 Key，防止错误复用或跨租户数据泄露。缓存会占用显存或内存，因此需要容量上限、淘汰策略和命中率监控。"
+        },
+        {
+          "intent": "metrics",
+          "answer": "在重复系统提示词的压测场景中，前缀缓存让 TTFT 中位数下降 31%。这个结论只适用于高重复前缀，不代表所有请求都能提升。离线评测使用 500 条合成题，区分 exact match、人工偏好和失败原因，而且没有把这批测试题用于提示词调优。"
+        },
+        {
+          "intent": "failure_boundary",
+          "answer": "模型网关不能对所有失败盲目重试。鉴权失败和参数错误不应重试；连接建立前的幂等查询可以有限重试，但生成已经开始或已向用户回传 token 后，重试可能产生重复内容和额外费用。需要结合请求 ID、状态机、超时预算和熔断器明确边界。"
+        },
+        {
+          "intent": "scaling",
+          "answer": "流量扩大时我会先按模型、输入长度和输出预算做队列分层，监控排队时间、TTFT、TPOT、吞吐、取消率、显存和 GPU 队列长度。可以评估 continuous batching 提升吞吐，但批次过大会损害单请求延迟；还要配合限流、token 预算和过载拒绝，不能只追求 GPU 利用率。"
+        },
+        {
+          "intent": "fundamentals",
+          "answer": "TTFT 包含排队、调度和 prefill 等到首个 token 的时间，TPOT 更关注进入 decode 后相邻 token 的平均生成间隔。只看总延迟会把长输出和系统拥塞混在一起，所以容量分析至少要同时观察 TTFT、TPOT、输出 token 数和队列长度。"
+        },
+        {
+          "intent": "hr",
+          "answer": "我希望做 AI 工程后端，而不是只调用模型 API。我更关注请求状态、调度、缓存、评测和可靠性，也会区分概念验证与生产结论。短期希望补强 GPU 服务容量规划和线上故障处理能力，薪酬按实习岗位标准沟通。"
+        }
+      ]
+    },
+    {
+      "slug": "05_weak_project_candidate",
+      "name": "王浩然",
+      "target": "通用后端开发实习生（压力与早停测试）",
+      "source_pdf": "testdata/fake-resume-pdfs/05_weak_project_candidate.pdf",
+      "test_mode": "pressure_early_stop",
+      "answers": [
+        {
+          "intent": "self_intro",
+          "answer": "面试官您好，我叫王浩然，是中部示例学院计算机科学与技术专业 2023 级本科生，学习过 Java、数据库和计算机网络。目前主要掌握 Java 基础、Spring Boot 和 MySQL 入门知识，希望找一份通用后端开发实习。"
+        },
+        {
+          "intent": "project_overview",
+          "answer": "校园论坛是课程项目，主要提供登录、发帖和评论功能，使用 Spring Boot、MySQL 和 Redis。我是项目成员，主要参考课程示例完成，目前对业务规模和真实使用场景了解得不多。"
+        },
+        {
+          "intent": "ownership",
+          "answer": "我参与了登录、发帖和评论功能，但当时没有明确记录每个人的模块边界，所以我不能准确说明哪些代码完全由我独立负责。"
+        },
+        {
+          "intent": "request_flow",
+          "answer": "请求进入 Spring Boot 后会访问 MySQL，部分数据会使用 Redis 缓存。更具体的调用顺序和异常处理我当时没有整理，现在不能确认。"
+        },
+        {
+          "intent": "tradeoff",
+          "answer": "Redis 是跟着课程示例使用的，我当时没有比较本地缓存、直接查数据库或其它方案，所以说不清选择理由。"
+        },
+        {
+          "intent": "metrics",
+          "answer": "简历里写了性能提升很多，但我没有保存优化前基线、提升比例、数据规模和压测环境，因此这个结论目前无法验证。"
+        },
+        {
+          "intent": "failure_boundary",
+          "answer": "我没有设计缓存和数据库的一致性方案，也没有记录缓存失效或数据库更新失败时怎么处理，这部分我不会。"
+        },
+        {
+          "intent": "scaling",
+          "answer": "如果流量扩大，我只知道可能需要缓存和扩容，但具体先看什么指标、瓶颈在哪里以及怎么验证，我现在不知道。"
+        },
+        {
+          "intent": "fundamentals",
+          "answer": "我能说出数组、链表和二叉树的基本概念，但如果继续问并发、缓存一致性或数据库索引原理，我目前掌握得不够。"
+        },
+        {
+          "intent": "hr",
+          "answer": "我希望通过后端实习补齐项目设计和工程实践能力。这个项目里确实有很多没有独立验证的内容，我会如实说明，并计划先把请求链路、数据库索引和缓存一致性重新做一遍。"
+        }
+      ]
+    }
+  ]
+}
