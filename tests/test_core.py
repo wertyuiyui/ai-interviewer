@@ -1037,8 +1037,13 @@ async def test_resume_parser_retries_section_dropout_and_keeps_first_pass_data(t
         def __init__(self) -> None:
             self.calls = 0
 
-        async def chat_json(self, *_args, **_kwargs):
+        async def chat_json(self, *_args, **kwargs):
             self.calls += 1
+            schema = kwargs["response_schema"]
+            assert set(schema["required"]) == {"姓名", "教育", "实习经历", "项目", "技能"}
+            assert set(schema["$defs"]["Project"]["required"]) == {
+                "name", "role", "technologies", "highlights", "metrics", "links"
+            }
             if self.calls == 1:
                 return {
                     "姓名": "李明",

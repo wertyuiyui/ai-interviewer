@@ -72,6 +72,18 @@ def clean_resume_text(text: str) -> str:
     return text.strip()
 
 
+def require_all_schema_fields(node: Any) -> None:
+    if isinstance(node, dict):
+        properties = node.get("properties")
+        if isinstance(properties, dict):
+            node["required"] = list(properties)
+        for value in node.values():
+            require_all_schema_fields(value)
+    elif isinstance(node, list):
+        for value in node:
+            require_all_schema_fields(value)
+
+
 class ResumeParser:
     def __init__(
         self,
@@ -91,6 +103,7 @@ class ResumeParser:
             return self._mock_parse(text)
 
         schema = ResumeData.model_json_schema(by_alias=True)
+        require_all_schema_fields(schema)
         best: ResumeData | None = None
         for attempt in range(2):
             try:
