@@ -139,7 +139,7 @@ L0 保留 Omni 的服务端 VAD、ASR、TTS 与 `interrupt_response`，但关闭
 浏览器 `getUserMedia` 在非 localhost 环境要求安全上下文。最短部署路径是阿里云轻量应用服务器 + 已解析域名 + Docker Compose：
 
 1. 将域名 A/AAAA 记录指向服务器，并按服务器所在地要求完成域名合规配置。
-2. 安全组只放行 TCP 22、80、443 和 UDP 443；不要公网暴露 8000。
+2. 安全组只放行 TCP 22、80、443（若使用演示配置再放行 TCP 3000）和 UDP 443；不要公网暴露 8000。
 3. 复制 `.env.example` 为 `.env`，填写 API Key、Workspace ID 和 `DOMAIN=interview.example.com`。
 4. 启动：
 
@@ -152,7 +152,7 @@ Caddy 会自动申请并续期证书，反向代理配置已把 WebSocket 读写
 
 不用 Docker 时，可把代码放到 `/opt/ai-interviewer`，创建 `.venv`，将 `deploy/Caddyfile.host` 首行替换为真实域名，再使用该 Caddy 配置和 `deploy/ai-interviewer.service`。生产只运行一个 Uvicorn worker，因为活动会话保存在进程内，报告与历史持久化在 SQLite。
 
-只做临时公网联调时，也可以使用 `deploy/ai-interviewer-3000.service`：它从 `/opt/ai-interviewer-mvp` 启动单 worker，并监听 `0.0.0.0:3000`。安装后执行 `systemctl enable --now ai-interviewer-3000`，再在云安全组放行 TCP 3000。该入口是 HTTP，仅适合文字流程和接口联调；浏览器麦克风仍必须通过上面的域名 + HTTPS 入口使用。
+只做临时公网演示时，可配套使用 `deploy/ai-interviewer-3000.service` 与 `deploy/Caddyfile.3000-https`：FastAPI 单 worker 仅监听 `127.0.0.1:8000`，Caddy 使用解析到当前服务器的 `39-106-146-28.sslip.io` 自动签发证书，并同时在标准 443 和 HTTPS 3000 端口反向代理。换服务器时必须把 Caddyfile 中的演示域名替换为新 IP 对应的 sslip.io 域名；长期部署建议改用自有域名。
 
 ## API 与浏览器协议
 

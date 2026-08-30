@@ -1,5 +1,5 @@
 [Unit]
-Description=AI Mock Interviewer FastAPI on port 3000
+Description=AI Mock Interviewer FastAPI behind Caddy HTTPS on port 3000
 After=network-online.target
 Wants=network-online.target
 
@@ -10,7 +10,7 @@ Group=interview
 WorkingDirectory=/opt/ai-interviewer-mvp
 EnvironmentFile=/opt/ai-interviewer-mvp/.env
 Environment=PYTHONPATH=/opt/ai-interviewer-mvp/.deps
-ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 3000 --workers 1
+ExecStart=/usr/bin/python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips=127.0.0.1
 Restart=always
 RestartSec=3
 TimeoutStopSec=20
