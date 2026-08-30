@@ -210,3 +210,12 @@
 - 文件：`public/index.html`、`public/practice.html`、`public/project.html`、`public/coding.html`、`public/report.html`、`public/js/home.js`、`public/assets/app.css`、`tests/test_frontend_navigation.py`、`tests/test_frontend_practice_ui.py`、`process.md`。
 - 验证：新增导航契约测试 `3 passed`；全部前端测试 `32 passed`；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `213 passed`；`node --check public/js/home.js public/js/report.js` 分别通过；`git diff --check` 通过。
 - 风险或后续事项：只迁移入口位置与报告视图按钮，不改 API、Profile 持久化、练习流程或报告切换逻辑；未进行真实浏览器视觉回归。按用户先前指示仅创建本地提交，不推送、不部署。
+
+### DEPLOY-003 · 2026-08-30 · 手撕工作台与三入口导航生产发布
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：按用户授权，将 `c48bd13` 与 `5eacadf` 推送至既有 GitHub `main`，并以固定提交快照 `5eacadf` 同步生产；部署明确不包含工作区中仍在进行的 `PAPER-001`、`CODING-003` 未提交文件。同步前创建 `/tmp/ai-interviewer-mvp-pre-5eacadf-20260830.tar.gz` 代码备份，保留生产 `.env`、`data/`、`.venv/`、`.deps/` 与 `.git/`，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它进程。
+- 文件：GitHub `main` 至 `5eacadf`；生产目录中的提交快照文件；`process.md`。生产密钥、数据库和依赖目录未改动。
+- 验证：应用服务为 `active`，新主进程 PID `602081`；`http://127.0.0.1:8000/healthz` 返回正常；绕过服务器本机代理、以正式域名 SNI 直连 Caddy 实际网卡后，443 与 HTTPS 3000 均返回 `{"status":"ok"}`；生产 `/coding`、`/practice`、`/report` 已确认三入口导航与报告正文标签，新 `coding.css`、`coding.js` 均返回 `200`。
+- 风险或后续事项：本机代理路径及公网地址自回环仍会提前中断 TLS，实际 Caddy 监听与正式域名证书直连验证正常；回滚代码包如上。进行中的论文解读和手撕后续增强保持未提交、未推送、未部署状态。
