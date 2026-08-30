@@ -272,6 +272,7 @@ class PracticeItem(BaseModel):
 
 class HintEvent(BaseModel):
     ordinal: int = Field(ge=1)
+    level: int = Field(default=1, ge=1, le=2)
     question: str
     hint: str
     created_at: str = Field(default_factory=utc_now_iso)
@@ -359,6 +360,7 @@ class CompanyInsights(BaseModel):
     sample_caveat: str = ""
     recurring_patterns: list[str] = Field(default_factory=list)
     interview_advice: list[str] = Field(default_factory=list)
+    personalized_advice: list[str] = Field(default_factory=list)
     citations: list[CompanyExperienceCitation] = Field(default_factory=list)
 
 

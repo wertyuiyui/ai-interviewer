@@ -29,6 +29,7 @@ const elements = {
   hintMeta: $('#hintMeta'),
   hintPanel: $('#hintPanel'),
   hintText: $('#hintText'),
+  unknownButton: $('#unknownButton'),
   inputMeter: $('#inputMeter'),
   inputMeterFill: $('#inputMeterFill'),
   interviewerVoiceToggle: $('#interviewerVoiceToggle'),
@@ -131,7 +132,7 @@ let interviewerAudioStreamActive = false;
 let interviewerAudioSuppressedUntilStreamEnd = false;
 let hintLoading = false;
 let resumeMismatchPrompted = false;
-const hintedQuestions = new Set();
+const hintedQuestions = new Map();
 const partialTurns = new Map();
 const candidateTurns = new Map();
 const interviewerTurns = new Map();
@@ -146,10 +147,11 @@ function readInterviewerVoicePreference() {
 }
 
 function updateHintAvailability() {
-  const used = currentQuestion && hintedQuestions.has(currentQuestion);
+  const level = currentQuestion ? (hintedQuestions.get(currentQuestion) || 0) : 0;
   const answerOpen = ['ready', 'answering'].includes(answerState);
-  elements.hintButton.disabled = phase !== 'live' || !answerOpen || answerPending || !questionReady || !currentQuestion || hintLoading || used;
-  if (!hintLoading) $('.button-label', elements.hintButton).textContent = used ? '本题已提示' : '给我一点提示';
+  elements.hintButton.disabled = phase !== 'live' || !answerOpen || answerPending || !questionReady || !currentQuestion || hintLoading || level >= 2;
+  elements.unknownButton.disabled = phase !== 'live' || !answerOpen || answerPending || !questionReady || !currentQuestion;
+  if (!hintLoading) $('.button-label', elements.hintButton).textContent = level >= 2 ? '本题已提示' : (level === 1 ? '进一步提示' : '给我一点提示');
 }
 
 function inferRecommendedAnswerSeconds(text = '') {
@@ -359,9 +361,10 @@ async function requestHint() {
       timeout: 15_000,
     });
     const question = String(event?.question || currentQuestion).trim();
-    if (question) hintedQuestions.add(question);
+    const level = Math.max(1, Math.min(2, Number(event?.level) || 1));
+    if (question) hintedQuestions.set(question, Math.max(level, hintedQuestions.get(question) || 0));
     elements.hintText.textContent = event?.hint || '暂时没有可用提示，请先按结论、依据、边界三步组织回答。';
-    elements.hintMeta.textContent = `第 ${Number(event?.ordinal) || '—'} 题 · 已计入报告`;
+    elements.hintMeta.textContent = `第 ${Number(event?.ordinal) || '—'} 题 · ${level === 2 ? '简化示例' : '简化思路'} · 已计入报告`;
     elements.hintPanel.classList.remove('is-hidden');
     scrollTranscript(true);
   } catch (error) {
@@ -1884,6 +1887,16 @@ function submitText(event) {
   finishCurrentAnswer();
 }
 
+function submitUnknown() {
+  if (phase !== 'live' || answerPending || !['ready', 'answering'].includes(answerState)) return;
+  if (answerState === 'ready') startCurrentAnswer();
+  if (answerState !== 'answering') return;
+  elements.messageInput.value = interview?.language_mode === 'en'
+    ? "I don't know, please move on"
+    : '我不知道，请继续下一题';
+  finishCurrentAnswer();
+}
+
 async function toggleMicrophone() {
   if (voiceMode === 'L3' || microphoneSwitching) return;
   if (!audio || !audio.hasMicrophone) {
@@ -1976,7 +1989,8 @@ async function initialize() {
 
   (interview?.hint_events || []).forEach((event) => {
     const question = String(event?.question || '').trim();
-    if (question) hintedQuestions.add(question);
+    const level = Math.max(1, Math.min(2, Number(event?.level) || 1));
+    if (question) hintedQuestions.set(question, Math.max(level, hintedQuestions.get(question) || 0));
   });
 
   const company = interview?.company || storedSession?.company || 'bytedance';
@@ -2041,6 +2055,7 @@ elements.interviewerVoiceToggle.addEventListener('click', toggleInterviewerVoice
 elements.microphoneSelect.addEventListener('change', switchMicrophoneDevice);
 elements.rawCaptureToggle.addEventListener('change', switchMicrophoneDevice);
 elements.hintButton.addEventListener('click', requestHint);
+elements.unknownButton.addEventListener('click', submitUnknown);
 $('#closeHint').addEventListener('click', () => elements.hintPanel.classList.add('is-hidden'));
 elements.endButton.addEventListener('click', () => {
   if (typeof elements.endDialog.showModal === 'function') elements.endDialog.showModal();

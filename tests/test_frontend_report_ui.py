@@ -33,6 +33,7 @@ def test_extended_evidence_report_and_source_visibility_contract() -> None:
         "processAnalysisDetail",
         "roleFitDetail",
         "companyCitationList",
+        "companyPersonalizedAdviceList",
     ):
         assert f'id="{element_id}"' in report_html
 
@@ -44,6 +45,7 @@ def test_extended_evidence_report_and_source_visibility_contract() -> None:
     assert "matched_requirements" in report_js
     assert "recurring_patterns" in report_js
     assert "interview_advice" in report_js
+    assert "personalized_advice" in report_js
     assert "report_takeaway" in report_js
     assert "!Number.isFinite(dimensions[index].score)" in report_js
     assert "JavaGuide" in report_js and "CodeTop" in report_js

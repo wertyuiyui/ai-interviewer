@@ -2,7 +2,7 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#101c2d"><meta name="description" content="砺面 AI 技术面试进行中。">
-    <title>模拟面试 · 砺面</title><link rel="stylesheet" href="/assets/app.css?v=20260830-profile-edit-v1">
+    <title>模拟面试 · 砺面</title><link rel="stylesheet" href="/assets/app.css?v=20260830-interview-guidance-v1">
   </head>
   <body class="interview-page">
     <header class="interview-header">
@@ -42,7 +42,7 @@
           <button class="answer-start-button" id="startAnswerButton" type="button" disabled>开始回答</button>
           <button class="answer-end-button is-hidden" id="endAnswerButton" type="button" disabled>结束回答</button>
         </section>
-        <div class="stage-footer"><div class="stage-actions"><button class="hint-button" id="hintButton" type="button" disabled><span class="button-label">给我一点提示</span></button><button class="danger-link" id="endButton" type="button" disabled>提前结束面试</button></div><span>提示只拆解思路，不直接给答案</span></div>
+        <div class="stage-footer"><div class="stage-actions"><button class="hint-button" id="hintButton" type="button" disabled><span class="button-label">给我一点提示</span></button><button class="unknown-button" id="unknownButton" type="button" disabled>我不知道</button><button class="danger-link" id="endButton" type="button" disabled>提前结束面试</button></div><span>第一次给思路，进一步提示给简化示例</span></div>
       </section>
 
       <section class="transcript-panel" aria-labelledby="transcriptTitle">
@@ -61,6 +61,6 @@
     <dialog class="confirm-dialog" id="endDialog"><form method="dialog"><span class="dialog-icon" aria-hidden="true">■</span><h2 id="endDialogTitle">确定提前结束吗？</h2><p id="endDialogMessage">结束后将基于当前已完成的问答生成报告，本场面试不能继续。</p><div><button class="secondary-button" value="cancel">继续面试</button><button class="danger-button" id="confirmEnd" value="confirm">结束并生成报告</button></div></form></dialog>
     <dialog class="confirm-dialog" id="resumeMismatchDialog"><form method="dialog"><span class="dialog-icon" aria-hidden="true">?</span><h2>是否选错了简历？</h2><p id="resumeMismatchMessage">你的基础介绍与当前简历明显不一致。请先核对；若选错，可退出并返回首页重新开始。</p><div><button class="secondary-button" id="continueWithResume" value="cancel">继续并澄清</button><button class="danger-button" id="exitForResume" value="confirm">退出并返回首页</button></div></form></dialog>
     <div class="toast-region toast-dark" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-    <script type="module" src="/js/interview.js?v=20260830-profile-bank-v2"></script>
+    <script type="module" src="/js/interview.js?v=20260830-interview-guidance-v1"></script>
   </body>
 </html>

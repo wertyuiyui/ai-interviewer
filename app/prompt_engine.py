@@ -360,7 +360,6 @@ def select_server_questions(
         technical = [
             item for item in technical if item.get("kind") != "ai_engineering"
         ]
-
     weak = [canonical_topic(topic).casefold() for topic in weak_topics]
 
     def rank(item: dict[str, Any]) -> tuple[int, int, int, str]:
@@ -870,6 +869,7 @@ def build_system_prompt(
 11. 若抽到“前沿讨论”，只聊候选人的相关实践、理解、判断依据和 trade-off；不要求背论文数字、公式或实现细节，也不得仅因没读过指定论文就判定答崩。
 12. {hr_behavior_rule}
 13. 每轮都对照结构化简历检查回答一致性。只有学校/专业/时间、任职、项目归属、本人职责或技术事实出现明确直接矛盾时才标记 mismatch；简历没写、回答省略、同义改写或无法核实只能标记 uncertain，不得推定造假。第一轮自我介绍若与教育和主要经历整体严重不符，或候选人明确表示简历不是自己的/选错了，才设置 resume_selection_warning=true。标准/高压场次遇到明确矛盾可用 interrupt 要求先澄清，普通场次用 challenge；语气保持专业。
+14. 候选人明确回答“不知道/不会/I don't know”时，该题可以判为 failed，但不要换一种说法继续追问同一知识点；服务端会适度提醒后切换下一道题。不要因一次坦诚不会自行结束整场面试。
 
 【核心面试官契约】
 {json.dumps(interviewer_core, ensure_ascii=False)}

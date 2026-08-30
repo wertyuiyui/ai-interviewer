@@ -140,10 +140,14 @@ async def test_hint_memory_opt_out_and_owned_retry(tmp_path, monkeypatch) -> Non
             client.post(f"/api/interviews/{interview_id}/hint"),
         )
         assert first_hint.status_code == duplicate_hint.status_code == 200
-        assert first_hint.json()["created"] is True
-        assert duplicate_hint.json()["created"] is False
-        assert first_hint.json()["hint_count"] == duplicate_hint.json()["hint_count"] == 1
-        assert first_hint.json()["hint"] == duplicate_hint.json()["hint"]
+        concurrent = [first_hint.json(), duplicate_hint.json()]
+        assert {item["level"] for item in concurrent} in ({1}, {1, 2})
+        assert any(item["level"] == 1 and item["created"] for item in concurrent)
+        advanced_hint = await client.post(f"/api/interviews/{interview_id}/hint")
+        assert advanced_hint.status_code == 200
+        assert advanced_hint.json()["level"] == 2
+        assert advanced_hint.json()["hint_count"] == 2
+        assert "简化示例" in advanced_hint.json()["hint"]
 
         result = await engine.answer(
             interview_id,
@@ -153,12 +157,14 @@ async def test_hint_memory_opt_out_and_owned_retry(tmp_path, monkeypatch) -> Non
         second_hint = await client.post(f"/api/interviews/{interview_id}/hint")
         assert second_hint.status_code == 200
         assert second_hint.json()["ordinal"] == 2
-        assert second_hint.json()["hint_count"] == 2
+        assert second_hint.json()["level"] == 1
+        assert second_hint.json()["hint_count"] == 3
 
         state = (await client.get(f"/api/interviews/{interview_id}")).json()
         assert state["memory_enabled"] is False
-        assert state["hint_count"] == 2
-        assert [event["ordinal"] for event in state["hint_events"]] == [1, 2]
+        assert state["hint_count"] == 3
+        assert [event["ordinal"] for event in state["hint_events"]] == [1, 1, 2]
+        assert [event["level"] for event in state["hint_events"]] == [1, 2, 1]
 
         await database.finish_interview(interview_id, "manual")
         report_response = await client.get(
@@ -167,8 +173,8 @@ async def test_hint_memory_opt_out_and_owned_retry(tmp_path, monkeypatch) -> Non
         assert report_response.status_code == 200
         report = report_response.json()
         assert report["memory_enabled"] is False
-        assert report["hint_count"] == 2
-        assert [event["ordinal"] for event in report["hint_events"]] == [1, 2]
+        assert report["hint_count"] == 3
+        assert [event["ordinal"] for event in report["hint_events"]] == [1, 1, 2]
 
         # An opted-out report remains visible but cannot affect implicit memory.
         assert await database.weak_topics("memory-client-001") == []

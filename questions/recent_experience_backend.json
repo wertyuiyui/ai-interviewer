@@ -125,6 +125,66 @@
         "difficulty": "hard",
         "source_ids": ["experience-tencent-2026-08"]
       }
+    ],
+    "alibaba": [
+      {
+        "id": "experience-alibaba-order-sequence",
+        "category": "消息队列",
+        "topic": "ordered_message_processing",
+        "question": "订单状态通过消息队列驱动多个下游时，你如何保证同一订单有序、重复消息幂等，并处理长时间积压？",
+        "followups": ["为什么不能只依赖消息队列分区有序？", "消费失败重试时怎样避免旧状态覆盖新状态？"],
+        "difficulty": "hard",
+        "source_ids": ["experience-alibaba-2025-order-mq"]
+      },
+      {
+        "id": "experience-alibaba-weighted-lottery",
+        "category": "系统设计",
+        "topic": "weighted_lottery_design",
+        "question": "设计一个支持不同用户权重的抽奖系统：怎样选人、限制次数、保存结果，并让概率配置可审计？",
+        "followups": ["并发请求如何保证同一用户只中奖一次？", "怎样用离线实验验证概率实现没有偏差？"],
+        "difficulty": "hard",
+        "source_ids": ["experience-alibaba-2025-order-mq"]
+      }
+    ],
+    "baidu": [
+      {
+        "id": "experience-baidu-document-dedup",
+        "category": "系统设计",
+        "topic": "recommendation_deduplication",
+        "question": "给用户推荐文档时，如何在高并发和多端访问下避免短期重复推荐，同时控制存储成本？",
+        "followups": ["精确集合和 Bloom Filter 分别会产生什么问题？", "历史状态过期后如何避免用户立刻再次看到同一内容？"],
+        "difficulty": "hard",
+        "source_ids": ["experience-baidu-2025-online-backend"]
+      },
+      {
+        "id": "experience-baidu-mysql-commit",
+        "category": "MySQL",
+        "topic": "mysql_commit_logs",
+        "question": "一次事务提交时 redo log、binlog 和 undo log 分别承担什么职责，两阶段提交要避免什么不一致？",
+        "followups": ["崩溃发生在 prepare 之后、commit 之前时如何恢复？", "为什么业务唯一 ID 不能只看自增主键是否连续？"],
+        "difficulty": "hard",
+        "source_ids": ["experience-baidu-2025-online-backend"]
+      }
+    ],
+    "huawei": [
+      {
+        "id": "experience-huawei-project-innovation",
+        "category": "项目深挖",
+        "topic": "project_innovation_evidence",
+        "question": "选一个项目改进点，说明原方案为什么不够、你提出了什么变化，以及用什么证据证明它值得保留。",
+        "followups": ["如果团队不同意，你会先做哪个最小验证？", "这个改进在哪些边界下反而会增加复杂度？"],
+        "difficulty": "medium",
+        "source_ids": ["experience-huawei-2024-cpp-intern"]
+      },
+      {
+        "id": "experience-huawei-priority-tradeoff",
+        "category": "综合面",
+        "topic": "multi_task_prioritization",
+        "question": "同时遇到线上故障、临近截止的需求和同事求助时，你如何排序，并怎样向相关人同步取舍？",
+        "followups": ["如果线上影响尚不明确，你先收集什么事实？", "被延期的任务如何重新承诺时间并避免失信？"],
+        "difficulty": "medium",
+        "source_ids": ["experience-huawei-2024-cpp-intern"]
+      }
     ]
   }
 }

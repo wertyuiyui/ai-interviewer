@@ -165,6 +165,45 @@
       "signals": ["多级缓存", "Redis 集群", "分布式锁边界", "高可用", "量化指标"]
     },
     {
+      "id": "experience-alibaba-2025-order-mq",
+      "kind": "interview_experience",
+      "company": "alibaba",
+      "title": "阿里国际 Java 后端开发二面复盘（2025-03）",
+      "url": "https://www.nowcoder.com/discuss/729708284768239616",
+      "license_spdx": null,
+      "usage_mode": "link-only; prompts rewritten",
+      "provenance_type": "first_hand",
+      "published_at": "2025-03-13",
+      "last_verified": "2026-08-30",
+      "signals": ["订单消息顺序", "分布式锁", "缓存频控", "抽奖系统设计", "实习深挖"]
+    },
+    {
+      "id": "experience-baidu-2025-online-backend",
+      "kind": "interview_experience",
+      "company": "baidu",
+      "title": "百度在线后端一二面复盘（2025-01）",
+      "url": "https://www.nowcoder.com/discuss/706674839175671808",
+      "license_spdx": null,
+      "usage_mode": "link-only; prompts rewritten",
+      "provenance_type": "first_hand",
+      "published_at": "2025-01-09",
+      "last_verified": "2026-08-30",
+      "signals": ["实习深挖", "HTTP 与 QUIC", "MySQL 日志", "消息队列", "推荐去重"]
+    },
+    {
+      "id": "experience-huawei-2024-cpp-intern",
+      "kind": "interview_experience",
+      "company": "huawei",
+      "title": "华为软件开发实习一二面复盘",
+      "url": "https://www.nowcoder.com/discuss/650422046727340032",
+      "license_spdx": null,
+      "usage_mode": "link-only; prompts rewritten",
+      "provenance_type": "first_hand",
+      "published_at": "2024-08-06",
+      "last_verified": "2026-08-30",
+      "signals": ["语言基础", "数据结构算法", "项目创新", "团队经历", "多任务取舍"]
+    },
+    {
       "id": "research-smartgen-2026",
       "kind": "research",
       "title": "SmartGen: Selective KV Cache Transfer",

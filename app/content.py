@@ -757,7 +757,19 @@ def load_experience_question_bank(company: str) -> list[dict[str, Any]]:
     companies = value.get("companies") if isinstance(value, dict) else None
     if not isinstance(companies, dict):
         raise RuntimeError(f"面经精选题库格式错误：{path}")
-    return _normalize_questions(companies.get(company, []), path)
+    questions = _normalize_questions(companies.get(company, []), path)
+    allowed_sources = {
+        str(item.get("id"))
+        for item in load_source_catalog().get("sources", [])
+        if item.get("kind") == "interview_experience"
+        and item.get("company") == company
+    }
+    return [
+        item
+        for item in questions
+        if item.get("source_ids")
+        and set(item.get("source_ids") or []) <= allowed_sources
+    ]
 
 
 def load_current_research_question_bank(

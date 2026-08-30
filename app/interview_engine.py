@@ -188,13 +188,22 @@ class InterviewEngine:
             raise AppError("QUESTION_NOT_READY", "当前问题还未准备好", status_code=409)
         turns = await self.db.list_turns(interview_id)
         ordinal = len(turns) + 1
+        prior_levels = {
+            int(item.get("level") or 1)
+            for item in (interview.get("hint_events") or [])
+            if isinstance(item, dict) and int(item.get("ordinal") or 0) == ordinal
+        }
+        level = 2 if 1 in prior_levels else 1
         event = await self.db.record_hint(
             interview_id,
             ordinal=ordinal,
             question=question,
             hint=self._build_hint(
-                question, str(interview.get("language_mode") or "bilingual")
+                question,
+                str(interview.get("language_mode") or "bilingual"),
+                level=level,
             ),
+            level=level,
         )
         if not event:
             raise AppError("INTERVIEW_NOT_FOUND", "面试不存在", status_code=404)
@@ -232,10 +241,52 @@ class InterviewEngine:
         return created
 
     @staticmethod
-    def _build_hint(question: str, language_mode: str = "bilingual") -> str:
-        """Return an answer scaffold, never a factual or complete answer."""
+    def _build_hint(
+        question: str, language_mode: str = "bilingual", *, level: int = 1
+    ) -> str:
+        """Return a concrete scaffold, then a short illustrative answer."""
 
         lowered = question.lower()
+        if level >= 2:
+            if language_mode == "en":
+                if any(marker in lowered for marker in ("project", "request", "traffic", "failure", "metric")):
+                    return (
+                        "Example shape: ‘The goal was to reduce checkout timeouts. I owned the service layer, "
+                        "moved the slow dependency off the synchronous path, and added timeout and fallback controls. "
+                        "I would prove the result with p95 latency and error rate, while noting that delayed consistency "
+                        "is the trade-off.’ Replace every detail with facts from your own project."
+                    )
+                return (
+                    "Example shape: ‘My conclusion is X because mechanism Y changes condition Z. "
+                    "It works when A holds, but under B I would choose C instead.’ Replace X/Y/Z/A/B/C "
+                    "with facts you can defend."
+                )
+            if any(marker in lowered for marker in ("手撕", "算法", "复杂度", "代码", "实现")):
+                return (
+                    "简化示例：‘我先用一次遍历确认约束；核心状态记录已经见过的信息，"
+                    "每步只做常数次查询，因此时间复杂度 O(n)、额外空间 O(n)。我会补空输入、重复值和极端规模测试。’"
+                    "请按本题真实数据结构替换，不能直接套用复杂度。"
+                )
+            if "mysql" in lowered or any(marker in question for marker in ("数据库", "事务", "索引", "慢查询")):
+                return (
+                    "简化示例：‘我先用执行计划确认扫描行数和索引命中，再根据查询条件与排序设计联合索引；"
+                    "上线前对比 P95 延迟和写入成本。若选择性低或写多读少，我不会盲目加索引。’"
+                )
+            if "redis" in lowered or any(marker in question for marker in ("缓存", "过期", "热 key", "库存")):
+                return (
+                    "简化示例：‘读请求先查缓存，未命中再回源并受并发合并保护；更新时以数据库为准并删除缓存。"
+                    "我会观察命中率、回源量和不一致窗口，热点或强一致场景需要换方案。’"
+                )
+            if any(marker in question for marker in ("项目", "请求", "流量", "故障", "指标", "架构")):
+                return (
+                    "简化示例：‘这个功能解决的是用户在高峰期请求失败的问题。我负责服务层改造，"
+                    "把非关键步骤异步化，并加入超时和降级；用 P95 延迟与错误率验证。代价是结果可能短暂延迟。’"
+                    "请把场景、本人动作和指标替换成你的真实经历。"
+                )
+            return (
+                "简化示例：‘我的结论是 X，因为 Y 机制在 Z 条件下成立；它的边界是 A，"
+                "如果出现 B，我会改用 C。’请把占位内容替换为本题事实，不要编造经历或指标。"
+            )
         if language_mode == "en":
             if any(marker in lowered for marker in ("compensation", "salary", "pay")):
                 return (
@@ -396,6 +447,7 @@ class InterviewEngine:
         }
         decision = await self._decide(decision_interview, resume, turns, answer)
         vague_answer = is_vague_answer(answer)
+        explicit_unknown = self._explicit_unknown(answer)
         anchor = decision.anchor_keyword.strip()
         if not anchor or anchor.lower() not in answer.lower():
             anchor = extract_anchor_keyword(answer, resume)
@@ -403,7 +455,7 @@ class InterviewEngine:
         # deliberately reuse a previous project anchor for a vague response,
         # so retain the direct response anchor before that substitution.
         response_anchor = anchor
-        if vague_answer:
+        if vague_answer and not explicit_unknown:
             previous_anchor = next(
                 (turn.anchor_keyword for turn in reversed(turns) if turn.anchor_keyword),
                 "",
@@ -412,6 +464,12 @@ class InterviewEngine:
                 anchor = previous_anchor
             elif resume.projects and resume.projects[0].name:
                 anchor = resume.projects[0].name
+        elif explicit_unknown:
+            anchor = (
+                resume.projects[0].name
+                if resume.projects and resume.projects[0].name
+                else "下一项能力"
+            )
 
         completed_turns = len(turns) + 1
         explicit_resume_mismatch = self._explicit_resume_mismatch(answer)
@@ -437,7 +495,7 @@ class InterviewEngine:
             completed_turns=completed_turns,
             anchor=anchor,
             resume=resume,
-            vague=vague_answer,
+            vague=vague_answer and not explicit_unknown,
             max_depth=drill_target,
             language_mode=str(interview.get("language_mode") or "bilingual"),
         )
@@ -461,6 +519,10 @@ class InterviewEngine:
             completed_turns=completed_turns,
             drill_target=drill_target,
             combined_hr_stages=min(3, len(hr_questions)),
+            skipped_followups_before=sum(
+                1 for turn in turns if self._explicit_unknown(turn.answer)
+            ),
+            skip_current=explicit_unknown,
         )
         next_item: dict[str, Any] | None = None
         if not forced_depth and phase.next_track:
@@ -546,6 +608,16 @@ class InterviewEngine:
                 if interview.get("language_mode") == "en"
                 else "你的自我介绍与当前简历中的基础经历明显不一致。请确认是否选错了简历？你可以澄清后继续，也可以点击“退出”返回首页重新选择。"
             )
+        elif explicit_unknown:
+            pressure_action = (
+                "challenge" if int(interview.get("stress_level") or 0) >= 1 else "none"
+            )
+            transition = (
+                "We will move on. In a real interview, briefly state what you do know before asking to skip. Next: "
+                if interview.get("language_mode") == "en"
+                else "这题先跳过。真实面试中，建议先说出你能确认的边界，再坦诚不会。下一题："
+            )
+            question = transition + question
         elif completed_turns == 1 or (
             phase.next_track == "hr" and not phase.next_followup
         ):
@@ -609,7 +681,9 @@ class InterviewEngine:
                 else decision.assessment.deductions
             )
             or (["回答缺少可验证的关键细节"] if decision.assessment.failed else []),
-            failed=decision.assessment.failed,
+            # A candid skip remains a low-scoring knowledge gap, but does not
+            # count toward the consecutive-breakdown auto-end threshold.
+            failed=decision.assessment.failed and not explicit_unknown,
             drill_dimension=current_drill_dimension,
             drill_depth=current_drill_depth,
             anchor_keyword=anchor,
@@ -653,6 +727,8 @@ class InterviewEngine:
         completed_turns: int,
         drill_target: int,
         combined_hr_stages: int,
+        skipped_followups_before: int = 0,
+        skip_current: bool = False,
     ) -> _BankPhase:
         """Map the transcript ordinal to reviewed-base/follow-up pairs.
 
@@ -688,9 +764,11 @@ class InterviewEngine:
                 return "technical", 1 + technical_step // 2, bool(technical_step % 2)
             return "", -1, False
 
-        next_track, next_index, next_followup = slot(completed_turns - origin)
+        next_track, next_index, next_followup = slot(
+            completed_turns - origin + skipped_followups_before + int(skip_current)
+        )
         answered_track, answered_index, answered_followup = slot(
-            completed_turns - origin - 1
+            completed_turns - origin - 1 + skipped_followups_before
         )
         return _BankPhase(
             next_track=next_track,
@@ -1270,6 +1348,25 @@ class InterviewEngine:
                 re.compile(r"(?:this|the) resume (?:isn't|is not) mine\b", re.I),
                 re.compile(r"I (?:selected|chose|uploaded) the wrong resume\b", re.I),
             )
+        )
+
+    @staticmethod
+    def _explicit_unknown(answer: str) -> bool:
+        normalized = " ".join(str(answer or "").casefold().split()).strip()
+        return bool(
+            re.fullmatch(
+                r"(?:这个|这题|这个问题)?\s*(?:我)?\s*(?:确实|真的|目前|暂时)?\s*"
+                r"(?:不知道|不会|不清楚|不太清楚|没学过|不了解)"
+                r"(?:\s*[，,。.!！?？]?\s*(?:请)?(?:换(?:一|个|一道|下一道)?题|"
+                r"(?:继续|进入)(?:下|下一)?(?:个|道)?题)(?:吧)?)?[。.!！?？]?",
+                normalized,
+            )
+            or re.fullmatch(
+                r"(?:i(?:'|’)m\s+not\s+sure|i\s+don(?:'|’)t\s+know|i\s+dont\s+know|"
+                r"no\s+idea|skip)(?:[,.;!]?\s*(?:please\s+)?(?:move\s+on|next\s+question))?[.!?]?",
+                normalized,
+            )
+            is not None
         )
 
     @staticmethod

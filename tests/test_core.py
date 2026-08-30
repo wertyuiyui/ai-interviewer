@@ -350,12 +350,13 @@ def test_real_experience_and_current_research_sources_are_traceable() -> None:
     }
     assert "不绕过登录" in catalog["collection_policy"]["social_media"]
 
-    for company in ("bytedance", "meituan", "tencent"):
+    for company in ("bytedance", "meituan", "tencent", "alibaba", "baidu", "huawei"):
         bank = load_experience_question_bank(company)
-        assert len(bank) >= 4
+        assert len(bank) >= 2
         assert all(set(item["source_ids"]) <= source_ids for item in bank)
         selected = select_questions(company, [], 15, "通用后端")
         assert sum(item["id"].startswith("experience-") for item in selected) == 2
+
 
     experience_sources = [
         item for item in sources if item["kind"] == "interview_experience"
@@ -1032,6 +1033,11 @@ async def test_three_layer_drill_early_end_report_and_memory(tmp_path) -> None:
     assert report.company_insights.company_label == "字节跳动"
     assert "个人" in report.company_insights.sample_caveat
     assert report.company_insights.citations
+    assert report.company_insights.personalized_advice
+    assert all(
+        "针对本次" in item or "本次优先" in item
+        for item in report.company_insights.personalized_advice
+    )
     assert all(
         item.url.startswith("https://www.nowcoder.com/")
         for item in report.company_insights.citations
@@ -1083,18 +1089,35 @@ async def test_three_layer_drill_early_end_report_and_memory(tmp_path) -> None:
     assert not first.ended
     assert first.pressure_action == "none"
     failed_once = await engine.answer(stress["id"], "不知道")
-    assert failed_once.breakdown_streak == 1
-    assert failed_once.pressure_action == "chain"
-    assert failed_once.question.startswith("我们把条件再收紧一点")
+    assert failed_once.breakdown_streak == 0
+    assert failed_once.pressure_action == "challenge"
+    assert "这题先跳过" in failed_once.question
+    assert "下一题" in failed_once.question
     failed_twice = await engine.answer(stress["id"], "不会")
-    assert failed_twice.ended
-    assert failed_twice.pressure_action == "chain"
-    assert failed_twice.end_reason == "poor_performance"
-    assert "今天的面试就到这里" in failed_twice.question
+    assert not failed_twice.ended
+    assert failed_twice.breakdown_streak == 0
+    assert "下一题" in failed_twice.question
 
 
 def test_json_parser_handles_fenced_output() -> None:
     assert parse_json_content('```json\n{"ok": true}\n```') == {"ok": True}
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "我不知道，请继续下一题",
+        "这个我确实没学过，换一题吧",
+        "这题不太清楚。进入下一题",
+        "I’m not sure, please move on",
+    ],
+)
+def test_explicit_unknown_variants_request_a_real_skip(answer: str) -> None:
+    assert InterviewEngine._explicit_unknown(answer) is True
+
+
+def test_partial_uncertainty_does_not_silently_skip_question() -> None:
+    assert InterviewEngine._explicit_unknown("我不太确定，但我会从一致性和超时边界分析") is False
 
 
 @pytest.mark.asyncio

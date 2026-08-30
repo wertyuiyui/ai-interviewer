@@ -205,7 +205,7 @@ function normalizeCitation(value, index) {
 }
 
 function normalizeCompanyInsights(value) {
-  if (typeof value === 'string') return { summary: value, patterns: [], advice: [], citations: [] };
+  if (typeof value === 'string') return { summary: value, patterns: [], advice: [], personalizedAdvice: [], citations: [] };
   const source = value && typeof value === 'object' ? value : {};
   const citations = firstValue(source, ['citations', 'sources', 'references', 'experience_posts', '面经引用', '引用'], []);
   const patterns = normalizeTextList(firstValue(source, ['recurring_patterns', 'patterns', 'common_patterns', '高频共性'], []));
@@ -215,6 +215,7 @@ function normalizeCompanyInsights(value) {
   return {
     summary: [caveat, synthesis].filter(Boolean).join(' '),
     patterns,
+    personalizedAdvice: normalizeTextList(firstValue(source, ['personalized_advice', 'personalizedAdvice', '本次练习建议'], [])),
     advice: normalizeTextList(firstValue(source, ['interview_advice', 'advice', 'suggestions', 'recommendations', 'company_advice', '面试建议', '建议'], [])),
     citations: toArray(citations).map(normalizeCitation).filter((citation) => citation.url),
   };
@@ -724,6 +725,12 @@ function renderCompanyInsights(report) {
   adviceList.replaceChildren();
   (insights.advice.length ? insights.advice : ['暂无基于可核验面经归纳出的针对性建议。'])
     .forEach((advice) => adviceList.append(createElement('li', '', advice)));
+  const personalizedList = $('#companyPersonalizedAdviceList');
+  personalizedList.replaceChildren();
+  (insights.personalizedAdvice.length
+    ? insights.personalizedAdvice
+    : ['本次有效答题不足时不推断个人弱项；请先参考下方公司样本共性。'])
+    .forEach((advice) => personalizedList.append(createElement('li', '', advice)));
   const citationList = $('#companyCitationList');
   citationList.replaceChildren();
   insights.citations.forEach((citation) => {

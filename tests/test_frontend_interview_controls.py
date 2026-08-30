@@ -92,8 +92,13 @@ def test_interviewer_voice_playback_toggle_is_local_only() -> None:
 
 def test_interview_script_cache_busts_answer_controls() -> None:
     html = (ROOT / "public" / "interview.html").read_text(encoding="utf-8")
-    assert "/js/interview.js?v=20260830-profile-bank-v2" in html
-    assert "/assets/app.css?v=20260830-profile-edit-v1" in html
+    assert "/js/interview.js?v=20260830-interview-guidance-v1" in html
+    assert "/assets/app.css?v=20260830-interview-guidance-v1" in html
+    assert 'id="unknownButton"' in html
+    assert "进一步提示" in html
+    script = (ROOT / "public" / "js" / "interview.js").read_text(encoding="utf-8")
+    assert "function submitUnknown()" in script
+    assert "hintedQuestions = new Map()" in script
 
 
 def test_resume_mismatch_can_exit_to_home_and_clear_selected_session() -> None:

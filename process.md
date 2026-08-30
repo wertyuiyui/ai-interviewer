@@ -38,6 +38,15 @@
 
 ## 变更日志
 
+### INTERVIEW-003 · 2026-08-30 · 不知道跳题、两级实质提示与报告面经建议
+
+- Agent：`/root`；协作只读审计：`/root/practice_audit`。
+- 状态：`completed`
+- 摘要：模拟面试答题区新增“我不知道”按钮，中文/英文明确不会表达会保留低分与具体知识缺口，但不计入连续答崩自动结束；项目深挖不再复用上一题 anchor 强追同一问题，普通场直接换题，压力场先做一句专业质疑再换题。题库主问/追问游标会消费被跳过的追问槽，恢复后继续按后续主问题推进；不确定但仍尝试分析的回答不会被误判为跳过。提示升级为两级：首次按算法、数据库、缓存、网络、项目或综合面给出具体简化思路，点击“进一步提示”后给简化示例，并明确项目事实、指标和复杂度必须替换为本人可证明内容；同题每级幂等持久化并写入报告。公开面经改写题库从字节/美团/腾讯扩展到阿里、百度、华为，新增来源均为可追溯牛客个人复盘，运行时不暴露原帖或来源元数据。报告新增“结合本次练习，优先做什么”，将低分主题与目标公司静态面经建议、样本信号交叉排序；页面改成“本次优先项—反复考点—下一轮练法—个人样本依据”四层，未评分报告不推断个人弱项。
+- 实际文件：`app/content.py`、`app/db.py`、`app/interview_engine.py`、`app/prompt_engine.py`、`app/report_engine.py`、`app/schemas.py`、`public/assets/app.css`、`public/interview.html`、`public/js/interview.js`、`public/report.html`、`public/js/report.js`、`questions/recent_experience_backend.json`、`resources/source_catalog.json`、`tests/test_core.py`、`tests/test_frontend_audio_ui.py`、`tests/test_frontend_interview_controls.py`、`tests/test_frontend_report_ui.py`、`tests/test_hint_memory_retry.py`、`tests/test_interviewer_skill.py`、`process.md`。
+- 验证：Python 编译、两份前端脚本 `node --check`、两份 JSON `jq empty`、`git diff --check` 均通过；不知道/提示/面经选题/报告/前端专项 `66 passed`；共享工作区全量 `231 passed, 2 failed`，两项失败均来自并发 `PROJECT-009` 已更改首页 Profile 文案但尚未同步其旧断言，不涉及本任务文件。
+- 风险或后续事项：真实面经仅代表具体候选人、部门和时间点，不宣称公司官方题库；新增中文改写题不在纯英文面试中直接翻译冒充已审核英文题。提示示例是回答结构而非标准答案，项目细节仍要求候选人替换为真实经历。`PROJECT-009` 继续保留在进行中表，本提交不得包含其 `public/index.html`、`home-profile.css`、项目前端或 Profile 测试改动。
+
 ### PROFILE-002 · 2026-08-30 · 可靠简历身份、项目资料编辑与全站字体统一
 
 - Agent：`/root`；只读协作调研/审计：`resume_skill_research`、`project_edit_audit`、`typography_audit`。

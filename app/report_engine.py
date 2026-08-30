@@ -715,7 +715,7 @@ class ReportEngine:
         )
         # Citations are always overwritten from a reviewed static file.  Model
         # output is never allowed to introduce a report URL.
-        report.company_insights = self._company_insights(interview["company"])
+        report.company_insights = self._company_insights(interview["company"], report)
         report.radar = self._radar(report)
         return report
 
@@ -1263,7 +1263,9 @@ class ReportEngine:
         )
 
     @staticmethod
-    def _company_insights(company: str) -> CompanyInsights:
+    def _company_insights(
+        company: str, report: InterviewReport | None = None
+    ) -> CompanyInsights:
         path = ROOT_DIR / "resources" / "company_interview_experiences.json"
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1305,11 +1307,70 @@ class ReportEngine:
             if isinstance(source, dict)
             and str(source.get("url") or "").startswith("https://")
         ]
+        advice = [str(value) for value in (item.get("report_advice") or [])]
+        personalized: list[str] = []
+        if report is not None and report.scored:
+            weak_topics = [str(value) for value in report.next_focus]
+            weak_topics.extend(
+                topic
+                for topic, score in report.topic_scores.items()
+                if float(score) < 6.5
+            )
+            weak_text = " ".join(weak_topics).casefold()
+            topic_groups = {
+                "项目与系统设计": ("项目", "架构", "链路", "选型", "场景", "系统设计"),
+                "数据库与缓存": ("mysql", "redis", "数据库", "缓存", "索引", "事务", "一致性"),
+                "并发、网络与运行时": ("并发", "线程", "锁", "jvm", "网络", "http", "tcp", "linux"),
+                "算法与手撕": ("算法", "手撕", "复杂度", "数据结构", "coding"),
+                "表达与综合面": ("表达", "沟通", "价值观", "规划", "薪酬", "company fit"),
+            }
+            weak_groups = [
+                (label, markers)
+                for label, markers in topic_groups.items()
+                if any(marker in weak_text for marker in markers)
+            ]
+
+            def relevance(value: str) -> int:
+                lowered = value.casefold()
+                return sum(
+                    1
+                    for _label, markers in weak_groups
+                    if any(marker in lowered for marker in markers)
+                )
+
+            ranked_advice = sorted(
+                enumerate(advice), key=lambda pair: (-relevance(pair[1]), pair[0])
+            )
+            for _index, value in ranked_advice:
+                matched_label = next(
+                    (
+                        label
+                        for label, markers in weak_groups
+                        if any(marker in value.casefold() for marker in markers)
+                    ),
+                    "",
+                )
+                if matched_label:
+                    personalized.append(f"针对本次的“{matched_label}”弱项：{value}")
+                if len(personalized) >= 3:
+                    break
+            if weak_groups and not personalized and advice:
+                personalized.append(
+                    f"本次优先补“{weak_groups[0][0]}”：{advice[0]}"
+                )
+
+            def citation_relevance(value: CompanyExperienceCitation) -> int:
+                return relevance(
+                    " ".join([value.report_takeaway, *value.takeaways])
+                )
+
+            citations.sort(key=lambda value: -citation_relevance(value))
         return CompanyInsights(
             company_label=str(item.get("display_name") or COMPANIES.get(company, company)),
             sample_caveat=str(item.get("sample_caveat") or ""),
             recurring_patterns=[str(value) for value in (item.get("trend_summary") or [])],
-            interview_advice=[str(value) for value in (item.get("report_advice") or [])],
+            interview_advice=advice,
+            personalized_advice=personalized,
             citations=citations,
         )
 

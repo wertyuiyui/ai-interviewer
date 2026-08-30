@@ -564,10 +564,14 @@ class Database:
         ordinal: int,
         question: str,
         hint: str,
+        level: int = 1,
     ) -> dict[str, Any]:
-        """Persist at most one scaffold hint for each question ordinal."""
+        """Persist one scaffold and one example hint for each question ordinal."""
 
         def operation(connection: sqlite3.Connection) -> dict[str, Any]:
+            # Serialize the read-modify-write so concurrent first clicks cannot
+            # both create a level-1 event and overwrite each other.
+            connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
                 "SELECT hint_events_json FROM interviews WHERE id = ?",
                 (interview_id,),
@@ -586,6 +590,7 @@ class Database:
                     for event in events
                     if isinstance(event, dict)
                     and int(event.get("ordinal") or 0) == ordinal
+                    and int(event.get("level") or 1) == level
                 ),
                 None,
             )
@@ -593,6 +598,7 @@ class Database:
                 return {**existing, "created": False, "hint_count": len(events)}
             event = {
                 "ordinal": ordinal,
+                "level": level,
                 "question": question,
                 "hint": hint,
                 "created_at": _utc_iso(),
