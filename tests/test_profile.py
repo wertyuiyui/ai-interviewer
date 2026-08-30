@@ -828,7 +828,53 @@ async def test_project_analysis_uses_qwen_plus_structured_schema_and_cache(
             ).fetchall()
         ]
     )
-    assert cache_versions == [PROJECT_ANALYSIS_SCHEMA_VERSION] == ["2"]
+    assert cache_versions == [PROJECT_ANALYSIS_SCHEMA_VERSION] == ["3"]
+
+
+@pytest.mark.asyncio
+async def test_project_analysis_v2_cache_is_not_reused_after_grounding_upgrade(
+    profile_settings,
+) -> None:
+    database = Database(profile_settings)
+    await database.initialize()
+    service = ProfileService(database, profile_settings)
+    await service.initialize()
+    project = await service.create_uploaded_project(
+        ProfileProjectCreate(
+            client_id="cache-upgrade-client-001",
+            name="缓存升级项目",
+            responsibility="负责入口与服务调用",
+        ),
+        [ProjectUpload("main.py", b"def handle_request():\n    return 200\n")],
+    )
+    request = ProfileProjectAnalysisRequest(client_id="cache-upgrade-client-001")
+    first = await service.analyze_project(project["id"], request)
+    assert first["cached"] is False
+
+    await database._run(
+        lambda connection: (
+            connection.execute(
+                "UPDATE profile_project_analysis_cache SET schema_version = '2' "
+                "WHERE project_id = ?",
+                (project["id"],),
+            ),
+            connection.commit(),
+        )
+    )
+    rebuilt = await service.analyze_project(project["id"], request)
+
+    assert rebuilt["cached"] is False
+    versions = await database._run(
+        lambda connection: {
+            str(row["schema_version"])
+            for row in connection.execute(
+                "SELECT schema_version FROM profile_project_analysis_cache "
+                "WHERE project_id = ?",
+                (project["id"],),
+            ).fetchall()
+        }
+    )
+    assert versions == {"2", PROJECT_ANALYSIS_SCHEMA_VERSION} == {"2", "3"}
 
 
 @pytest.mark.asyncio

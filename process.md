@@ -175,3 +175,12 @@
 - 文件：`app/profile.py`、`tests/test_profile.py`、`process.md`。
 - 验证：Profile/API 专项 `37 passed`；最终全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `203 passed`；Python compileall 与 `git diff --check` 通过。首次实现暴露了根 README 被一并挤掉的问题，修正配额优先级后现有兼容测试与新增实现保留测试均通过；失败中间态未部署。
 - 风险或后续事项：路径级证据仍只证明文件存在，不证明模型描述的运行行为；生产增量同步后需再次验证三处健康端点，且不修改数据库、依赖或其它服务。
+
+### PROJ-008 · 2026-08-30 · 项目分析缓存 v3 失效边界
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：项目分析缓存 schema 从 v2 提升至 v3，使链路最高仅部分核验、元规则过滤、职责关联、证据定位符校验和项目介绍文案等新语义立即生效；旧 v2 记录自然不命中并按当前项目快照重建，无需删除用户项目或历史数据。
+- 文件：`app/profile.py`、`tests/test_profile.py`、`process.md`。
+- 验证：Profile/API 专项 `38 passed`；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `204 passed`；Python compileall 与 `git diff --check` 通过。
+- 风险或后续事项：首次重新解读旧项目会产生一次新的百炼分析调用；v2 缓存保留在 SQLite 中但不会被读取，后续可在单独的数据维护窗口清理。
