@@ -27,7 +27,7 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`81aa320`；本地远程跟踪 `origin/main` 为 `e9a62e3`（新提交推送因远程归属未由用户明确确认被安全审查拦截）
+- 当前生产已部署提交：`98f5d14`；本地远程跟踪 `origin/main` 为 `e9a62e3`（新提交推送因远程归属未由用户明确确认被安全审查拦截）
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
@@ -327,3 +327,12 @@
 - 文件：`public/index.html`、`public/js/home.js`、`tests/test_frontend_home_ui.py`、`process.md`。
 - 验证：`node --check public/js/home.js`、`git diff --check` 通过；首页专项 `5 passed`；首页/Profile/导航/核心面试联合回归 `46 passed`；最终全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `226 passed`。
 - 风险或后续事项：当前环境无可用 Chromium，未做真实浏览器视觉回归；控件复用既有表单样式和原有 Profile/API 数据流，不修改简历解析、面试创建协议或个人档案存储。生产发布另见后续部署记录。
+
+### DEPLOY-008 · 2026-08-30 · 首页本场简历选择生产发布
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：以 `git archive 98f5d14` 生成固定发布快照，将首页直接选择本场简历功能同步到 `/opt/ai-interviewer-mvp`。同步前创建不含敏感和运行目录的回滚包 `/tmp/ai-interviewer-mvp-pre-98f5d14-20260830.tar.gz`；rsync 明确保留 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 与缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 文件：生产目录中的固定提交 `98f5d14`；生产密钥、SQLite 数据、依赖和 Caddy 配置未修改。
+- 验证：发布前全量回归 `226 passed`；目标服务为 `active/running`，主进程 PID `649100`；`http://127.0.0.1:8000/healthz`、绕过本机代理并以正式域名 SNI 直连实际网卡的 HTTPS 443 与 3000 均返回 `{"status":"ok"}`；生产 `index.html/home.js` 已确认包含 `savedResumeSelect`、首页直选说明和 `home-resume-v2` 缓存版本；生产工作目录保持 0755。
+- 风险或后续事项：通过 127.0.0.1 或未绕过本机代理的 TLS 路径仍会触发既有 `unexpected eof`，改用与此前部署一致的实际网卡直连验证成功；GitHub 远程归属仍未由用户明确确认，本次未推送，也未尝试绕过安全审查。
