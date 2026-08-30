@@ -25,6 +25,10 @@ const elements = {
   analysisName: $('#analysisProjectName'),
   analysisMeta: $('#analysisProjectMeta'),
   analysisSummary: $('#analysisProjectSummary'),
+  architectureTitle: $('#architectureTitle'),
+  architectureDescription: $('#architectureDescription'),
+  requestFlowTitle: $('#requestFlowTitle'),
+  flowReviewTitle: $('#flowReviewTitle'),
   refresh: $('#projectRefreshAnalysis'),
   architecture: $('#projectArchitecture'),
   responsibilityPanel: $('#projectResponsibilityPanel'),
@@ -607,7 +611,31 @@ function renderList(element, values, fallback) {
   });
 }
 
-function renderFlowReview(value, hasRequestFlow) {
+function flowLabels(projectType) {
+  if (projectType === 'paper') return {
+    section: '研究结构与证据链',
+    title: '方法与实验链',
+    review: '证据链检查',
+    description: '沿研究问题、核心方法、实验验证到结论梳理论证主线。',
+    missing: '尚未梳理出完整的方法与实验链，需补充方法、实验和结论之间的依据。',
+  };
+  if (projectType === 'technical') return {
+    section: '架构与核心运行链路',
+    title: '核心运行链路',
+    review: '运行链路检查',
+    description: '从输入或触发出发，沿核心机制、依赖与状态变化走到可观察结果。',
+    missing: '尚未梳理出完整的核心运行链路，需补充入口、机制和结果之间的依据。',
+  };
+  return {
+    section: '架构与核心业务流程',
+    title: '核心业务流程',
+    review: '业务流程检查',
+    description: '从用户动作或业务输入出发，经过核心功能、数据或外部依赖，走到用户可见结果。',
+    missing: '尚未梳理出完整的核心业务流程，需补充入口、业务调用和数据读写依据。',
+  };
+}
+
+function renderFlowReview(value, hasRequestFlow, labels) {
   const review = value && typeof value === 'object' ? value : {};
   const status = hasRequestFlow && ['verified', 'partial', 'needs_verification'].includes(review.status)
     ? review.status
@@ -622,9 +650,9 @@ function renderFlowReview(value, hasRequestFlow) {
   elements.flowReviewSummary.textContent = textFromValue(review.summary)
     || (hasRequestFlow
       ? '已按当前快照梳理链路；仍应由候选人核对实际调用顺序和失败路径。'
-      : '未从当前项目快照验证出完整请求链路，以下内容均需补充证据。');
+      : labels.missing);
   const issues = toArray(review.issues).filter(Boolean);
-  if (!hasRequestFlow) issues.unshift('未从当前项目快照验证出完整请求链路，不能把链路缺失视为分析成功。');
+  if (!hasRequestFlow) issues.unshift(labels.missing);
   renderList(
     elements.flowIssues,
     issues,
@@ -881,10 +909,15 @@ function renderAnalysis(payload) {
     || '以下结论只基于当前保存的项目资料，可补充更多上下文后重新解读。';
   renderArchitecture(analysis.architecture);
   const requestFlow = toArray(analysis.request_flow).filter(Boolean);
-  renderList(elements.requestFlow, requestFlow, '未从当前项目快照验证出完整请求链路，需补充入口、调用和数据读写证据。');
+  const labels = flowLabels(selectedProject?.project_type);
+  elements.architectureTitle.textContent = labels.section;
+  elements.architectureDescription.textContent = labels.description;
+  elements.requestFlowTitle.textContent = labels.title;
+  elements.flowReviewTitle.textContent = labels.review;
+  renderList(elements.requestFlow, requestFlow, labels.missing);
   elements.interviewIntro.textContent = textFromValue(analysis.interview_intro || analysis.interview_introduction)
     || '当前资料不足，暂未生成可在面试中直接使用的项目介绍。';
-  renderFlowReview(analysis.request_flow_review || analysis.flow_review, requestFlow.length > 0);
+  renderFlowReview(analysis.request_flow_review || analysis.flow_review, requestFlow.length > 0, labels);
   renderList(elements.technologyChoices, analysis.technology_choices, '当前资料未明确说明技术选型依据。');
   renderList(elements.risks, analysis.risks, '暂未识别到明确风险，仍建议准备容量与故障场景。');
   renderList(elements.improvements, analysis.improvements, '可补充压测数据、监控指标与复盘结论。');

@@ -173,7 +173,10 @@ def test_project_interpretation_page_uses_profile_analysis_contract() -> None:
     assert "%" not in page
     assert "analysis.interview_intro" in script
     assert "analysis.request_flow_review" in script
-    assert "未从当前项目快照验证出完整请求链路" in script
+    assert "flowLabels" in script
+    assert "架构与核心业务流程" in script
+    assert "方法与实验链" in script
+    assert "它不一定是 HTTP 请求" in page
     assert "input[data-responsibility-text]:checked" in script
     assert "/questions`" in script
     assert "generateProjectQuestions('more')" in script

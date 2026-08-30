@@ -33,6 +33,7 @@ from app.profile import (
     ProjectUpload,
     _select_github_candidates,
     load_paper_reader_skill,
+    load_repository_reader_skill,
     normalize_arxiv_url,
     normalize_github_url,
     validate_project_uploads,
@@ -659,6 +660,61 @@ def test_path_only_request_flow_evidence_stays_partial_and_filters_meta_rules() 
     assert "入口 → 服务 → 数据库链路" in grounded.interview_intro
 
 
+@pytest.mark.parametrize(
+    ("project_type", "expected_terms"),
+    [
+        ("application", ("用户问题", "重新设计")),
+        ("technical", ("技术约束", "正确性或性能边界")),
+    ],
+)
+def test_fallback_questions_prioritize_project_mainline_over_dockerfile(
+    project_type: str, expected_terms: tuple[str, str]
+) -> None:
+    questions = ProfileService._fallback_project_questions(
+        project={
+            "name": "订单系统",
+            "project_type": project_type,
+            "responsibility_scope": "all",
+        },
+        architecture=(),
+        request_flow=(),
+        implementation_paths={"Dockerfile", "app/main.py", "app/order_service.py"},
+        count=4,
+    )
+
+    assert len(questions) == 4
+    assert all("Dockerfile" not in item.evidence for item in questions[:2])
+    assert expected_terms[0] in questions[0].question
+    assert expected_terms[1] in questions[1].question
+
+
+def test_interview_intro_is_candidate_facing_without_review_rules() -> None:
+    intro = ProfileService._build_interview_intro(
+        project={
+            "name": "订单系统",
+            "project_type": "application",
+            "responsibility_scope": "all",
+        },
+        summary="帮助用户完成下单。现有材料给出的验证依据包括 main.py。",
+        architecture=[],
+        request_flow=[],
+        review=ProjectAnalysis.model_validate({
+            "project_summary": "x",
+            "architecture": [],
+            "request_flow": [],
+            "technology_choices": [],
+            "risks": [],
+            "interview_questions": [],
+            "improvements": [],
+        }).request_flow_review,
+        validation_evidence=["main.py"],
+    )
+
+    assert "帮助用户完成下单" in intro
+    for marker in ("现有材料", "当前材料", "待核实", "补充源码", "验证依据"):
+        assert marker not in intro
+
+
 @pytest.mark.asyncio
 async def test_github_http_helper_rejects_non_allowlisted_origin_without_network() -> None:
     fetcher = GitHubRepositoryFetcher()
@@ -831,7 +887,7 @@ async def test_project_analysis_uses_qwen_plus_structured_schema_and_cache(
             ).fetchall()
         ]
     )
-    assert cache_versions == [PROJECT_ANALYSIS_SCHEMA_VERSION] == ["4"]
+    assert cache_versions == [PROJECT_ANALYSIS_SCHEMA_VERSION] == ["5"]
 
 
 @pytest.mark.asyncio
@@ -877,7 +933,7 @@ async def test_project_analysis_v2_cache_is_not_reused_after_grounding_upgrade(
             ).fetchall()
         }
     )
-    assert versions == {"2", PROJECT_ANALYSIS_SCHEMA_VERSION} == {"2", "4"}
+    assert versions == {"2", PROJECT_ANALYSIS_SCHEMA_VERSION} == {"2", "5"}
 
 
 class _LinkedGitHubSnapshot:
@@ -947,9 +1003,11 @@ async def test_project_types_multiple_links_default_scope_and_paper_skill(profil
     assert [item["name"] for item in analysis["architecture"]] == [
         "研究问题与贡献", "核心方法", "实验与验证"
     ]
-    assert "默认对整体方案与核心实现负责" in analysis["interview_intro"]
+    assert "论文阅读、方法理解和复现评估" in analysis["interview_intro"]
+    assert "请求先进入" not in analysis["interview_intro"]
     assert any("基线" in item["question"] or "研究问题" in item["question"] for item in analysis["interview_questions"])
     assert "three progressively deeper passes" in load_paper_reader_skill()
+    assert "Dockerfiles" in load_repository_reader_skill()
 
     partial = await service.update_project(
         paper["id"],

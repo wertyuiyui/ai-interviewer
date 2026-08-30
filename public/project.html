@@ -100,17 +100,17 @@
             </header>
 
             <section class="project-analysis-section project-architecture" aria-labelledby="architectureTitle">
-              <header><span>01</span><div><h3 id="architectureTitle">架构与请求链路</h3><p>先形成一段能在面试中讲清楚的全局叙述。</p></div></header>
+              <header><span>01</span><div><h3 id="architectureTitle">架构与核心流程</h3><p id="architectureDescription">核心流程是一条代表性端到端主线：从触发或输入，经核心模块、数据或外部依赖，到可观察结果；它不一定是 HTTP 请求。</p></div></header>
               <div class="project-architecture-grid">
                 <article><h4>架构概览</h4><p class="project-component-help">勾选你确实负责过的组件，可合并到“我负责的”。</p><div id="projectArchitecture"></div><button class="project-component-merge is-hidden" id="projectResponsibilityMerge" type="button">合并所选组件到我的职责</button></article>
-                <article><h4>核心请求链路</h4><ol id="projectRequestFlow"></ol></article>
+                <article><h4 id="requestFlowTitle">核心流程 / 请求链路</h4><ol id="projectRequestFlow"></ol></article>
               </div>
               <article class="project-interview-intro">
                 <header><div><span>面试可用</span><h4>项目介绍</h4></div><button id="projectInterviewIntroCopy" type="button">复制</button></header>
                 <p id="projectInterviewIntro">当前资料不足，暂未生成可在面试中使用的项目介绍。</p>
               </article>
               <div class="project-flow-review" id="projectFlowReview">
-                <header><h4>请求链路检查</h4><span id="projectFlowReviewState">待核实</span></header>
+                <header><h4 id="flowReviewTitle">流程检查</h4><span id="projectFlowReviewState">待核实</span></header>
                 <p id="projectFlowReviewSummary">当前资料不足，尚未完成请求链路核对。</p>
                 <div>
                   <article><h5>发现的问题</h5><ul id="projectFlowIssues"></ul></article>
@@ -143,6 +143,6 @@
     </main>
 
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-    <script type="module" src="/js/project.js?v=20260830-project-deep-dive-v3"></script>
+    <script type="module" src="/js/project.js?v=20260830-project-mainline-v1"></script>
   </body>
 </html>

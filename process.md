@@ -38,6 +38,15 @@
 
 ## 变更日志
 
+### PROJ-009 · 2026-08-30 · 项目主线解读与候选人介绍净化
+
+- Agent：`/root`；协作只读审计：`/root/practice_audit`。
+- 状态：`completed`
+- 摘要：将“核心请求链路”明确为从触发或输入，经核心模块、数据或外部依赖到可观察结果的一条代表性端到端主线，并按应用、技术、论文分别显示业务流程、运行链路、方法与实验链。新增仓库阅读 skill，采用 Detect → Trace → Synthesize：先定位入口和主模块，再沿真实源码追踪主线，最后生成候选人叙述与深挖题。应用类前两题优先用户问题、设计动机与核心功能，技术类前两题优先技术约束、核心机制和正确性/性能边界；存在核心源码时过滤仅引用 Dockerfile、依赖、CI 或部署配置的模型题，配置只在缺少更强实现证据时作为运行背景。项目介绍只保留目标、动机、功能/方法、职责、实现主线、亮点与结果，不再混入材料不足、验证依据、待核实或补充源码等后台审计内容；论文默认以阅读、方法理解和复现评估视角介绍，不冒充论文作者或整体实现者。缓存 schema 升至 v5，避免复用旧解读。
+- 文件：`analysis_skills/repository-reader/SKILL.md`、`app/profile.py`、`public/project.html`、`public/js/project.js`、`tests/test_profile.py`、`tests/test_frontend_profile_project_ui.py`、`process.md`。
+- 验证：repository-reader skill quick validator 通过；`node --check public/js/project.js`、Python 编译、`git diff --check` 通过；Profile/Profile API/项目前端专项 `50 passed`；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `224 passed`。
+- 风险或后续事项：请求链路仍基于静态材料，不执行用户代码；证据完整性继续显示在独立检查区，但不会进入候选人讲稿。未进行付费真实模型调用或浏览器视觉回归。与已登记 `PROFILE-002` 的共享文件已释放，后续任务可基于本提交继续修改，禁止覆盖本次主线排序与介绍净化逻辑。
+
 ### PROC-001 · 2026-08-30 · 建立共享协作台账
 
 - Agent：`/root`
