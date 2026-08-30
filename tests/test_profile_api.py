@@ -286,6 +286,29 @@ async def test_profile_routes_project_analysis_and_interview_snapshot(
         }
         assert github.json()["project"]["responsibility"] == "负责限流与链路追踪"
 
+        linked = await client.post(
+            "/api/profile/projects/links",
+            json={
+                "client_id": client_id,
+                "name": "多仓库技术项目",
+                "project_type": "technical",
+                "urls": [
+                    "https://github.com/example/gateway",
+                    "https://github.com/example/worker",
+                ],
+            },
+        )
+        assert linked.status_code == 201
+        linked_project = linked.json()["project"]
+        assert linked_project["project_type"] == "technical"
+        assert linked_project["responsibility_scope"] == "all"
+        assert linked_project["responsibility"] == ""
+        assert linked_project["links"] == [
+            "https://github.com/example/gateway",
+            "https://github.com/example/worker",
+        ]
+        assert all(item["path"].startswith("sources/") for item in linked_project["files"])
+
         deleted = await client.delete(
             f"/api/profile/projects/{project['id']}",
         )

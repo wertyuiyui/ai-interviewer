@@ -132,7 +132,8 @@
 }
 
 .project-name-row > input,
-.project-github-row > input,
+.project-github-row > textarea,
+.project-add-block > select,
 .project-responsibility-create textarea,
 .project-responsibility-editor textarea {
   min-width: 0;
@@ -145,9 +146,12 @@
 }
 
 .project-name-row > input,
-.project-github-row > input {
+.project-add-block > select {
   height: 36px;
 }
+
+.project-add-block > select { width: 100%; margin-bottom: 12px; padding: 0 10px; border: 1px solid #dde1e6; border-radius: 9px; background: #fbfbf9; }
+.project-github-row > textarea { min-height: 72px; padding-block: 9px; resize: vertical; line-height: 1.5; }
 
 .project-responsibility-create textarea,
 .project-responsibility-editor textarea {
@@ -158,7 +162,8 @@
 }
 
 .project-name-row > input:focus,
-.project-github-row > input:focus,
+.project-github-row > textarea:focus,
+.project-add-block > select:focus,
 .project-responsibility-create textarea:focus,
 .project-responsibility-editor textarea:focus {
   border-color: #8ca9e4;

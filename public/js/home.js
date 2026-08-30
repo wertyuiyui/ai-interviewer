@@ -24,6 +24,8 @@ const profileStatus = $('#profileStatus');
 const profileResumeFiles = $('#profileResumeFiles');
 const profileProjectFiles = $('#profileProjectFiles');
 const profileProjectName = $('#profileProjectName');
+const profileProjectType = $('#profileProjectType');
+const profileProjectPartialScope = $('#profileProjectPartialScope');
 const profileProjectResponsibility = $('#profileProjectResponsibility');
 const profileGithubUrl = $('#profileGithubUrl');
 const profileGithubAdd = $('#profileGithubAdd');
@@ -377,7 +379,9 @@ async function uploadProfileProject() {
     const data = new FormData();
     data.append('client_id', getClientId());
     data.append('name', profileProjectName.value.trim() || files[0].name.replace(/\.[^.]+$/, ''));
-    data.append('responsibility', profileProjectResponsibility.value.trim());
+    data.append('project_type', profileProjectType.value);
+    data.append('responsibility_scope', profileProjectPartialScope.checked ? 'partial' : 'all');
+    data.append('responsibility', profileProjectPartialScope.checked ? profileProjectResponsibility.value.trim() : '');
     files.forEach((file) => data.append('files', file, file.name));
     updateProfileProjectProgress('saving', `已读取 ${files.length} 个文件，正在上传并保存项目…`);
     const response = await apiFetch('/api/profile/projects', { method: 'POST', body: data, timeout: 65_000 });
@@ -386,6 +390,8 @@ async function uploadProfileProject() {
     if (profileItemId(project)) await selectProfileProject(project, { quiet: true });
     profileProjectName.value = '';
     profileProjectResponsibility.value = '';
+    profileProjectPartialScope.checked = false;
+    profileProjectResponsibility.classList.add('is-hidden');
     updateProfileProjectProgress('done', '项目文件与本人职责已保存，可以进入项目解读。');
     showToast('项目文件已保存，可以进入项目解读。', 'success');
   } catch (error) {
@@ -399,40 +405,57 @@ async function uploadProfileProject() {
 }
 
 async function addGithubProject() {
-  const url = profileGithubUrl.value.trim();
+  const urls = profileGithubUrl.value.split(/\n+/).map((value) => value.trim()).filter(Boolean);
+  const projectType = profileProjectType.value;
   let repositoryName = '';
   try {
-    const parsed = new URL(url);
-    const parts = parsed.pathname.split('/').filter(Boolean);
-    const repository = (parts[1] || '').replace(/\.git$/i, '');
-    if (parsed.protocol !== 'https:' || parsed.hostname.toLowerCase() !== 'github.com'
-      || parts.length !== 2 || !parts[0] || !repository || parsed.search || parsed.hash) throw new Error();
-    repositoryName = repository;
+    if (!urls.length || urls.length > 5) throw new Error();
+    urls.forEach((url) => {
+      const parsed = new URL(url);
+      const parts = parsed.pathname.split('/').filter(Boolean);
+      const github = parsed.hostname.toLowerCase() === 'github.com' && parts.length === 2;
+      const arxiv = ['arxiv.org', 'www.arxiv.org'].includes(parsed.hostname.toLowerCase())
+        && ['abs', 'pdf'].includes(parts[0]) && parts.length === 2;
+      if (parsed.protocol !== 'https:' || parsed.search || parsed.hash
+        || (!github && !(projectType === 'paper' && arxiv))) throw new Error();
+    });
+    if (projectType === 'paper'
+      && !urls.some((url) => /(^|\.)arxiv\.org$/i.test(new URL(url).hostname))) throw new Error();
+    repositoryName = new URL(urls[0]).pathname.split('/').filter(Boolean).pop().replace(/\.git$|\.pdf$/gi, '');
   } catch {
-    showToast('请输入完整的 GitHub 仓库链接。', 'error');
+    showToast('请填写 1–5 个有效链接；论文至少包含一个 arXiv 链接。', 'error');
     profileGithubUrl.focus();
     return;
   }
   profileGithubAdd.disabled = true;
-  updateProfileProjectProgress('reading', '正在读取公开 GitHub 仓库…');
-  updateProfileStatus('正在添加 GitHub 项目…');
+  updateProfileProjectProgress('reading', '正在读取公开论文/项目链接…');
+  updateProfileStatus('正在添加论文/项目…');
   try {
-    const response = await apiFetch('/api/profile/projects/github', {
+    const singleGithub = urls.length === 1 && new URL(urls[0]).hostname.toLowerCase() === 'github.com';
+    const requestOptions = {
       method: 'POST', timeout: 35_000, json: {
         client_id: getClientId(),
         name: profileProjectName.value.trim() || repositoryName,
-        url,
-        responsibility: profileProjectResponsibility.value.trim(),
+        urls,
+        project_type: projectType,
+        responsibility_scope: profileProjectPartialScope.checked ? 'partial' : 'all',
+        responsibility: profileProjectPartialScope.checked ? profileProjectResponsibility.value.trim() : '',
+        ...(singleGithub ? { url: urls[0], urls: undefined } : {}),
       },
-    });
+    };
+    const response = singleGithub
+      ? await apiFetch('/api/profile/projects/github', requestOptions)
+      : await apiFetch('/api/profile/projects/links', requestOptions);
     const project = response?.project || response;
     await loadProfile();
     if (profileItemId(project)) await selectProfileProject(project, { quiet: true });
     profileGithubUrl.value = '';
     profileProjectName.value = '';
     profileProjectResponsibility.value = '';
-    updateProfileProjectProgress('done', 'GitHub 项目与本人职责已保存，可以进入项目解读。');
-    showToast('GitHub 项目已添加，可以开始解读。', 'success');
+    profileProjectPartialScope.checked = false;
+    profileProjectResponsibility.classList.add('is-hidden');
+    updateProfileProjectProgress('done', '论文/项目链接已保存，可以进入解读。');
+    showToast('论文/项目链接已添加，可以开始解读。', 'success');
   } catch (error) {
     updateProfileProjectProgress('error', error?.message || 'GitHub 项目添加失败，请稍后重试。');
     showToast(error?.message || 'GitHub 项目添加失败，请稍后重试。', 'error', 5200);
@@ -930,9 +953,17 @@ memoryEnabled.addEventListener('change', () => {
 });
 profileResumeFiles?.addEventListener('change', uploadProfileResumes);
 profileProjectFiles?.addEventListener('change', uploadProfileProject);
+profileProjectPartialScope?.addEventListener('change', () => {
+  profileProjectResponsibility.classList.toggle('is-hidden', !profileProjectPartialScope.checked);
+});
+profileProjectType?.addEventListener('change', () => {
+  profileProjectFiles.accept = profileProjectType.value === 'paper'
+    ? '.pdf,.zip,.md,.txt,.py,.json,.yaml,.yml'
+    : '.zip,.md,.txt,.json,.yaml,.yml,.toml,.ini,.conf,.py,.java,.go,.js,.ts,.tsx,.jsx,.sql,.xml,.proto,.c,.cc,.cpp,.h,.hpp,.rs,.rb,.php,.kt,.swift,.sh';
+});
 profileGithubAdd?.addEventListener('click', addGithubProject);
 profileGithubUrl?.addEventListener('keydown', (event) => {
-  if (event.key !== 'Enter') return;
+  if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey)) return;
   event.preventDefault();
   addGithubProject();
 });

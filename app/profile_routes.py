@@ -16,9 +16,11 @@ from .config import Settings
 from .errors import AppError
 from .profile import (
     MAX_DIRECT_FILE_BYTES,
+    MAX_PAPER_PDF_BYTES,
     MAX_UPLOAD_BYTES,
     MAX_UPLOAD_ITEMS,
     ProfileGitHubProjectCreate,
+    ProfileLinkedProjectCreate,
     ProfileProjectAnalysisRequest,
     ProfileProjectCreate,
     ProfileProjectQuestionsRequest,
@@ -229,6 +231,8 @@ def create_profile_router(
         http_request: Request,
         client_id: str = Form(min_length=8, max_length=128),
         name: str = Form(min_length=1, max_length=120),
+        project_type: str = Form(default="application"),
+        responsibility_scope: str = Form(default="all"),
         responsibility: str = Form(default="", max_length=4_000),
         files: list[UploadFile] = File(...),
         profile_key: str = Header(
@@ -254,10 +258,11 @@ def create_profile_router(
         for item in files:
             upload = await ProjectUpload.from_async_upload(item)
             raw_total += len(upload.content)
-            if raw_total > MAX_UPLOAD_BYTES:
+            raw_limit = MAX_PAPER_PDF_BYTES if project_type == "paper" else MAX_UPLOAD_BYTES
+            if raw_total > raw_limit:
                 raise AppError(
                     "PROJECT_UPLOAD_TOO_LARGE",
-                    f"一次上传总大小不能超过 {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+                    f"一次上传总大小不能超过 {raw_limit // (1024 * 1024)} MB",
                     status_code=413,
                 )
             uploads.append(upload)
@@ -265,11 +270,32 @@ def create_profile_router(
             project_request = ProfileProjectCreate(
                 client_id=client_id,
                 name=name,
+                project_type=project_type,
+                responsibility_scope=responsibility_scope,
                 responsibility=responsibility,
             )
         except ValidationError as exc:
             raise _model_validation_error(exc) from exc
         project = await service_provider().create_uploaded_project(project_request, uploads)
+        return {"project": project}
+
+    @router.post("/projects/links", status_code=201)
+    async def create_linked_project(
+        request: ProfileLinkedProjectCreate,
+        http_request: Request,
+        profile_key: str = Header(
+            alias="X-Profile-Key", min_length=24, max_length=128
+        ),
+    ) -> dict[str, Any]:
+        _verify_profile_key(profile_key, request.client_id)
+        await require_budget(
+            http_request,
+            action="profile-linked-project",
+            client_id=request.client_id,
+            host_limit=16,
+            client_limit=8,
+        )
+        project = await service_provider().create_linked_project(request)
         return {"project": project}
 
     @router.post("/projects/github", status_code=201)

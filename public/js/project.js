@@ -5,6 +5,8 @@ import {
 const elements = {
   status: $('#projectProfileStatus'),
   name: $('#projectName'),
+  type: $('#projectType'),
+  partialScope: $('#projectPartialScope'),
   responsibility: $('#projectResponsibility'),
   files: $('#projectFiles'),
   githubUrl: $('#projectGithubUrl'),
@@ -27,6 +29,7 @@ const elements = {
   architecture: $('#projectArchitecture'),
   responsibilityPanel: $('#projectResponsibilityPanel'),
   responsibilityEdit: $('#projectResponsibilityEdit'),
+  responsibilityScopeEdit: $('#projectResponsibilityScopeEdit'),
   responsibilitySave: $('#projectResponsibilitySave'),
   responsibilitySaveState: $('#projectResponsibilitySaveState'),
   responsibilityMerge: $('#projectResponsibilityMerge'),
@@ -178,7 +181,8 @@ function updateStatus(message = '') {
 }
 
 function sourceMeta(project) {
-  if (project?.source_type === 'github') return 'GitHub 仓库';
+  if (project?.project_type === 'paper') return `${project?.links?.length || 1} 个论文来源`;
+  if (['github', 'linked'].includes(project?.source_type)) return `${project?.links?.length || 1} 个项目链接`;
   const count = Array.isArray(project?.files) ? project.files.length : 0;
   return `${count || '多'} 个项目文件`;
 }
@@ -192,7 +196,10 @@ function renderResponsibilityEditor() {
   setVisible(elements.responsibilityPanel, hasProject);
   if (!hasProject) return;
   elements.responsibilityEdit.value = projectResponsibilityValue();
-  elements.responsibilitySaveState.textContent = projectResponsibilityValue() ? '已保存' : '尚未填写';
+  const partial = selectedProject?.responsibility_scope === 'partial';
+  elements.responsibilityScopeEdit.checked = partial;
+  elements.responsibilityEdit.classList.toggle('is-hidden', !partial);
+  elements.responsibilitySaveState.textContent = partial ? '部分负责 · 已保存' : '默认负责整个项目';
 }
 
 function renderReady() {
@@ -258,13 +265,13 @@ function renderProjects() {
     radio.addEventListener('change', () => selectProject(project));
     const icon = document.createElement('span');
     icon.className = 'project-source-icon';
-    icon.textContent = project?.source_type === 'github' ? 'GH' : '项';
+    icon.textContent = project?.project_type === 'paper' ? '论' : ['github', 'linked'].includes(project?.source_type) ? 'GH' : '项';
     const copy = document.createElement('span');
     copy.className = 'project-asset-copy';
     const title = document.createElement('strong');
     title.textContent = itemName(project);
     const meta = document.createElement('small');
-    meta.textContent = `${sourceMeta(project)} · ${formatDate(project?.created_at, false)}${projectResponsibilityValue(project) ? ' · 已填写职责' : ''}`;
+    meta.textContent = `${sourceMeta(project)} · ${formatDate(project?.created_at, false)}${project?.responsibility_scope === 'partial' ? ' · 部分负责' : ' · 默认全责'}`;
     copy.append(title, meta);
     label.append(radio, icon, copy);
 
@@ -381,7 +388,9 @@ async function uploadProjectFiles() {
     const data = new FormData();
     data.append('client_id', getClientId());
     data.append('name', elements.name.value.trim() || files[0].name.replace(/\.[^.]+$/, ''));
-    data.append('responsibility', elements.responsibility.value.trim());
+    data.append('project_type', elements.type.value);
+    data.append('responsibility_scope', elements.partialScope.checked ? 'partial' : 'all');
+    data.append('responsibility', elements.partialScope.checked ? elements.responsibility.value.trim() : '');
     files.forEach((file) => data.append('files', file, file.name));
     updateProgress('uploading_files', `正在上传并保存 ${files.length} 个文件，完成前请勿关闭页面。`);
     updateStatus(`正在保存 ${files.length} 个项目文件…`);
@@ -393,6 +402,8 @@ async function uploadProjectFiles() {
     await loadProfile({ preferredProjectId: itemId(project) });
     elements.name.value = '';
     elements.responsibility.value = '';
+    elements.partialScope.checked = false;
+    elements.responsibility.classList.add('is-hidden');
     showToast('项目资料已保存，点击“开始项目解读”继续。', 'success');
   } catch (error) {
     const message = error?.message || '项目资料保存失败，请稍后重试。';
@@ -405,49 +416,66 @@ async function uploadProjectFiles() {
   }
 }
 
-function validGithubUrl(value) {
+function validProjectUrl(value, projectType) {
   try {
     const url = new URL(value);
     const parts = url.pathname.split('/').filter(Boolean);
     const repository = (parts[1] || '').replace(/\.git$/i, '');
-    return url.protocol === 'https:' && url.hostname.toLowerCase() === 'github.com'
-      && parts.length === 2 && Boolean(parts[0] && repository) && !url.search && !url.hash;
+    const host = url.hostname.toLowerCase();
+    const github = host === 'github.com' && parts.length === 2 && Boolean(parts[0] && repository);
+    const arxiv = ['arxiv.org', 'www.arxiv.org'].includes(host)
+      && /^(abs|pdf)\/[a-z0-9.\/-]+(?:\.pdf)?$/i.test(parts.join('/'));
+    return url.protocol === 'https:' && !url.search && !url.hash
+      && (github || (projectType === 'paper' && arxiv));
   } catch {
     return false;
   }
 }
 
 async function addGithubProject() {
-  const url = elements.githubUrl.value.trim();
-  if (!validGithubUrl(url)) {
-    showToast('请输入完整的 GitHub 仓库链接。', 'error');
+  const urls = elements.githubUrl.value.split(/\n+/).map((value) => value.trim()).filter(Boolean);
+  if (!urls.length || urls.length > 5 || urls.some((url) => !validProjectUrl(url, elements.type.value))) {
+    showToast('请提供 1–5 个有效链接；论文支持 arXiv，其他类型支持 GitHub。', 'error');
     elements.githubUrl.focus();
     return;
   }
-  const repositoryName = new URL(url).pathname.split('/').filter(Boolean)[1].replace(/\.git$/i, '');
+  if (elements.type.value === 'paper' && !urls.some((url) => /(^|\.)arxiv\.org$/i.test(new URL(url).hostname))) {
+    showToast('论文类型至少需要一个 arXiv 链接。', 'error');
+    return;
+  }
+  const defaultName = new URL(urls[0]).pathname.split('/').filter(Boolean).pop().replace(/\.git$|\.pdf$/gi, '');
   elements.githubAdd.disabled = true;
   beginProgress(
-    [{ id: 'github_fetch', label: '读取并保存 GitHub 仓库' }],
-    '正在读取 GitHub 仓库…',
-    '服务端只读取公开仓库中受支持的文本与源码文件，不会运行代码。',
+    [{ id: 'github_fetch', label: '读取并保存链接资料' }],
+    '正在读取链接资料…',
+    '服务端只读取支持的公开 GitHub 文本或 arXiv 论文，不会运行代码。',
   );
   updateStatus('正在添加 GitHub 项目…');
   try {
     updateProgress('github_fetch', '正在获取公开仓库的文件清单与受支持源码。');
-    const response = await apiFetch('/api/profile/projects/github', {
+    const singleGithub = urls.length === 1 && new URL(urls[0]).hostname.toLowerCase() === 'github.com';
+    const requestOptions = {
       method: 'POST', timeout: 35_000, json: {
-        client_id: getClientId(), name: elements.name.value.trim() || repositoryName, url,
-        responsibility: elements.responsibility.value.trim(),
+        client_id: getClientId(), name: elements.name.value.trim() || defaultName, urls,
+        project_type: elements.type.value,
+        responsibility_scope: elements.partialScope.checked ? 'partial' : 'all',
+        responsibility: elements.partialScope.checked ? elements.responsibility.value.trim() : '',
+        ...(singleGithub ? { url: urls[0], urls: undefined } : {}),
       },
-    });
+    };
+    const response = singleGithub
+      ? await apiFetch('/api/profile/projects/github', requestOptions)
+      : await apiFetch('/api/profile/projects/links', requestOptions);
     const project = response?.project || response;
     if (!itemId(project)) throw new Error('服务端没有返回项目编号。');
     updateProgress('github_fetch', '仓库快照和本人职责已保存。', { complete: true });
-    completeProgress('GitHub 项目已保存，可以开始解读。', { title: '项目保存完成' });
+    completeProgress('论文/项目链接已保存，可以开始解读。', { title: '资料保存完成' });
     await loadProfile({ preferredProjectId: itemId(project) });
     elements.githubUrl.value = '';
     elements.name.value = '';
     elements.responsibility.value = '';
+    elements.partialScope.checked = false;
+    elements.responsibility.classList.add('is-hidden');
     showToast('GitHub 项目已添加，点击“开始项目解读”继续。', 'success');
   } catch (error) {
     const message = error?.message || 'GitHub 项目添加失败，请稍后重试。';
@@ -477,16 +505,24 @@ async function saveProjectResponsibility({ mergedFromArchitecture = false } = {}
   const id = itemId(selectedProject);
   if (!id) return;
   const responsibility = elements.responsibilityEdit.value.trim();
+  const partial = elements.responsibilityScopeEdit.checked || mergedFromArchitecture;
+  if (partial && !responsibility) {
+    showToast('部分负责时请填写或选择具体组件。', 'error');
+    return;
+  }
   elements.responsibilitySave.disabled = true;
   elements.responsibilityMerge.disabled = true;
   elements.responsibilitySaveState.textContent = '正在保存…';
   try {
     const response = await apiFetch(`/api/profile/projects/${encodeURIComponent(id)}`, {
-      method: 'PATCH', timeout: 15_000, json: { client_id: getClientId(), responsibility },
+      method: 'PATCH', timeout: 15_000, json: {
+        client_id: getClientId(), responsibility_scope: partial ? 'partial' : 'all',
+        responsibility: partial ? responsibility : '',
+      },
     });
     const canonical = response?.project && typeof response.project === 'object'
       ? response.project
-      : { ...selectedProject, responsibility };
+      : { ...selectedProject, responsibility: partial ? responsibility : '', responsibility_scope: partial ? 'partial' : 'all' };
     selectedProject = canonical;
     profile.projects = profile.projects.map((project) => (itemId(project) === id ? canonical : project));
     currentAnalysis = null;
@@ -525,6 +561,8 @@ async function mergeSelectedArchitectureResponsibilities() {
     if (!parts.some((part) => part === value)) parts.push(value);
   });
   elements.responsibilityEdit.value = parts.join('\n');
+  elements.responsibilityScopeEdit.checked = true;
+  elements.responsibilityEdit.classList.remove('is-hidden');
   await saveProjectResponsibility({ mergedFromArchitecture: true });
 }
 
@@ -613,7 +651,8 @@ function renderArchitecture(value) {
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.dataset.responsibilityText = `${componentName}：${componentResponsibility}`;
-      checkbox.checked = projectResponsibilityValue().includes(componentName);
+      checkbox.checked = selectedProject?.responsibility_scope === 'partial'
+        && projectResponsibilityValue().includes(componentName);
       const titleCopy = document.createElement('strong');
       titleCopy.textContent = componentName;
       const choiceCopy = document.createElement('small');
@@ -835,7 +874,9 @@ function renderAnalysis(payload) {
   const analysis = payload?.analysis && typeof payload.analysis === 'object' ? payload.analysis : payload || {};
   currentAnalysis = analysis;
   elements.analysisName.textContent = itemName(selectedProject);
-  elements.analysisMeta.textContent = `${sourceMeta(selectedProject)} · 匿名 Profile${projectResponsibilityValue() ? ' · 已结合本人职责' : ' · 尚未填写本人职责'}${payload?.cached ? ' · 已复用最近解读' : ''}`;
+  const typeLabel = { application: '应用类', technical: '技术类', paper: '论文' }[selectedProject?.project_type] || '应用类';
+  const scopeLabel = selectedProject?.responsibility_scope === 'partial' ? '部分负责' : '默认负责整个项目';
+  elements.analysisMeta.textContent = `${typeLabel} · ${sourceMeta(selectedProject)} · ${scopeLabel}${payload?.cached ? ' · 已复用最近解读' : ''}`;
   elements.analysisSummary.textContent = textFromValue(analysis.project_summary)
     || '以下结论只基于当前保存的项目资料，可补充更多上下文后重新解读。';
   renderArchitecture(analysis.architecture);
@@ -1027,6 +1068,15 @@ async function generateProjectQuestions(mode) {
 }
 
 elements.files.addEventListener('change', uploadProjectFiles);
+elements.partialScope.addEventListener('change', () => {
+  elements.responsibility.classList.toggle('is-hidden', !elements.partialScope.checked);
+  if (elements.partialScope.checked) elements.responsibility.focus();
+});
+elements.type.addEventListener('change', () => {
+  elements.files.accept = elements.type.value === 'paper'
+    ? '.pdf,.zip,.md,.txt,.py,.json,.yaml,.yml'
+    : '.zip,.md,.txt,.json,.yaml,.yml,.toml,.ini,.conf,.py,.java,.go,.js,.ts,.tsx,.jsx,.sql,.xml,.proto,.c,.cc,.cpp,.h,.hpp,.rs,.rb,.php,.kt,.swift,.sh';
+});
 elements.githubAdd.addEventListener('click', addGithubProject);
 elements.githubUrl.addEventListener('keydown', (event) => {
   if (event.key !== 'Enter') return;
@@ -1036,6 +1086,10 @@ elements.githubUrl.addEventListener('keydown', (event) => {
 elements.analyze.addEventListener('click', () => analyzeProject());
 elements.refresh.addEventListener('click', () => analyzeProject({ refresh: true }));
 elements.responsibilitySave.addEventListener('click', () => saveProjectResponsibility());
+elements.responsibilityScopeEdit.addEventListener('change', () => {
+  elements.responsibilityEdit.classList.toggle('is-hidden', !elements.responsibilityScopeEdit.checked);
+  elements.responsibilitySaveState.textContent = '有未保存修改';
+});
 elements.responsibilityMerge.addEventListener('click', mergeSelectedArchitectureResponsibilities);
 elements.responsibilityEdit.addEventListener('input', () => {
   elements.responsibilitySaveState.textContent = '有未保存修改';

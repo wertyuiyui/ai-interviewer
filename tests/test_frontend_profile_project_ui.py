@@ -47,8 +47,10 @@ def test_anonymous_profile_supports_multiple_resume_and_project_assets() -> None
     assert "apiFetch('/api/resumes/parse'" not in script
     assert "apiFetch('/api/profile/projects'" in script
     assert "apiFetch('/api/profile/projects/github'" in script
-    assert "data.append('responsibility', profileProjectResponsibility.value.trim())" in script
-    assert "responsibility: profileProjectResponsibility.value.trim()" in script
+    assert "data.append('responsibility_scope'" in script
+    assert "profileProjectPartialScope.checked" in script
+    assert "apiFetch('/api/profile/projects/links'" in script
+    assert 'id="profileProjectType"' in page and "arXiv" in page
     assert "readProfileProjectFileList(files)" in script
     assert "updateProfileProjectProgress('error'" in script
     assert "/selection`" in script
@@ -117,8 +119,11 @@ def test_project_interpretation_page_uses_profile_analysis_contract() -> None:
     assert "/selection`" in script
     assert "/analysis`" in script
     assert "refresh: Boolean(refresh)" in script
-    assert "data.append('responsibility', elements.responsibility.value.trim())" in script
-    assert "responsibility: elements.responsibility.value.trim()" in script
+    assert "data.append('responsibility_scope'" in script
+    assert "elements.partialScope.checked" in script
+    assert "apiFetch('/api/profile/projects/links'" in script
+    assert 'id="projectType"' in page and "arXiv" in page
+    assert "默认视为负责整个项目" in page
     assert "method: 'PATCH'" in script and "responsibility" in script
     assert "/analysis/stream`" in script
     assert "response.body.getReader()" in script

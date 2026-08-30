@@ -102,17 +102,18 @@
                 <ul class="profile-list" id="profileResumeList" aria-live="polite"><li class="profile-empty">还没有保存简历，可一次选择多份 PDF。</li></ul>
               </section>
               <section class="profile-library" aria-labelledby="projectLibraryTitle">
-                <header><div><span>项目库</span><h3 id="projectLibraryTitle">管理项目资料</h3></div><a class="profile-project-link" href="/project">进入解读 <span aria-hidden="true">→</span></a></header>
+                <header><div><span>论文/项目库</span><h3 id="projectLibraryTitle">管理论文/项目资料</h3></div><a class="profile-project-link" href="/project">进入解读 <span aria-hidden="true">→</span></a></header>
                 <div class="profile-project-create">
+                  <label class="sr-only" for="profileProjectType">类型</label><select id="profileProjectType"><option value="application">应用类项目</option><option value="technical">技术类项目</option><option value="paper">论文</option></select>
                   <label class="sr-only" for="profileProjectName">项目名称</label>
                   <input id="profileProjectName" type="text" maxlength="100" placeholder="项目名称（可选）" autocomplete="off">
-                  <label class="profile-upload-button" for="profileProjectFiles">上传文件<input id="profileProjectFiles" type="file" accept=".zip,.md,.txt,.json,.yaml,.yml,.toml,.ini,.conf,.py,.java,.go,.js,.ts,.tsx,.jsx,.sql,.xml,.proto,.c,.cc,.cpp,.h,.hpp,.rs,.rb,.php,.kt,.swift,.sh" multiple></label>
+                  <label class="profile-upload-button" for="profileProjectFiles">上传文件<input id="profileProjectFiles" type="file" accept=".pdf,.zip,.md,.txt,.json,.yaml,.yml,.toml,.ini,.conf,.py,.java,.go,.js,.ts,.tsx,.jsx,.sql,.xml,.proto,.c,.cc,.cpp,.h,.hpp,.rs,.rb,.php,.kt,.swift,.sh" multiple></label>
                 </div>
-                <label class="profile-project-responsibility" for="profileProjectResponsibility"><span>我负责的 <small>可选</small></span><textarea id="profileProjectResponsibility" rows="2" maxlength="1200" placeholder="例如：订单接口、缓存设计和慢查询治理"></textarea></label>
+                <label class="profile-project-responsibility"><span><input id="profileProjectPartialScope" type="checkbox"> 我只负责其中一部分 <small>默认负责整个项目</small></span><textarea class="is-hidden" id="profileProjectResponsibility" rows="2" maxlength="1200" placeholder="例如：订单接口、缓存设计和慢查询治理"></textarea></label>
                 <div class="profile-github-create">
-                  <label class="sr-only" for="profileGithubUrl">GitHub 仓库链接</label>
-                  <input id="profileGithubUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://github.com/owner/repository">
-                  <button id="profileGithubAdd" type="button">添加 GitHub</button>
+                  <label class="sr-only" for="profileGithubUrl">GitHub 或 arXiv 链接，每行一个</label>
+                  <textarea id="profileGithubUrl" rows="2" placeholder="每行一个 GitHub 链接；论文可填 arXiv"></textarea>
+                  <button id="profileGithubAdd" type="button">添加链接</button>
                 </div>
                 <div class="profile-project-progress is-hidden" id="profileProjectProgress" role="status" aria-live="polite"></div>
                 <ul class="profile-list" id="profileProjectList" aria-live="polite"><li class="profile-empty">还没有项目，可上传多个文件或添加 GitHub 链接。</li></ul>

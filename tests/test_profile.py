@@ -21,6 +21,7 @@ from app.profile import (
     PROJECT_ANALYSIS_MODEL,
     PROJECT_ANALYSIS_SCHEMA_VERSION,
     ProfileGitHubProjectCreate,
+    ProfileLinkedProjectCreate,
     ProfileProjectAnalysisRequest,
     ProfileProjectCreate,
     ProfileProjectQuestionsRequest,
@@ -31,6 +32,8 @@ from app.profile import (
     ProfileService,
     ProjectUpload,
     _select_github_candidates,
+    load_paper_reader_skill,
+    normalize_arxiv_url,
     normalize_github_url,
     validate_project_uploads,
 )
@@ -828,7 +831,7 @@ async def test_project_analysis_uses_qwen_plus_structured_schema_and_cache(
             ).fetchall()
         ]
     )
-    assert cache_versions == [PROJECT_ANALYSIS_SCHEMA_VERSION] == ["3"]
+    assert cache_versions == [PROJECT_ANALYSIS_SCHEMA_VERSION] == ["4"]
 
 
 @pytest.mark.asyncio
@@ -874,7 +877,98 @@ async def test_project_analysis_v2_cache_is_not_reused_after_grounding_upgrade(
             ).fetchall()
         }
     )
-    assert versions == {"2", PROJECT_ANALYSIS_SCHEMA_VERSION} == {"2", "3"}
+    assert versions == {"2", PROJECT_ANALYSIS_SCHEMA_VERSION} == {"2", "4"}
+
+
+class _LinkedGitHubSnapshot:
+    async def fetch(self, url: str) -> list[ProjectUpload]:
+        repo = url.rstrip("/").split("/")[-1]
+        return [ProjectUpload("src/main.py", f"def {repo}():\n    return True\n".encode())]
+
+
+class _PaperSnapshot:
+    async def fetch(self, _url: str) -> list[ProjectUpload]:
+        return [
+            ProjectUpload(
+                "paper/2401.00001-full-text.txt",
+                "Abstract. We study robust ranking. Method. We optimize a pairwise loss. "
+                "Experiments compare three baselines. Limitations include distribution shift.".encode(),
+            )
+        ]
+
+
+@pytest.mark.asyncio
+async def test_project_types_multiple_links_default_scope_and_paper_skill(profile_settings) -> None:
+    database = Database(profile_settings)
+    await database.initialize()
+    service = ProfileService(
+        database,
+        profile_settings,
+        github_fetcher=_LinkedGitHubSnapshot(),
+        paper_fetcher=_PaperSnapshot(),
+    )
+    await service.initialize()
+
+    default_project = await service.create_uploaded_project(
+        ProfileProjectCreate(client_id="typed-project-client-001", name="默认全责应用"),
+        [ProjectUpload("app.py", b"def serve():\n    return True\n")],
+    )
+    assert default_project["responsibility_scope"] == "all"
+    assert default_project["responsibility"] == ""
+
+    linked = await service.create_linked_project(
+        ProfileLinkedProjectCreate(
+            client_id="typed-project-client-001",
+            name="多仓库技术项目",
+            project_type="technical",
+            urls=["https://github.com/acme/gateway", "https://github.com/acme/worker"],
+        )
+    )
+    assert linked["project_type"] == "technical"
+    assert linked["links"] == [
+        "https://github.com/acme/gateway",
+        "https://github.com/acme/worker",
+    ]
+    assert all(item["path"].startswith("sources/") for item in linked["files"])
+
+    paper = await service.create_linked_project(
+        ProfileLinkedProjectCreate(
+            client_id="typed-project-client-001",
+            name="鲁棒排序论文",
+            project_type="paper",
+            urls=["https://arxiv.org/pdf/2401.00001.pdf"],
+        )
+    )
+    result = await service.analyze_project(
+        paper["id"], ProfileProjectAnalysisRequest(client_id="typed-project-client-001")
+    )
+    analysis = result["analysis"]
+    assert paper["links"] == ["https://arxiv.org/abs/2401.00001"]
+    assert [item["name"] for item in analysis["architecture"]] == [
+        "研究问题与贡献", "核心方法", "实验与验证"
+    ]
+    assert "默认对整体方案与核心实现负责" in analysis["interview_intro"]
+    assert any("基线" in item["question"] or "研究问题" in item["question"] for item in analysis["interview_questions"])
+    assert "three progressively deeper passes" in load_paper_reader_skill()
+
+    partial = await service.update_project(
+        paper["id"],
+        ProfileProjectUpdate(
+            client_id="typed-project-client-001",
+            responsibility_scope="partial",
+            responsibility="负责实验设计与消融分析",
+        ),
+    )
+    assert partial["responsibility_scope"] == "partial"
+    assert partial["responsibility"] == "负责实验设计与消融分析"
+
+
+def test_arxiv_url_normalization_is_strict() -> None:
+    assert normalize_arxiv_url("https://www.arxiv.org/pdf/2401.00001v2.pdf") == (
+        "https://arxiv.org/abs/2401.00001v2"
+    )
+    with pytest.raises(ValueError):
+        normalize_arxiv_url("https://arxiv.org.evil.example/abs/2401.00001")
 
 
 @pytest.mark.asyncio

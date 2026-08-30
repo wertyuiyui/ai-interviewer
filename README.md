@@ -18,8 +18,8 @@
 - AI 工程后端 / LLM Infra 方向会把已审核短名单中的模型服务题控制在约三分之一，当前 12 道覆盖请求状态机、TTFT/TPOT、continuous batching、KV cache、量化、RAG 与评测；知识点经人工改写自 MIT 许可的 [ARIS-in-AI-Offer](https://wanshuiyin.github.io/ARIS-in-AI-Offer/)，不会进入默认通用后端题池。
 - 这些 AI 工程题以实践、验证方法和 trade-off 为主，不要求背论文公式、实验数字或实现细节，也不会仅因没读过指定论文判定答崩。
 - PyMuPDF 提取 PDF 文字层，一次百炼调用输出固定 `{教育, 实习经历[], 项目[], 技能[]}` Schema；扫描件明确提示改传文字版。
-- 匿名 Profile 可长期保存多份项目文件、ZIP 或公开 GitHub 快照。上传时可填写“我负责的”，也可在架构结果中勾选本人负责模块；职责变更会主动失效旧分析，后续项目介绍、独立深挖练习和完整面试都以最新责任边界为准。
-- 项目解读以 NDJSON 返回真实阶段：读取快照、组织代码证据、生成、校验请求链路、保存。GitHub 抽样优先入口、服务、数据和配置层，不再让 README、样式或测试文件占满固定文件预算；README 中的需求、prompt、skill 和示例题只作为文档，不作为已实现链路或项目题面的证据。
+- 匿名 Profile 可长期保存多份论文/项目资料。条目可自主选择应用类、技术类或论文，支持源码/ZIP/论文 PDF、最多 5 个 GitHub/arXiv 链接；论文链接至少包含一个 arXiv 主链接。默认视为候选人负责整个项目，只有显式选择“部分负责”并填写职责，或在核心组件中勾选后，追问才收窄到所选范围。
+- 论文/项目解读以 NDJSON 返回真实阶段：读取快照、组织证据、生成、校验链路、保存。应用类更关注用户问题、核心功能与设计动机；技术类关注机制、正确性、性能和取舍；论文应用内置三遍阅读 skill，关注研究问题、方法贡献、实验依据、局限与可复现性。GitHub 抽样仍优先入口、服务、数据和配置层，README 中的需求、prompt、skill 和示例题不作为已实现链路证据。
 - 架构与请求链路结论必须引用已保存的实现代码或配置路径；页面会明确标出“已核对 / 部分核对 / 待核实”、缺失步骤、分析假设和待补证据，并生成一段严格受本人职责和已核实链路约束的面试项目介绍。项目深挖题同样要求代码证据，支持继续生成更多题或整组重新生成。
 - 首题自我介绍只了解学校专业、学习进度、课程基础、技术方向和求职目标；听完后服务端必须另开一题，单独选择项目或实习经历，不把两段内容挤在同一道题里。
 - 服务端强制七维项目/实习下钻：业务背景、个人职责、请求链路、技术选型理由、难点与故障、数据指标口径、边界与 trade-off。技术面默认强制 4 层；技术 + 综合（HR）面为给综合环节留出有效时间，默认强制 3 层，若上场项目深度较弱则扩为 4 层。
@@ -226,8 +226,9 @@ REST：
 - `POST /api/coding/review`，提交方案、代码文本、复杂度和自拟用例，返回四维静态复盘；`execution_status` 固定为 `not_executed`
 - `GET /api/profile`，使用 `X-Profile-Key` 读取当前匿名 Profile 的简历/项目元数据
 - `POST /api/profile/resumes`、`POST /api/profile/resumes/text`，保存并结构化 PDF 或粘贴文本
-- `POST /api/profile/projects`、`POST /api/profile/projects/github`，保存多文件/ZIP 或公开 GitHub 项目快照；两者都接受可选的 `responsibility`
-- `PATCH /api/profile/projects/{id}`，更新“我负责的”并使旧项目解读缓存失效
+- `POST /api/profile/projects`、`POST /api/profile/projects/github`，兼容保存多文件/ZIP/PDF 或单个公开 GitHub 快照；接受 `project_type`、`responsibility_scope` 和 `responsibility`
+- `POST /api/profile/projects/links`，保存最多 5 个 GitHub/arXiv 链接组成的同一论文/项目快照
+- `PATCH /api/profile/projects/{id}`，更新项目类型或责任范围并使旧解读缓存失效
 - `PATCH /api/profile/projects/{id}/selection`、`DELETE /api/profile/projects/{id}`，选择或手动删除项目
 - `POST /api/profile/projects/{id}/analysis`，生成项目架构、经证据核验的请求链路、面试介绍和项目追问
 - `POST /api/profile/projects/{id}/analysis/stream`，以 `application/x-ndjson` 返回真实分析阶段和最终结果

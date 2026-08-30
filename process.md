@@ -19,6 +19,7 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
+| `PAPER-001` | `/root` | `in_progress` | 将项目解读升级为论文/项目解读：项目类型、多链接与 arXiv、论文阅读 skill、架构组件生成、默认全责、类型化介绍与深挖提问 | `analysis_skills/paper-reader/SKILL.md`, `app/profile.py`, `app/profile_routes.py`, `public/project.html`, `public/js/project.js`, `public/assets/project.css`, `public/index.html`, `public/js/home.js`, `public/assets/app.css`, `tests/test_profile.py`, `tests/test_profile_api.py`, `tests/test_frontend_profile_project_ui.py`, `README.md`, `process.md` | 当前无其它进行中任务；保留生产 `.env`/`data`，部署前完成迁移与全量回归 |
 
 登记模板：
 
@@ -228,3 +229,12 @@
 - 文件：`app/coding_practice.py`、`questions/coding_practice_bank.json`、`public/coding.html`、`public/js/coding.js`、`public/assets/coding.css`、`public/practice.html`、`public/js/practice.js`、`public/assets/practice.css`、`tests/test_coding_practice.py`、`tests/test_frontend_coding_ui.py`、`tests/test_frontend_practice_ui.py`、`references/CODING_PRACTICE_DESIGN.md`、`process.md`。
 - 验证：题库 JSON 解析、`python -m py_compile app/coding_practice.py`、`node --check public/js/coding.js public/js/practice.js`、`git diff --check` 均通过；手撕/快刷专项 `25 passed`。全量回归 `211 passed, 2 failed`，两项失败均来自进行中的 `PAPER-001` 已将缓存 schema 改为 v4、但其旧测试仍断言 v3，与本任务文件无关。
 - 风险或后续事项：上一题是前端会话内导航，刷新页面后仍以服务端当前题为准；快刷历史题只读，避免服务端游标错位。代码仍不在应用进程执行，改写示范也不代表已通过编译或测试。未修改、暂存、推送或部署 `PAPER-001` 文件，本任务仅本地提交，不 push、不部署。
+
+### PAPER-001 · 2026-08-30 · 论文/项目解读实现与发布候选
+
+- Agent：`/root`
+- 状态：`in_progress`（实现与验证完成，等待提交、推送和生产同步）
+- 摘要：将“项目解读”升级为“论文/项目解读”。新增应用类、技术类、论文三种类型；默认负责整个项目，只有显式选择部分负责或勾选生成的核心组件时才收窄责任范围；支持一个条目最多 5 个 GitHub/arXiv 链接及论文 PDF，旧单 GitHub API 保持兼容。论文使用独立 `paper-reader` skill，按范围、理解、质疑三遍阅读法区分作者主张、实验依据、局限和可复现性；三类材料分别聚焦设计动机、技术机制或论文贡献。架构/核心组成在模型遗漏时会按真实证据路径补齐，介绍扩展为包含动机、核心功能/方法、亮点、验证和责任范围的完整叙述，深挖题围绕核心功能并服从部分责任边界。
+- 文件：`analysis_skills/paper-reader/SKILL.md`、`app/profile.py`、`app/profile_routes.py`、`public/project.html`、`public/js/project.js`、`public/assets/project.css`、`public/index.html`、`public/js/home.js`、`public/assets/app.css`、`tests/test_profile.py`、`tests/test_profile_api.py`、`tests/test_frontend_profile_project_ui.py`、`README.md`、`process.md`。
+- 验证：论文 skill quick validator 通过；`PYTHONPATH=.deps .venv/bin/python -m compileall -q app`、`node --check public/js/home.js public/js/project.js`、`git diff --check` 通过；最终全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `215 passed`。
+- 风险或后续事项：论文 PDF 仅做文本抽取，不进行版面视觉理解，复杂公式/图表仍需结合原文核实；arXiv 抓取只允许固定官方主机且不跟随重定向，重复解读可能触发一次新的百炼调用。生产同步必须保留 `.env`、`data/`、`.venv/`、`.deps/` 和 `.git/`，只重启目标应用服务并复核三处健康端点。

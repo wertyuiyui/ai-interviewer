@@ -129,8 +129,10 @@ svg { display: block; fill: none; stroke: currentColor; stroke-linecap: round; s
 .profile-upload-button input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .profile-upload-button:has(input:disabled) { opacity: .55; cursor: wait; }
 .profile-project-create, .profile-github-create { margin-top: 9px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
-.profile-project-create input, .profile-github-create input { min-width: 0; height: 30px; padding: 0 8px; border: 1px solid #dfe3e9; border-radius: 7px; outline: none; background: #fbfcfd; font-size: 8px; }
-.profile-project-create input:focus, .profile-github-create input:focus { border-color: #88a8e9; box-shadow: 0 0 0 3px rgba(53,110,234,.07); }
+.profile-project-create input, .profile-project-create select, .profile-github-create textarea { min-width: 0; min-height: 30px; padding: 0 8px; border: 1px solid #dfe3e9; border-radius: 7px; outline: none; background: #fbfcfd; font-size: 8px; }
+.profile-project-create select { max-width: 92px; }
+.profile-github-create textarea { padding-block: 7px; resize: vertical; line-height: 1.45; }
+.profile-project-create input:focus, .profile-project-create select:focus, .profile-github-create textarea:focus { border-color: #88a8e9; box-shadow: 0 0 0 3px rgba(53,110,234,.07); }
 .profile-github-create button:disabled { opacity: .55; cursor: wait; }
 .profile-project-responsibility { margin-top: 8px; display: block; }
 .profile-project-responsibility > span { display: block; margin-bottom: 5px; color: #667488; font-size: 8px; font-weight: 700; }
