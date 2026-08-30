@@ -175,6 +175,159 @@ def test_normalize_omni_events() -> None:
     assert tool["arguments"] == {"score": 3}
 
 
+def test_normalize_omni_response_field_variants() -> None:
+    nested_created = normalize_omni_event(
+        {
+            "type": "response.created",
+            "response": {"id": "nested-created", "status": "in_progress"},
+        }
+    )[0]
+    assert nested_created["response_id"] == "nested-created"
+    assert nested_created["status"] == "in_progress"
+
+    top_level_created = normalize_omni_event(
+        {
+            "type": "response.created",
+            "response_id": "top-created",
+            "status": "in_progress",
+        }
+    )[0]
+    assert top_level_created["response_id"] == "top-created"
+    assert top_level_created["status"] == "in_progress"
+
+    nested_done = normalize_omni_event(
+        {
+            "type": "response.done",
+            "response": {"id": "nested-done", "status": "completed"},
+        }
+    )[0]
+    assert nested_done["response_id"] == "nested-done"
+    assert nested_done["status"] == "completed"
+
+    hybrid_done = normalize_omni_event(
+        {
+            "type": "response.done",
+            "response_id": "top-done",
+            "status": "completed",
+            "response": {"usage": {"total_tokens": 12}},
+        }
+    )[0]
+    assert hybrid_done["response_id"] == "top-done"
+    assert hybrid_done["status"] == "completed"
+    assert hybrid_done["usage"] == {"total_tokens": 12}
+
+    audio_transcript = normalize_omni_event(
+        {
+            "type": "response.audio_transcript.done",
+            "response_id": "top-done",
+            "text": "请解释 MVCC。",
+        }
+    )[0]
+    assert audio_transcript["text"] == "请解释 MVCC。"
+
+    text_transcript = normalize_omni_event(
+        {
+            "type": "response.text.done",
+            "response_id": "top-done",
+            "transcript": "请解释 Redis。",
+        }
+    )[0]
+    assert text_transcript["text"] == "请解释 Redis。"
+
+
+def test_omni_raw_response_variants_are_normalized_end_to_end() -> None:
+    async def scenario() -> None:
+        ws = FakeWebSocket([{"type": "session.created", "session": {"id": "s1"}}])
+
+        async def factory(_url: str, _headers: dict[str, str]) -> FakeWebSocket:
+            return ws
+
+        client = OmniRealtimeClient(
+            "你是技术面试官", websocket_factory=factory
+        )
+        await client.start()
+        raw_events = [
+            {
+                "type": "response.created",
+                "response_id": "response-top-level",
+                "status": "in_progress",
+            },
+            {
+                "type": "response.audio_transcript.done",
+                "response_id": "response-top-level",
+                "text": "请说明事务隔离级别。",
+            },
+            {
+                "type": "response.done",
+                "response_id": "response-top-level",
+                "status": "completed",
+            },
+        ]
+        for event in raw_events:
+            await ws.incoming.put(json.dumps(event, ensure_ascii=False))
+
+        normalized = [
+            await asyncio.wait_for(anext(client.events()), timeout=1)
+            for _ in raw_events
+        ]
+        assert [event["type"] for event in normalized] == [
+            "response_started",
+            "assistant_done",
+            "response_done",
+        ]
+        assert {event["response_id"] for event in normalized} == {
+            "response-top-level"
+        }
+        assert normalized[1]["text"] == "请说明事务隔离级别。"
+        assert normalized[2]["status"] == "completed"
+        await client.close()
+
+    asyncio.run(scenario())
+
+
+def test_unhandled_omni_response_diagnostic_logs_only_field_names(caplog) -> None:
+    async def scenario() -> None:
+        ws = FakeWebSocket([{"type": "session.created", "session": {"id": "s1"}}])
+
+        async def factory(_url: str, _headers: dict[str, str]) -> FakeWebSocket:
+            return ws
+
+        client = OmniRealtimeClient(
+            "你是技术面试官", websocket_factory=factory
+        )
+        await client.start()
+        caplog.set_level("WARNING", logger="uvicorn.error.voice.provider")
+        await ws.incoming.put(
+            json.dumps(
+                {
+                    "type": "response.protocol_variant",
+                    "response_id": "response-drift",
+                    "text": "DO_NOT_LOG_TRANSCRIPT",
+                    "audio": "DO_NOT_LOG_AUDIO",
+                }
+            )
+        )
+        # A normalized event queued after the unknown response event acts as a
+        # barrier proving the receive loop already emitted its diagnostic.
+        await ws.incoming.put(
+            json.dumps(
+                {
+                    "type": "input_audio_buffer.speech_started",
+                    "item_id": "barrier-item",
+                }
+            )
+        )
+        barrier = await asyncio.wait_for(anext(client.events()), timeout=1)
+        assert barrier["type"] == "speech_started"
+        await client.close()
+
+    asyncio.run(scenario())
+    assert "voice.response.unhandled" in caplog.text
+    assert "fields=audio,response_id,text,type" in caplog.text
+    assert "DO_NOT_LOG_TRANSCRIPT" not in caplog.text
+    assert "DO_NOT_LOG_AUDIO" not in caplog.text
+
+
 def test_omni_client_handshake_and_commands_are_offline_testable() -> None:
     async def scenario() -> None:
         ws = FakeWebSocket([{"type": "session.created", "session": {"id": "s1"}}])

@@ -274,7 +274,14 @@ def normalize_omni_event(event: Mapping[str, Any], output_sample_rate: int = 240
         ]
 
     if event_type in {"response.audio_transcript.done", "response.text.done"}:
-        text = event.get("transcript") if event_type.endswith("audio_transcript.done") else event.get("text")
+        # DashScope deployments have emitted both field names for completed
+        # assistant transcripts. Prefer the modality's canonical field but
+        # tolerate the sibling field so a harmless protocol variation becomes
+        # a text/audio mismatch fallback instead of an empty transcript.
+        if event_type.endswith("audio_transcript.done"):
+            text = event.get("transcript") or event.get("text")
+        else:
+            text = event.get("text") or event.get("transcript")
         return [
             {
                 **common,
@@ -293,8 +300,8 @@ def normalize_omni_event(event: Mapping[str, Any], output_sample_rate: int = 240
             {
                 **common,
                 "type": "response_started",
-                "response_id": response.get("id"),
-                "status": response.get("status"),
+                "response_id": response.get("id") or event.get("response_id"),
+                "status": response.get("status") or event.get("status"),
             }
         ]
 
@@ -354,8 +361,8 @@ def normalize_omni_event(event: Mapping[str, Any], output_sample_rate: int = 240
             {
                 **common,
                 "type": "response_done",
-                "response_id": response.get("id"),
-                "status": response.get("status"),
+                "response_id": response.get("id") or event.get("response_id"),
+                "status": response.get("status") or event.get("status"),
                 "usage": response.get("usage"),
                 "response": dict(response),
             }
@@ -624,6 +631,15 @@ class OmniRealtimeClient(_EventEmitter):
                     # event name and field names, never transcript values.
                     logger.warning(
                         "voice.transcript.unhandled provider_event_type=%s fields=%s",
+                        event_type,
+                        ",".join(sorted(str(key) for key in event)),
+                    )
+                elif event_type.startswith("response.") and not normalized:
+                    # Record only the event name and its field names. Response
+                    # bodies can contain interview text or base64 audio and
+                    # must never be copied into protocol-drift diagnostics.
+                    logger.warning(
+                        "voice.response.unhandled provider_event_type=%s fields=%s",
                         event_type,
                         ",".join(sorted(str(key) for key in event)),
                     )
