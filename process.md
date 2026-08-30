@@ -28,13 +28,13 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`4e29845`；GitHub `origin/main` 仍为 `3aeea1b`（推送因远程归属未确认被安全审查拦截）
+- 当前生产已部署提交：`5096530`；GitHub `origin/main` 仍为 `3aeea1b`（推送因远程归属未确认被安全审查拦截）
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、中英双语、纯英文
-- 当前已部署功能的全量验证基线：`215 passed`
+- 当前已部署功能的全量验证基线：`218 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
@@ -274,3 +274,12 @@
 - 文件：`app/main.py`、`public/profile.html`、`public/js/profile.js`、`public/assets/profile.css`、`public/index.html`、`public/js/home.js`、`public/practice.html`、`public/project.html`、`public/coding.html`、`public/report.html`、`tests/test_frontend_navigation.py`、`tests/test_frontend_profile_project_ui.py`、`process.md`。
 - 验证：`node --check public/js/profile.js public/js/home.js`、`python3 -m py_compile app/main.py`、`git diff --check` 通过；Profile/Profile API/错题/报告相关专项 `72 passed`；最终全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `218 passed`，包含并发完成的 `INTERVIEW-001` 纯文字面试回归。
 - 风险或后续事项：简历结构当前没有候选人姓名或持久化经历关联 ID，因此头像姓氏是保守文件名回退，项目链接仅做唯一精确名称关联；未匹配项会明确显示未关联而不模糊猜配。页面不会自动调用项目分析接口，避免首次打开触发付费模型请求。当前环境无可用 Chromium，未做真实浏览器视觉回归；移动端布局、键盘焦点和空态已通过静态契约检查。
+
+### DEPLOY-005 · 2026-08-30 · 独立个人档案与纯文字面试生产发布
+
+- Agent：`/root`。
+- 状态：`completed`
+- 摘要：将完成 `PROFILE-001` 与 `INTERVIEW-001` 的固定提交 `5096530` 同步到现有生产目录。部署源由 `git archive 5096530` 生成，避免带入工作区外文件；同步前创建 `/tmp/ai-interviewer-mvp-pre-5096530-20260830.tar.gz` 回滚包，明确保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 与缓存，仅重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 文件：生产目录中的提交 `5096530` 工作树；生产密钥、SQLite 数据、依赖和 Caddy 配置未修改。
+- 验证：目标服务为 `active/running`，主进程 PID `627749`；`http://127.0.0.1:8000/healthz` 正常；使用正式域名证书并直连本机 Caddy 实际网卡，HTTPS 443 与 3000 均返回 `{"status":"ok"}`；生产 `/profile` 返回“我的个人档案”并引用新 `profile.css/profile.js`。直接公网地址自回环仍出现既有 TLS EOF，因此采用与此前部署一致的正式域名 SNI 直连验证。
+- 风险或后续事项：尝试推送现有 `origin/main` 时，安全审查因无法确认 `https://github.com/wertyuiyui/ai-interviewer.git` 归属而拒绝；未绕过审查，GitHub 仍停留在 `3aeea1b`。本地提交和生产均为 `5096530`；如需同步 GitHub，用户需明确确认该具体仓库及 `main` 分支是授权目标。
