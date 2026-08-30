@@ -32,6 +32,9 @@ from .voice import (
 SendEvent = Callable[..., Awaitable[None]]
 EndCallback = Callable[[str], Awaitable[None]]
 NON_SILENT_PCM_RMS = 64
+MICROPHONE_TAIL_SILENCE_SECONDS = 1.6
+MICROPHONE_TAIL_SILENCE_TIMEOUT_SECONDS = 2.5
+VOICE_CLEANUP_TIMEOUT_SECONDS = 5.0
 
 
 # A child of uvicorn.error inherits the server's configured journal handler.
@@ -129,6 +132,8 @@ class BrowserVoiceSession:
         self.generation = 0
         self.closed = False
         self.ending = False
+        self.microphone_enabled = True
+        self._microphone_state_lock = asyncio.Lock()
         self._answer_pending = False
         self._preserving_pending_transcripts = False
         self._omni_response_started = asyncio.Event()
@@ -324,7 +329,7 @@ class BrowserVoiceSession:
             raise
 
     async def handle_audio(self, pcm: bytes) -> None:
-        if self.closed or self.ending or not pcm:
+        if self.closed or self.ending or not self.microphone_enabled or not pcm:
             return
         if len(pcm) % 2:
             await self.send(
@@ -430,6 +435,67 @@ class BrowserVoiceSession:
             )
             await self._runtime_fallback("语音上行连接不可用")
 
+    async def handle_microphone_state(self, enabled: bool) -> None:
+        """Apply browser capture state and flush a bounded final speech tail."""
+
+        async with self._microphone_state_lock:
+            enabled = bool(enabled)
+            was_enabled = self.microphone_enabled
+            self.microphone_enabled = enabled
+            if enabled or self.closed:
+                return
+            if not was_enabled:
+                await self._candidate_speech_ended()
+                return
+
+            # getUserMedia stops producing frames immediately when the browser
+            # releases its track. Feed a short, duration-accurate PCM tail so
+            # provider/server VAD can still close the last utterance. The
+            # entire flush is bounded; microphone shutdown must never wait on
+            # a stuck provider transport.
+            frame_samples = 1600  # 100 ms at 16 kHz
+            frame = b"\x00\x00" * frame_samples
+            frame_count = max(
+                1,
+                int(math.ceil(MICROPHONE_TAIL_SILENCE_SECONDS * 10)),
+            )
+
+            async def flush_tail() -> None:
+                for _ in range(frame_count):
+                    if self.actual_mode == "L0" and self.omni:
+                        await self.omni.send_audio(frame)
+                    elif self.actual_mode in {"L1", "L2"} and self.asr:
+                        if self.vad:
+                            for event in self.vad.process(frame):
+                                if event.get("type") == "speech_ended":
+                                    await self._candidate_speech_ended()
+                        await self.asr.send_audio(frame)
+                    else:
+                        return
+                    await asyncio.sleep(0)
+
+            try:
+                await asyncio.wait_for(
+                    flush_tail(),
+                    timeout=MICROPHONE_TAIL_SILENCE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "voice.microphone.tail_timeout interview_id=%s mode=%s",
+                    self.interview_id,
+                    self.actual_mode,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "voice.microphone.tail_failed interview_id=%s mode=%s error=%s",
+                    self.interview_id,
+                    self.actual_mode,
+                    type(exc).__name__,
+                )
+            finally:
+                # This also cancels a scheduled pressure interruption.
+                await self._candidate_speech_ended()
+
     async def handle_text(self, text: str) -> None:
         text = text.strip()
         if not text:
@@ -534,6 +600,7 @@ class BrowserVoiceSession:
     async def prepare_end(self, *, drain_timeout: float = 20.0) -> None:
         """Stop input while preserving every accepted voice transcript."""
 
+        await self.handle_microphone_state(False)
         if self.ending:
             return
         self.ending = True
@@ -893,10 +960,44 @@ class BrowserVoiceSession:
                             (event["audio"], int(event.get("sample_rate", 24000)))
                         )
                 elif event_type == "response_done":
-                    response_id = str(event.get("response_id") or "").strip()
+                    response_id = str(
+                        event.get("response_id")
+                        or self._omni_active_response_id
+                        or self._omni_started_response_id
+                        or ""
+                    ).strip()
                     if not response_id:
-                        raise VoiceTransportError("Omni response.done 缺少 ID")
+                        pending_ids = [
+                            candidate_id
+                            for candidate_id, waiter in self._omni_response_events.items()
+                            if not waiter.is_set()
+                        ]
+                        if len(pending_ids) == 1:
+                            response_id = pending_ids[0]
+                    synthetic_response_id = False
+                    if not response_id:
+                        # Some compatible gateways omit response.id from the
+                        # normalized response.done event. Do not tear down an
+                        # otherwise healthy realtime session. Create a bounded
+                        # waiter and let the locked display text go through the
+                        # exact EdgeTTS fallback instead of releasing unknown
+                        # provider speech.
+                        response_id = f"missing-{uuid.uuid4().hex}"
+                        synthetic_response_id = True
+                        self._omni_started_response_id = response_id
+                        self._omni_response_started.set()
+                        self._omni_expected_by_response[response_id] = (
+                            self._omni_expected_speech or ""
+                        )
+                        self._omni_audio_buffers.setdefault(response_id, [])
+                        logger.warning(
+                            "voice.tts.done_missing_id interview_id=%s event_fields=%s",
+                            self.interview_id,
+                            ",".join(sorted(str(key) for key in event)),
+                        )
                     status = str(event.get("status") or "").strip().lower()
+                    if synthetic_response_id and not status:
+                        status = "completed"
                     self._omni_response_statuses[response_id] = status
                     input_cancelled_response = (
                         status in {"cancelled", "canceled"}
@@ -909,7 +1010,10 @@ class BrowserVoiceSession:
                     response_complete = self._omni_response_events.setdefault(
                         response_id, asyncio.Event()
                     )
-                    if response_id == self._omni_active_response_id:
+                    if response_id == self._omni_active_response_id or (
+                        self._omni_active_response_id is None
+                        and response_id == self._omni_started_response_id
+                    ):
                         self._omni_active_response_id = None
                         self._omni_response_pending = False
                         self._omni_responding = False
@@ -2014,17 +2118,39 @@ class BrowserVoiceSession:
     async def _complete_cleanup(
         awaitable: Awaitable[Any], *, name: str
     ) -> None:
-        """Finish transport cleanup even if its owning request is cancelled."""
+        """Finish transport cleanup across cancellation, with a hard bound."""
 
         task = asyncio.create_task(awaitable, name=name)
+
+        def consume_result(done: asyncio.Task[Any]) -> None:
+            if done.cancelled():
+                return
+            with suppress(Exception):
+                done.exception()
+
         try:
-            await asyncio.shield(task)
+            await asyncio.wait_for(
+                asyncio.shield(task),
+                timeout=VOICE_CLEANUP_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            task.cancel()
+            task.add_done_callback(consume_result)
+            return
         except asyncio.CancelledError:
             # The independent close/join remains alive under shield. Await it
             # to completion before propagating parent cancellation so provider
             # clients cannot be left in a half-closed, non-retryable state.
-            with suppress(asyncio.CancelledError, Exception):
-                await asyncio.shield(task)
+            try:
+                await asyncio.wait_for(
+                    asyncio.shield(task),
+                    timeout=VOICE_CLEANUP_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                task.cancel()
+                task.add_done_callback(consume_result)
+            except Exception:
+                pass
             raise
         except Exception:
             # Cleanup errors must not mask the original provider failure.

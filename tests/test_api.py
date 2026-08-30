@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+import json
 from pathlib import Path
 
 import httpx
@@ -239,3 +240,138 @@ async def test_cancelled_accepted_text_answer_is_preserved_without_fake_score(
     assert turns[0].score is None
     assert turns[0].scorable is False
     assert turns[0].score_source == "unavailable"
+
+
+@pytest.mark.asyncio
+async def test_voice_end_disconnect_still_commits_and_queues_report(
+    tmp_path, monkeypatch
+) -> None:
+    settings = replace(
+        get_settings(),
+        mock_llm=True,
+        voice_mode="L0",
+        voice_auto_fallback=False,
+        db_path=tmp_path / "voice-disconnect.db",
+    )
+    database = Database(settings)
+    await database.initialize()
+    engine = InterviewEngine(database, settings)
+    created = await engine.create(
+        InterviewCreate(
+            client_id="voice-disconnect-client",
+            company="bytedance",
+            resume=ResumeData(
+                项目=[Project(name="缓存服务", technologies=["Redis", "Java"])]
+            ),
+        )
+    )
+
+    class FakeWebSocket:
+        def __init__(self) -> None:
+            self.incoming: asyncio.Queue[dict] = asyncio.Queue()
+            self.sent: list[dict] = []
+
+        async def accept(self) -> None:
+            return None
+
+        async def receive(self) -> dict:
+            return await self.incoming.get()
+
+        async def send_json(self, payload: dict) -> None:
+            self.sent.append(payload)
+
+        async def close(self, code: int = 1000) -> None:
+            return None
+
+        async def event(self, payload: dict) -> None:
+            await self.incoming.put(
+                {
+                    "type": "websocket.receive",
+                    "text": json.dumps(payload),
+                }
+            )
+
+        async def disconnect(self) -> None:
+            await self.incoming.put({"type": "websocket.disconnect"})
+
+    class FakeVoiceSession:
+        instances: list["FakeVoiceSession"] = []
+
+        def __init__(self, **_kwargs) -> None:
+            self.actual_mode = "L0"
+            self.prepare_started = asyncio.Event()
+            self.allow_prepare = asyncio.Event()
+            self.announce_started = asyncio.Event()
+            self.microphone_states: list[bool] = []
+            self.closed = False
+            self.__class__.instances.append(self)
+
+        async def start(self, _question: str) -> str:
+            return "L0"
+
+        async def prepare_end(self, *, drain_timeout: float) -> None:
+            assert drain_timeout == main_module.VOICE_END_DRAIN_TIMEOUT_SECONDS
+            self.prepare_started.set()
+            await self.allow_prepare.wait()
+
+        async def announce(self, *_args, **_kwargs) -> None:
+            self.announce_started.set()
+            await asyncio.Event().wait()
+
+        async def handle_microphone_state(self, enabled: bool) -> None:
+            self.microphone_states.append(enabled)
+
+        async def close(self) -> None:
+            self.closed = True
+
+    reports: list[str] = []
+
+    def record_report(interview_id: str, **_kwargs) -> None:
+        reports.append(interview_id)
+
+    monkeypatch.setattr(main_module, "settings", settings)
+    monkeypatch.setattr(main_module, "db", database)
+    monkeypatch.setattr(main_module, "interview_engine", engine)
+    monkeypatch.setattr(main_module, "BrowserVoiceSession", FakeVoiceSession)
+    monkeypatch.setattr(main_module, "_spawn_report", record_report)
+    monkeypatch.setattr(main_module, "WS_CONTROL_DRAIN_TIMEOUT_SECONDS", 0.1)
+    monkeypatch.setattr(main_module, "VOICE_CLOSE_TIMEOUT_SECONDS", 0.1)
+
+    websocket = FakeWebSocket()
+    socket_task = asyncio.create_task(
+        main_module.interview_socket(websocket, created["id"])
+    )
+    await websocket.event({"type": "client.ready"})
+
+    async def wait_for(predicate) -> None:
+        deadline = asyncio.get_running_loop().time() + 1
+        while not predicate():
+            if asyncio.get_running_loop().time() >= deadline:
+                raise AssertionError("condition not reached")
+            await asyncio.sleep(0.001)
+
+    await wait_for(lambda: bool(FakeVoiceSession.instances))
+    voice = FakeVoiceSession.instances[0]
+    await websocket.event({"type": "microphone.state", "enabled": False})
+    await wait_for(lambda: voice.microphone_states == [False])
+    assert any(
+        event.get("type") == "microphone.state.changed"
+        and event.get("enabled") is False
+        for event in websocket.sent
+    )
+
+    await websocket.event({"type": "interview.end", "reason": "manual"})
+    await asyncio.wait_for(voice.prepare_started.wait(), timeout=1)
+    # Reproduce the production race: the browser leaves while the accepted
+    # final answer is still draining.
+    await websocket.disconnect()
+    voice.allow_prepare.set()
+    await asyncio.wait_for(socket_task, timeout=1)
+
+    state = await database.get_interview(created["id"])
+    assert state is not None
+    assert state["status"] == "ended"
+    assert state["end_reason"] == "manual"
+    assert reports == [created["id"]]
+    assert voice.announce_started.is_set()
+    assert voice.closed is True

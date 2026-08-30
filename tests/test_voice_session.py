@@ -1269,6 +1269,135 @@ def test_l0_announcement_accepts_input_cancel_before_speech_started() -> None:
     asyncio.run(scenario())
 
 
+def test_microphone_close_flushes_bounded_l0_silence_and_stops_local_speech() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+        omni = FakeOmni()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+        session._candidate_speaking = True
+
+        async def pending_pressure_interrupt() -> None:
+            await asyncio.Event().wait()
+
+        pressure_task = asyncio.create_task(pending_pressure_interrupt())
+        session._deliberate_interrupt_task = pressure_task
+
+        await session.handle_microphone_state(False)
+
+        assert session.microphone_enabled is False
+        assert session._candidate_speaking is False
+        assert pressure_task.cancelled()
+        assert session._deliberate_interrupt_task is None
+        assert len(omni.sent_audio) == 16
+        assert all(frame == b"\x00\x00" * 1600 for frame in omni.sent_audio)
+
+        # Browser frames queued after the close event must not reach ASR.
+        await session.handle_audio(b"\xe8\x03" * 160)
+        assert len(omni.sent_audio) == 16
+
+        await session.handle_microphone_state(True)
+        await session.handle_audio(b"\xe8\x03" * 160)
+        assert omni.sent_audio[-1] == b"\xe8\x03" * 160
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_microphone_close_flushes_pipeline_asr_tail() -> None:
+    class TailASR:
+        def __init__(self) -> None:
+            self.frames: list[bytes] = []
+
+        async def send_audio(self, pcm: bytes) -> None:
+            self.frames.append(pcm)
+
+        async def close(self) -> None:
+            return None
+
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+        asr = TailASR()
+        session.actual_mode = "L2"
+        session.asr = asr  # type: ignore[assignment]
+
+        await session.handle_microphone_state(False)
+
+        assert len(asr.frames) == 16
+        assert all(frame == b"\x00\x00" * 1600 for frame in asr.frames)
+        assert session.microphone_enabled is False
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_l0_response_done_without_id_uses_active_response_and_stays_l0() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+        omni = FakeOmni()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+        session.provider_task = asyncio.create_task(session._consume_omni())
+        response_id = "known-active-response"
+        expected = "请解释 Redis 的过期删除策略。"
+        session._omni_active_response_id = response_id
+        session._omni_started_response_id = response_id
+        session._omni_response_pending = True
+        session._omni_responding = True
+        session._omni_expected_by_response[response_id] = expected
+        session._omni_spoken_by_response[response_id] = expected
+        session._omni_audio_buffers[response_id] = [(b"\x01\x00" * 20, 24000)]
+        session._omni_response_events[response_id] = asyncio.Event()
+
+        await omni.emit({"type": "response_done", "status": "completed"})
+        await asyncio.wait_for(
+            session._omni_response_events[response_id].wait(),
+            timeout=1,
+        )
+
+        assert session.actual_mode == "L0"
+        assert recorder.first("mode.changed") is None
+        synced = recorder.first("interviewer.audio.synced")
+        assert synced is not None and synced["text"] == expected
+        assert session._omni_active_response_id is None
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_l0_response_done_without_any_id_uses_locked_text_fallback() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+        omni = FakeOmni()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+        session.provider_task = asyncio.create_task(session._consume_omni())
+        expected = "请说明 MySQL MVCC 的 Read View。"
+        session._omni_expected_speech = expected
+        session._omni_response_pending = True
+        session._omni_responding = True
+
+        with patch("app.voice_session.EdgeTTS", return_value=FakeTTS()):
+            await omni.emit({"type": "response_done", "status": "completed"})
+            await wait_until(
+                lambda: recorder.first("interviewer.audio.synced") is not None
+            )
+
+        synced = recorder.first("interviewer.audio.synced")
+        assert synced is not None
+        assert synced["text"] == expected
+        assert synced["fallback_tts"] is True
+        assert session.actual_mode == "L0"
+        assert recorder.first("mode.changed") is None
+        await session.close()
+
+    asyncio.run(scenario())
+
+
 def test_audio_send_disconnect_downgrades_to_l3() -> None:
     async def scenario() -> None:
         recorder = EventRecorder()
@@ -1422,5 +1551,24 @@ def test_cancelled_fallback_still_finishes_provider_transport_close() -> None:
         assert session.omni is None
         await session.close()
         assert session.closed is True
+
+    asyncio.run(scenario())
+
+
+def test_stuck_provider_close_is_bounded() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+        omni = SlowCloseOmni()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+
+        with patch("app.voice_session.VOICE_CLEANUP_TIMEOUT_SECONDS", 0.01):
+            await asyncio.wait_for(session.close(), timeout=0.5)
+            await asyncio.sleep(0)
+
+        assert session.closed is True
+        assert omni.close_calls == 1
+        assert omni.close_cancelled is True
 
     asyncio.run(scenario())

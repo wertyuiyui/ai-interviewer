@@ -53,6 +53,10 @@ interview_engine = InterviewEngine(db, settings)
 report_engine = ReportEngine(db, settings)
 background_tasks: set[asyncio.Task[Any]] = set()
 session_locks: dict[str, asyncio.Lock] = {}
+VOICE_END_DRAIN_TIMEOUT_SECONDS = 5.0
+VOICE_END_ANNOUNCE_TIMEOUT_SECONDS = 12.0
+WS_CONTROL_DRAIN_TIMEOUT_SECONDS = 9.0
+VOICE_CLOSE_TIMEOUT_SECONDS = 8.0
 
 
 class SlidingWindowLimiter:
@@ -351,12 +355,15 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
     send_lock = asyncio.Lock()
     ended = asyncio.Event()
     ending = asyncio.Event()
+    terminal_committed = asyncio.Event()
     terminal_lock = asyncio.Lock()
     timer_task: asyncio.Task[None] | None = None
     voice_session: BrowserVoiceSession | None = None
     answer_tasks: set[asyncio.Task[None]] = set()
     control_tasks: set[asyncio.Task[None]] = set()
     ready = False
+    requested_end_reason = "manual"
+    browser_microphone_enabled = True
 
     async def send(event_type: str, **payload: Any) -> None:
         async with send_lock:
@@ -407,53 +414,71 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
         if unfinished:
             await asyncio.gather(*unfinished, return_exceptions=True)
 
+    async def commit_terminal(reason: str) -> bool:
+        """Durably finish and enqueue reporting independently of the socket."""
+
+        async with terminal_lock:
+            if terminal_committed.is_set():
+                return False
+            normalized_reason = str(reason or "manual")
+            await db.finish_interview(interview_id, normalized_reason)
+            terminal_committed.set()
+            _spawn_report(
+                interview_id,
+                websocket=websocket,
+                send_lock=send_lock,
+            )
+            return True
+
     async def finalize(reason: str) -> None:
         async with terminal_lock:
-            if ended.is_set():
+            if terminal_committed.is_set():
                 return
             ending.set()
             await cancel_answers()
-            ended.set()
-            with suppress(Exception):
-                await send("interview.ended", reason=reason)
-            _spawn_report(interview_id, websocket=websocket, send_lock=send_lock)
+        await commit_terminal(reason)
+        ended.set()
+        with suppress(Exception):
+            await send("interview.ended", reason=reason)
 
     async def terminate(reason: str) -> None:
-        nonlocal voice_session
+        nonlocal voice_session, requested_end_reason
         async with terminal_lock:
-            if ended.is_set() or ending.is_set():
+            if terminal_committed.is_set() or ending.is_set():
                 return
+            requested_end_reason = reason if reason in {"time", "manual"} else "manual"
             ending.set()
         # Do not hold terminal_lock while an accepted answer finishes: an
         # answer that independently triggers early-stop calls finalize(), which
         # also needs the lock.
         if voice_session:
-            await voice_session.prepare_end()
-        else:
-            await drain_answers()
-        async with terminal_lock:
-            if ended.is_set():
-                return
-            reason = reason if reason in {"time", "manual"} else "manual"
-            await db.finish_interview(interview_id, reason)
-            closing = (
-                "时间到了，今天的面试就到这里，感谢你的时间。"
-                if reason == "time"
-                else "好的，今天的面试就到这里，感谢你的时间。"
+            await voice_session.prepare_end(
+                drain_timeout=VOICE_END_DRAIN_TIMEOUT_SECONDS
             )
-            with suppress(Exception):
-                await send("interviewer.text.done", text=closing)
-            if voice_session:
-                with suppress(Exception):
-                    await voice_session.announce(
+        else:
+            await drain_answers(timeout=VOICE_END_DRAIN_TIMEOUT_SECONDS)
+        if not await commit_terminal(requested_end_reason):
+            return
+        closing = (
+            "时间到了，今天的面试就到这里，感谢你的时间。"
+            if requested_end_reason == "time"
+            else "好的，今天的面试就到这里，感谢你的时间。"
+        )
+        with suppress(Exception):
+            await send("interviewer.text.done", text=closing)
+        if voice_session:
+            with suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(
+                    voice_session.announce(
                         closing,
                         cancel_current=True,
                         wait_for_playback=True,
-                    )
-            ended.set()
-            with suppress(Exception):
-                await send("interview.ended", reason=reason)
-            _spawn_report(interview_id, websocket=websocket, send_lock=send_lock)
+                    ),
+                    timeout=VOICE_END_ANNOUNCE_TIMEOUT_SECONDS,
+                )
+        ended.set()
+        with suppress(Exception):
+            await send("interview.ended", reason=requested_end_reason)
 
     async def voice_ended(reason: str) -> None:
         if reason == "time":
@@ -521,6 +546,36 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                         str(event.get("announcement_id") or "")
                     )
                 continue
+            if event_type == "microphone.state":
+                raw_enabled = event.get("enabled")
+                if isinstance(raw_enabled, bool):
+                    browser_microphone_enabled = raw_enabled
+                else:
+                    state = str(event.get("state") or "").strip().lower()
+                    if state in {"on", "open", "enabled", "live", "active"}:
+                        browser_microphone_enabled = True
+                    elif state in {"off", "closed", "disabled", "muted", "ended"}:
+                        browser_microphone_enabled = False
+                    else:
+                        await send(
+                            "error",
+                            code="INVALID_MICROPHONE_STATE",
+                            message="麦克风状态参数不正确",
+                            recoverable=True,
+                        )
+                        continue
+                if voice_session:
+                    await voice_session.handle_microphone_state(
+                        browser_microphone_enabled
+                    )
+                await send(
+                    "microphone.state.changed",
+                    enabled=browser_microphone_enabled,
+                    state=(
+                        "enabled" if browser_microphone_enabled else "disabled"
+                    ),
+                )
+                continue
             if event_type == "client.ready":
                 if ready:
                     continue
@@ -560,6 +615,8 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                     )
                     actual_mode = await voice_session.start(interview["last_question"])
                     await db.set_voice_mode(interview_id, actual_mode)
+                    if not browser_microphone_enabled:
+                        await voice_session.handle_microphone_state(False)
                 timer_task = asyncio.create_task(timer_loop())
             elif event_type == "user.text":
                 if not ready:
@@ -667,7 +724,6 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                 "error", code="INTERNAL_ERROR", message="面试连接出现异常，请刷新后重试"
             )
     finally:
-        ended.set()
         if timer_task:
             timer_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -679,13 +735,33 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
             await asyncio.gather(*pending_answers, return_exceptions=True)
         pending_controls = [task for task in control_tasks if not task.done()]
         if pending_controls:
-            with suppress(asyncio.TimeoutError):
-                await asyncio.wait_for(
-                    asyncio.gather(*pending_controls, return_exceptions=True),
-                    timeout=15,
-                )
+            _, unfinished_controls = await asyncio.wait(
+                pending_controls,
+                timeout=WS_CONTROL_DRAIN_TIMEOUT_SECONDS,
+            )
+            # A disconnected browser cannot own the durable terminal commit.
+            # The normal terminate path should reach this within its bounded
+            # voice drain; this fallback covers an unexpectedly stuck provider.
+            if ending.is_set() and not terminal_committed.is_set():
+                with suppress(Exception):
+                    await commit_terminal(requested_end_reason)
+            for task in unfinished_controls:
+                task.cancel()
+            if unfinished_controls:
+                with suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(
+                        asyncio.gather(
+                            *unfinished_controls,
+                            return_exceptions=True,
+                        ),
+                        timeout=1,
+                    )
         if voice_session:
-            await voice_session.close()
+            with suppress(asyncio.TimeoutError, Exception):
+                await asyncio.wait_for(
+                    voice_session.close(),
+                    timeout=VOICE_CLOSE_TIMEOUT_SECONDS,
+                )
 
 
 async def _handle_text_answer(
