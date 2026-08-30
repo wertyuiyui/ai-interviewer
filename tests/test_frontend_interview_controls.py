@@ -94,7 +94,7 @@ def test_interviewer_voice_playback_toggle_is_local_only() -> None:
 def test_interview_script_cache_busts_answer_controls() -> None:
     html = (ROOT / "public" / "interview.html").read_text(encoding="utf-8")
     script = (ROOT / "public" / "js" / "interview.js").read_text(encoding="utf-8")
-    assert "/js/interview.js?v=20260830-interview-clock-v1" in html
+    assert "/js/interview.js?v=20260830-interview-clock-v2" in html
     assert "/assets/app.css?v=20260830-interview-clock-v1" in html
     assert 'id="pauseButton"' in html
     assert 'id="codingComposerHeading"' in html
@@ -123,6 +123,7 @@ def test_pause_text_mode_and_coding_editor_contract() -> None:
     assert 'aria-pressed="false"' in stage_actions
     assert "type: 'interview.pause', paused: !interviewPaused" in script
     assert "question_elapsed_seconds" in script
+    assert "const questionIsTiming = ['ready', 'answering'].includes(answerState)" in script
     assert "voiceMode === 'L3' || codingAnswerMode" in script
     assert "elements.answerControl.classList.toggle('is-hidden', !live || voiceMode === 'L3')" in script
     assert "codingAnswerMode ? 10000 : 4000" in script
@@ -130,6 +131,8 @@ def test_pause_text_mode_and_coding_editor_contract() -> None:
     assert "setRangeText('  ', start, end, 'end')" in script
     assert "计时会从点击时开始" not in script
     assert "本题回答已结束，计时已停止" not in script
+    error_block = script.split("case 'error':", 1)[1].split("case 'pong':", 1)[0]
+    assert "setAnswerState(questionReady ? 'ready' : 'idle', { resetElapsed: true })" not in error_block
     assert ".message-composer.is-coding textarea" in styles
     assert "font-family: var(--font-mono)" in styles
     assert "min-height: 220px" in styles

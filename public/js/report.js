@@ -715,7 +715,7 @@ function renderHolisticDimensions(report) {
 
 function renderCompanyInsights(report) {
   const insights = report.companyInsights;
-  $('#companyInsightsTitle').textContent = `${companyLabel(report.company)}面经综合建议`;
+  $('#companyInsightsTitle').textContent = `${companyLabel(report.company)}真实面经与综合建议`;
   $('#companyInsightsSummary').textContent = insights.summary || '本次报告未返回足够的公开面经综合信息。';
   const patternList = $('#companyPatternList');
   patternList.replaceChildren();
@@ -723,14 +723,12 @@ function renderCompanyInsights(report) {
     .forEach((pattern) => patternList.append(createElement('li', '', pattern)));
   const adviceList = $('#companyAdviceList');
   adviceList.replaceChildren();
-  (insights.advice.length ? insights.advice : ['暂无基于可核验面经归纳出的针对性建议。'])
+  const combinedAdvice = [...new Set([
+    ...insights.personalizedAdvice,
+    ...insights.advice.filter((advice) => !insights.personalizedAdvice.some((item) => item.endsWith(advice))),
+  ])];
+  (combinedAdvice.length ? combinedAdvice : ['暂无基于可核验面经归纳出的针对性建议。'])
     .forEach((advice) => adviceList.append(createElement('li', '', advice)));
-  const personalizedList = $('#companyPersonalizedAdviceList');
-  personalizedList.replaceChildren();
-  (insights.personalizedAdvice.length
-    ? insights.personalizedAdvice
-    : ['本次有效答题不足时不推断个人弱项；请先参考下方公司样本共性。'])
-    .forEach((advice) => personalizedList.append(createElement('li', '', advice)));
   const citationList = $('#companyCitationList');
   citationList.replaceChildren();
   insights.citations.forEach((citation) => {

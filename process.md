@@ -39,6 +39,15 @@
 
 ## 变更日志
 
+### INTERVIEW-010 · 2026-08-30 · 本题计时提交边界补正
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：识别启动只控制收音，不再因启动请求被拒绝而清零本题累计用时；服务端时间同步只校准仍在思考或回答中的题目，提交封口后显示值固定在提交时刻，不把模型处理等待误显示为回答时间。
+- 实际文件：`public/interview.html`、`public/js/interview.js`、`tests/test_frontend_audio_ui.py`、`tests/test_frontend_interview_controls.py`、`process.md`。
+- 验证：计时/API/前端专项 `16 passed`；共享工作区全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `264 passed`；`node --check public/js/interview.js`、Python compileall 与 `git diff --check` 通过。
+- 风险或后续事项：无；报告中的可信用时仍由服务端“题目出现到提交”计量，前端只负责同步展示。
+
 ### DEPLOY-021 · 2026-08-30 · 面试阶段与计时交互生产发布
 
 - Agent：`/root`。
@@ -115,6 +124,15 @@
 - 实际文件：`public/interview.html`、`public/js/interview.js`、`tests/test_api.py`、`tests/test_frontend_interview_controls.py`、`tests/test_frontend_audio_ui.py`、`process.md`。
 - 验证：退出/API/音频专项 `13 passed`；扩大 API/面试/Profile 专项 `25 passed`；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `256 passed`；`node --check public/js/interview.js`、`git diff --check` 通过。测试覆盖跨设备删除被拒绝、active 场次及已有 turn 级联删除、历史/弱项/当日额度为空、选错简历复用和非法 ID 拦截。
 - 风险或后续：退出按用户要求为不可恢复舍弃；低概率的“删除已提交但响应丢失”会留页提示重试，不会自动跳转。未进行真实浏览器像素回归；移动端操作区已有换行规则。
+
+### REPORT-001 · 2026-08-30 · 评分报告真实面经与综合建议整合
+
+- Agent：`/root`；只读审计：`/root/report_ui_audit`、`/root/report_data_audit`。
+- 状态：`completed`。
+- 摘要：评分报告的公司面经区由“本场优先、高频共性、下一轮练法、个人样本”四个分散小节收敛为“真实面经”和“综合建议”两栏。真实面经保留服务端可信资料提供的样本说明、反复考点与原帖链接；综合建议按本场个性化建议优先、通用建议补充的顺序合并，并过滤已被个性化文案包含的重复建议。旧报告缺少面经字段时继续显示原有空态；后端可信来源覆盖和数据协议未改。
+- 实际文件：`public/report.html`、`public/js/report.js`、`public/assets/app.css`、`tests/test_frontend_report_ui.py`、`process.md`。
+- 验证：`node --check public/js/report.js` 通过；报告、导航及可信面经数据专项 `7 passed`；共享工作区全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `264 passed`；`git diff --check` 通过。
+- 风险或后续事项：当前环境无 Chromium，未做像素级真实浏览器回归；两栏在既有桌面/平板/移动端断点下分别为双列/单列。
 
 ### DEPLOY-017 · 2026-08-30 · 简历识别稳定性修复生产发布
 

@@ -768,6 +768,7 @@ function applyInterviewPause(paused, { questionElapsedSeconds = null } = {}) {
   const changed = interviewPaused !== next;
   const localElapsed = currentAnswerElapsedMs();
   const suppliedElapsed = Number(questionElapsedSeconds);
+  const questionIsTiming = ['ready', 'answering'].includes(answerState);
   interviewPaused = next;
   if (interview) interview.paused = next;
   document.body.classList.toggle('is-paused', next);
@@ -776,7 +777,7 @@ function applyInterviewPause(paused, { questionElapsedSeconds = null } = {}) {
     invalidateAudioPlayback();
   }
   setAnswerState(answerState, {
-    elapsedMs: Number.isFinite(suppliedElapsed) && suppliedElapsed >= 0
+    elapsedMs: questionIsTiming && Number.isFinite(suppliedElapsed) && suppliedElapsed >= 0
       ? suppliedElapsed * 1000
       : localElapsed,
   });
@@ -1808,7 +1809,7 @@ function handleServerEvent(event) {
         answerStartAwaitingAck = false;
         answerPending = false;
         questionReady = Boolean(currentQuestion);
-        setAnswerState(questionReady ? 'ready' : 'idle', { resetElapsed: true });
+        setAnswerState(questionReady ? 'ready' : 'idle');
         setStage('listening', '可以重新开始识别', '服务端没有接受刚才的识别操作；本题用时仍在累计。');
       }
       if (/TRANSCRIPT|CORRECTION|TURN_|REPORT_ALREADY/i.test(String(event.code || ''))) {

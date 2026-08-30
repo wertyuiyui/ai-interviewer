@@ -33,7 +33,7 @@ def test_extended_evidence_report_and_source_visibility_contract() -> None:
         "processAnalysisDetail",
         "roleFitDetail",
         "companyCitationList",
-        "companyPersonalizedAdviceList",
+        "companyAdviceList",
     ):
         assert f'id="{element_id}"' in report_html
 
@@ -46,6 +46,12 @@ def test_extended_evidence_report_and_source_visibility_contract() -> None:
     assert "recurring_patterns" in report_js
     assert "interview_advice" in report_js
     assert "personalized_advice" in report_js
+    assert ">真实面经</h3>" in report_html
+    assert ">综合建议</h3>" in report_html
+    assert "companyPersonalizedAdviceList" not in report_html
+    for old_heading in ("结合本次练习，优先做什么", "公开面经反复考什么", "下一轮怎么练", "这些判断来自哪些个人样本"):
+        assert old_heading not in report_html
+    assert "item.endsWith(advice)" in report_js
     assert "report_takeaway" in report_js
     assert "!Number.isFinite(dimensions[index].score)" in report_js
     assert "JavaGuide" in report_js and "CodeTop" in report_js
