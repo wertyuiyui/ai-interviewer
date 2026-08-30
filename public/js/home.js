@@ -36,7 +36,7 @@ const profileGithubAdd = $('#profileGithubAdd');
 const profileProjectProgress = $('#profileProjectProgress');
 const hardwareTest = createHardwareTest();
 
-let resumeMode = 'pdf';
+let resumeMode = 'resume';
 let selectedFile = null;
 let selectedResumeId = '';
 let profile = { resumes: [], projects: [], selected_project_id: '' };
@@ -67,19 +67,18 @@ const languageModeHints = {
 };
 
 function setResumeMode(nextMode, focus = false) {
-  resumeMode = ['saved', 'text'].includes(nextMode) ? nextMode : 'pdf';
+  resumeMode = nextMode === 'text' ? 'text' : 'resume';
   $$('[data-resume-tab]').forEach((button) => {
     const active = button.dataset.resumeTab === resumeMode;
     button.classList.toggle('is-active', active);
     button.setAttribute('aria-selected', String(active));
     button.tabIndex = active ? 0 : -1;
   });
-  $('#savedPanel').classList.toggle('is-hidden', resumeMode !== 'saved');
-  $('#pdfPanel').classList.toggle('is-hidden', resumeMode !== 'pdf');
+  $('#resumePanel').classList.toggle('is-hidden', resumeMode !== 'resume');
   $('#textPanel').classList.toggle('is-hidden', resumeMode !== 'text');
   hideResumeAlert();
   if (focus) {
-    const target = resumeMode === 'saved' ? savedResumeSelect : resumeMode === 'pdf' ? fileInput : textInput;
+    const target = resumeMode === 'resume' ? (selectedResumeId ? savedResumeSelect : fileInput) : textInput;
     target?.focus();
   }
 }
@@ -180,7 +179,10 @@ function selectSavedResume(id, { switchMode = true } = {}) {
   $$('input[name="profile_resume"]').forEach((input) => {
     input.checked = input.value === selectedResumeId;
   });
-  if (switchMode && selectedResumeId) setResumeMode('saved');
+  if (switchMode && selectedResumeId) {
+    setFile(null);
+    setResumeMode('resume');
+  }
 }
 
 function renderSavedResumeOptions() {
@@ -195,6 +197,10 @@ function renderSavedResumeOptions() {
     savedResumeSelect.disabled = true;
     return;
   }
+  const prompt = document.createElement('option');
+  prompt.value = '';
+  prompt.textContent = '选择一份已保存简历';
+  savedResumeSelect.append(prompt);
   readyResumes.forEach((resume) => {
     const option = document.createElement('option');
     option.value = profileItemId(resume);
@@ -572,6 +578,8 @@ function setFile(file) {
     return;
   }
   selectedFile = file;
+  selectSavedResume('', { switchMode: false });
+  renderProfileResumes();
   dropZone.classList.add('has-file');
   $('#fileLabel').textContent = file.name;
   $('#fileMeta').textContent = `${(file.size / 1024 / 1024).toFixed(2)} MB · 已选择，开始时自动解析`;
@@ -818,29 +826,26 @@ async function loadWeakness() {
 }
 
 function validateResume() {
-  if (resumeMode === 'saved') {
+  if (resumeMode === 'resume' && !selectedFile) {
     const selected = profile.resumes.find((item) => profileItemId(item) === selectedResumeId);
     if (!selected || !getStructuredResume(selected)) {
-      throw new Error('请先从匿名 Profile 选择一份已解析的简历。');
+      throw new Error('请选择一份已保存简历，或在下方上传 PDF；也可以切换为粘贴文字。');
     }
     return;
   }
-  if (resumeMode === 'pdf') {
-    if (!selectedFile) throw new Error('请先选择一份 PDF 简历，或切换为粘贴文字。');
-    return;
-  }
+  if (resumeMode === 'resume') return;
   if (textInput.value.trim().length < 30) throw new Error('简历文字至少需要 30 个字，才能生成有效追问。');
 }
 
 async function parseResume() {
-  if (resumeMode === 'saved') {
+  if (resumeMode === 'resume' && !selectedFile) {
     const selected = profile.resumes.find((item) => profileItemId(item) === selectedResumeId);
     const parsed = getStructuredResume(selected);
     if (!parsed) throw new Error('已保存简历尚未解析完成，请重新上传。');
     return parsed;
   }
   let response;
-  if (resumeMode === 'pdf') {
+  if (resumeMode === 'resume') {
     const data = new FormData();
     data.append('client_id', getClientId());
     data.append('name', selectedFile.name.replace(/\.pdf$/i, '') || '面试简历');
@@ -1020,10 +1025,11 @@ $$('input[name="answer_mode"]').forEach((input) => {
 });
 profileResumeFiles?.addEventListener('change', uploadProfileResumes);
 savedResumeSelect?.addEventListener('change', () => {
+  setFile(null);
   selectSavedResume(savedResumeSelect.value);
   renderProfileResumes();
   const selected = profile.resumes.find((item) => profileItemId(item) === selectedResumeId);
-  showToast(`本场将使用“${profileItemName(selected, '已保存简历')}”。`, 'success');
+  if (selected) showToast(`本场将使用“${profileItemName(selected, '已保存简历')}”。`, 'success');
 });
 profileProjectFiles?.addEventListener('change', uploadProfileProject);
 profileProjectPartialScope?.addEventListener('change', () => {

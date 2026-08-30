@@ -10,6 +10,11 @@
   margin-top: 4px;
 }
 
+.resume-combined-panel {
+  display: grid;
+  gap: 12px;
+}
+
 @media (max-width: 720px) {
   .resume-profile-section .profile-panel {
     margin-inline: 0;

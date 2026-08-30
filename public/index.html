@@ -128,20 +128,19 @@
             </details>
 
             <div class="tab-switch" role="tablist" aria-label="简历输入方式">
-              <button type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="savedPanel" id="savedTab" data-resume-tab="saved">已保存</button>
-              <button type="button" class="tab-button is-active" role="tab" aria-selected="true" aria-controls="pdfPanel" id="pdfTab" data-resume-tab="pdf">上传 PDF</button>
+              <button type="button" class="tab-button is-active" role="tab" aria-selected="true" aria-controls="resumePanel" id="resumeTab" data-resume-tab="resume">选择 / 上传简历</button>
               <button type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="textPanel" id="textTab" data-resume-tab="text">粘贴文字</button>
             </div>
-            <div class="resume-panel saved-resume-panel is-hidden" id="savedPanel" role="tabpanel" aria-labelledby="savedTab">
-              <span class="saved-resume-mark" aria-hidden="true">✓</span>
-              <span>
-                <label for="savedResumeSelect"><strong id="savedResumeChoice">本场开面简历</strong></label>
-                <select class="compact-input" id="savedResumeSelect" aria-describedby="savedResumeHelp"><option value="">正在同步已保存简历…</option></select>
-                <small id="savedResumeHelp">直接在首页选择；个人档案只用于添加或管理资料。</small>
-              </span>
-              <button id="openProfileButton" type="button">添加 / 管理</button>
-            </div>
-            <div class="resume-panel" id="pdfPanel" role="tabpanel" aria-labelledby="pdfTab">
+            <div class="resume-panel resume-combined-panel" id="resumePanel" role="tabpanel" aria-labelledby="resumeTab">
+              <div class="saved-resume-panel">
+                <span class="saved-resume-mark" aria-hidden="true">✓</span>
+                <span>
+                  <label for="savedResumeSelect"><strong id="savedResumeChoice">本场开面简历</strong></label>
+                  <select class="compact-input" id="savedResumeSelect" aria-describedby="savedResumeHelp"><option value="">正在同步已保存简历…</option></select>
+                  <small id="savedResumeHelp">选择已有简历，或在下方上传新的 PDF。</small>
+                </span>
+                <button id="openProfileButton" type="button">管理资料</button>
+              </div>
               <label class="drop-zone" id="dropZone" for="resumeFile">
                 <input id="resumeFile" name="file" type="file" accept="application/pdf,.pdf">
                 <span class="upload-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg></span>
@@ -281,6 +280,6 @@
       </section>
     </main>
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-    <script type="module" src="/js/home.js?v=20260830-profile-edit-v1"></script>
+    <script type="module" src="/js/home.js?v=20260830-resume-merge-v1"></script>
   </body>
 </html>

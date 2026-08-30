@@ -40,7 +40,7 @@ def test_anonymous_profile_supports_multiple_resume_and_project_assets() -> None
         "profileGithubUrl",
         "profileGithubAdd",
         "profileProjectList",
-        "savedPanel",
+        "resumePanel",
         "savedResumeChoice",
     ):
         assert f'id="{element_id}"' in page
@@ -63,7 +63,7 @@ def test_anonymous_profile_supports_multiple_resume_and_project_assets() -> None
     assert "/selection`" in script
     assert "method: 'DELETE'" in script
     assert "getStructuredResume(selected)" in script
-    assert "resumeMode === 'saved'" in script
+    assert "resumeMode === 'resume'" in script
     assert "profile_project_id: profile.selected_project_id || null" in script
     assert "不使用项目" in script
     assert "selected: false" in script

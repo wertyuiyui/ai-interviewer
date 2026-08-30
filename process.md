@@ -39,6 +39,15 @@
 
 ## 变更日志
 
+### HOME-002 · 2026-08-30 · 首页简历选择与上传合并
+
+- Agent：`/root`；只读协作审计：`/root/practice_frontend`。
+- 状态：`completed`。
+- 摘要：删除“直接在首页选择；个人档案只用于添加或管理资料。”；首页简历输入不再把“已保存”和“上传 PDF”拆成两个页签，改为统一的“选择 / 上传简历”区域，并把本场 PDF 上传入口紧接在已保存简历选择框下方。选择新 PDF 与重新选择已保存简历会互相取消，确保最后一次选择的来源生效；上传、解析、自动保存到 Profile 和粘贴文字能力保持原协议。
+- 实际文件：`public/index.html`、`public/js/home.js`、`public/assets/home-profile.css`、`tests/test_frontend_home_ui.py`、`tests/test_frontend_profile_project_ui.py`、`process.md`。
+- 验证：`node --check public/js/home.js`、`git diff --check` 通过；首页/Profile/导航专项 `16 passed`。共享工作区全量回归为 `231 passed, 11 failed`，失败均落在并发 `INTERVIEW-005` 正在修改的面试阶段、题目流转与面试控件契约，不涉及本任务首页文件。
+- 风险或后续事项：当前环境无可用 Chromium，未做真实浏览器视觉回归；合并区域复用既有响应式控件和 Profile/API 数据流，不修改服务端简历结构或创建面试协议。提交时只纳入本任务文件，不带入 `INTERVIEW-005` 的未完成改动。
+
 ### DEPLOY-012 · 2026-08-30 · Qwen3.8-Flash 生产切换
 
 - Agent：`/root`。

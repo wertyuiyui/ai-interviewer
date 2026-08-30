@@ -80,7 +80,7 @@ def test_home_can_create_a_persistent_microphone_free_text_interview() -> None:
     assert 'name="answer_mode" value="voice"' in html
     assert 'name="answer_mode" value="text"' in html
     assert 'id="hardwareTestSection"' in html
-    assert "/js/home.js?v=20260830-profile-edit-v1" in html
+    assert "/js/home.js?v=20260830-resume-merge-v1" in html
     assert "function getAnswerMode()" in home
     assert "serverMode === 'L3' ? 'text' : preferredAnswerMode" in home
     assert home.count("answer_mode: answerMode") == 2
@@ -100,9 +100,18 @@ def test_saved_resume_can_be_selected_directly_in_home_setup() -> None:
 
     assert 'id="savedResumeSelect"' in html
     assert 'for="savedResumeSelect"' in html
-    assert "直接在首页选择；个人档案只用于添加或管理资料" in html
+    assert "直接在首页选择；个人档案只用于添加或管理资料" not in html
+    assert 'data-resume-tab="saved"' not in html
+    assert 'data-resume-tab="pdf"' not in html
+    assert 'data-resume-tab="resume"' in html
+    assert 'id="savedPanel"' not in html
+    assert 'id="pdfPanel"' not in html
+    resume_panel = html.split('id="resumePanel"', 1)[1].split('id="textPanel"', 1)[0]
+    assert resume_panel.index('id="savedResumeSelect"') < resume_panel.index('id="resumeFile"')
     assert "function renderSavedResumeOptions()" in home
     assert "readyResumes.forEach((resume)" in home
     assert "savedResumeSelect?.addEventListener('change'" in home
     assert "selectSavedResume(savedResumeSelect.value)" in home
-    assert "resumeMode === 'saved' ? savedResumeSelect" in home
+    assert "resumeMode === 'resume' ? (selectedResumeId ? savedResumeSelect : fileInput)" in home
+    assert "resumeMode === 'resume' && !selectedFile" in home
+    assert "selectSavedResume('', { switchMode: false })" in home
