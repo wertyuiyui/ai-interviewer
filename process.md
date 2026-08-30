@@ -19,7 +19,6 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
-| `CODING-002` | `/root` | `in_progress` | 调研真实代码面试形式并将手撕代码拆为独立题库、独立分阶段训练页和独立评估 API；重组首页“模拟面试 / 单项练习”信息架构 | `app/coding_practice.py`, `app/main.py`, `questions/coding_practice_bank.json`, `resources/coding_source_manifest.json`, `public/coding.html`, `public/js/coding.js`, `public/assets/coding.css`, `public/index.html`, `public/practice.html`, `public/js/practice.js`, `public/assets/practice.css`, `public/assets/app.css`, `tests/test_coding_practice.py`, `tests/test_frontend_coding_ui.py`, `tests/test_frontend_practice_ui.py`, `references/CODING_PRACTICE_DESIGN.md`, `README.md`, `process.md` | 不修改或暂存 `PROJ-007` 当前占用的 `app/profile.py`、`tests/test_profile.py`；仅按文件路径提交本任务，不 push、不部署 |
 
 登记模板：
 
@@ -184,6 +183,15 @@
 - 文件：`app/profile.py`、`tests/test_profile.py`、`process.md`。
 - 验证：Profile/API 专项 `38 passed`；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `204 passed`；Python compileall 与 `git diff --check` 通过。
 - 风险或后续事项：首次重新解读旧项目会产生一次新的百炼分析调用；v2 缓存保留在 SQLite 中但不会被读取，后续可在单独的数据维护窗口清理。
+
+### CODING-002 · 2026-08-30 · 独立手撕代码工作台与首页单项练习架构
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：基于公开代码面试流程、四维评价 rubric 与 Grind 75 策展清单，将手撕代码从八股快刷中完整拆出；首页改为并列的“模拟面试 / 单项练习”，单项练习内并列八股快速刷题、手撕代码、项目解读。新增 8 道独立改写的经典手撕题、来源政策清单、Python/Java/Go/JavaScript 函数签名、澄清—方案—编码—自测分阶段工作台、按语言隔离的浏览器草稿、递进提示及沟通/解题/技术实现/测试四维静态复盘 API；快刷前端移除旧 `drill_type=coding` 入口，后端兼容字段保留以避免破坏旧请求。
+- 文件：`app/coding_practice.py`、`app/main.py`、`questions/coding_practice_bank.json`、`resources/coding_source_manifest.json`、`public/coding.html`、`public/js/coding.js`、`public/assets/coding.css`、`public/index.html`、`public/practice.html`、`public/js/practice.js`、`public/assets/practice.css`、`public/assets/app.css`、`tests/test_coding_practice.py`、`tests/test_frontend_coding_ui.py`、`tests/test_frontend_practice_ui.py`、`references/CODING_PRACTICE_DESIGN.md`、`README.md`、`process.md`。
+- 验证：JSON 解析通过；`node --check public/js/coding.js public/js/practice.js` 通过；`PYTHONPATH=.deps .venv/bin/python -m compileall -q app` 通过；手撕/首页/快刷前端专项 `14 passed`；全量回归 `211 passed, 2 failed`，两项失败均来自仍在进行的 `NAV-001` 新测试，要求其尚未完成的全站三项导航和 `openProfileFromHash`，不涉及本任务功能；`git diff --check` 通过。
+- 风险或后续事项：MVP 明确不执行候选人代码，`execution_status` 固定为 `not_executed`；若加入真实判题必须另接隔离 runner。未做真实浏览器视觉回归、未 push、未部署；提交时排除 `NAV-001` 正在修改的 `public/project.html`、`public/report.html`、`tests/test_frontend_navigation.py`，并在完成本任务后释放首页、快刷、coding 与 `app.css` 供其接续统一导航。
 
 ### DEPLOY-002 · 2026-08-30 · 项目解读最终增量发布
 

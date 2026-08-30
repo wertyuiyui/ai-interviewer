@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6f4ef">
+    <meta name="description" content="真实题库驱动的分阶段手撕代码训练：澄清、方案、实现、自测与四维复盘。">
+    <title>手撕代码 · 砺面</title>
+    <link rel="stylesheet" href="/assets/app.css?v=20260830-coding-workbench">
+    <link rel="stylesheet" href="/assets/coding.css?v=20260830-coding-workbench">
+  </head>
+  <body class="coding-page">
+    <header class="site-header coding-header">
+      <a class="brand" href="/" aria-label="砺面首页"><span class="brand-mark" aria-hidden="true">砺</span><span><strong>砺面</strong><small>手撕代码</small></span></a>
+      <nav class="header-actions" aria-label="代码训练导航"><a class="text-link" href="/">首页</a><a class="text-link" href="/practice">快速刷题</a><a class="text-link" href="/project">项目解读</a></nav>
+    </header>
+
+    <main class="coding-shell">
+      <section class="coding-landing" id="codingLanding">
+        <header class="coding-hero">
+          <div><span class="eyebrow"><span></span> CODING INTERVIEW WORKBENCH</span><h1>不只写出答案，<br>练完整场代码面试。</h1></div>
+          <p>按真实面试节奏完成澄清、方案、编码和自测。题目来自公开策展清单并经独立改写；系统按沟通、解题、技术实现、测试四维静态复盘，不在服务器运行代码。</p>
+        </header>
+
+        <div class="coding-filters" aria-label="题库筛选">
+          <label>题型<select id="codingTopic"><option value="">全部题型</option></select></label>
+          <label>难度<select id="codingDifficulty"><option value="">全部难度</option><option value="easy">基础</option><option value="medium">进阶</option></select></label>
+          <label>编程语言<select id="codingLanguage"><option value="python">Python</option><option value="java">Java</option><option value="go">Go</option><option value="javascript">JavaScript</option></select></label>
+          <span class="coding-bank-status" id="codingBankStatus">正在读取题库…</span>
+        </div>
+        <div class="coding-question-grid" id="codingQuestionList" aria-live="polite"></div>
+      </section>
+
+      <section class="coding-workbench is-hidden" id="codingWorkbench">
+        <header class="coding-workbench-head">
+          <button class="coding-back" id="codingBack" type="button">← 返回题库</button>
+          <div><span id="codingMeta">数组 · 基础</span><h1 id="codingTitle">题目</h1></div>
+          <div class="coding-clock"><span>建议 <b id="codingRecommended">20</b> 分钟</span><strong id="codingElapsed">00:00</strong></div>
+        </header>
+
+        <article class="coding-prompt-card">
+          <p id="codingPrompt"></p>
+          <div class="coding-signature"><span>函数签名</span><code id="codingSignature"></code></div>
+          <ul id="codingConstraints"></ul>
+          <div class="coding-examples" id="codingExamples"></div>
+        </article>
+
+        <nav class="coding-stage-nav" aria-label="作答阶段">
+          <button class="is-active" data-stage="clarify" type="button"><span>01</span>澄清约束</button>
+          <button data-stage="approach" type="button"><span>02</span>方案设计</button>
+          <button data-stage="code" type="button"><span>03</span>编码实现</button>
+          <button data-stage="test" type="button"><span>04</span>主动自测</button>
+        </nav>
+
+        <section class="coding-stage" data-panel="clarify">
+          <header><div><span>BEFORE CODING</span><h2>先把模糊处问清楚</h2></div><button class="coding-hint" data-hint="clarify" type="button">给一个澄清提示</button></header>
+          <p>写下你会向面试官确认的输入保证、无解行为、可否修改输入等。这里评分的是问题意识，不是复述题面。</p>
+          <textarea id="codingAssumptions" rows="7" maxlength="3000" placeholder="例如：输入是否保证存在唯一解？无解时返回什么？是否允许原地修改？"></textarea>
+        </section>
+        <section class="coding-stage is-hidden" data-panel="approach">
+          <header><div><span>THINK OUT LOUD</span><h2>讲方案、取舍和不变量</h2></div><button class="coding-hint" data-hint="approach" type="button">给一个思路提示</button></header>
+          <p>先说朴素方案，再说明目标方案为何正确、关键状态代表什么，以及复杂度目标。</p>
+          <textarea id="codingApproach" rows="10" maxlength="5000" placeholder="方案：…\n核心不变量：…\n为什么正确：…"></textarea>
+        </section>
+        <section class="coding-stage is-hidden" data-panel="code">
+          <header><div><span>IMPLEMENTATION</span><h2>完成可读的实现</h2></div><button class="coding-hint" data-hint="code" type="button">给一个编码提示</button></header>
+          <div class="coding-editor-head"><span id="codingEditorLanguage">Python</span><small>草稿自动保存在当前浏览器 · 不会在服务器执行</small></div>
+          <textarea class="coding-editor" id="codingCode" rows="22" maxlength="20000" spellcheck="false"></textarea>
+          <label class="coding-complexity">复杂度说明<input id="codingComplexity" maxlength="2000" placeholder="时间 O(...)；空间 O(...)；理由…"></label>
+        </section>
+        <section class="coding-stage is-hidden" data-panel="test">
+          <header><div><span>DRY RUN</span><h2>主动构造并走查用例</h2></div><button class="coding-hint" data-hint="test" type="button">给一个测试提示</button></header>
+          <p>不要只抄题目样例。写出输入、预期输出和它覆盖的风险；面试里要能逐行 dry-run 并自纠。</p>
+          <div id="codingTests" class="coding-test-list"></div>
+          <button class="coding-add-test" id="codingAddTest" type="button">＋ 添加自测用例</button>
+        </section>
+
+        <div class="coding-workbench-actions">
+          <button class="secondary-button" id="codingPrevious" type="button">上一步</button>
+          <button class="primary-button coding-next" id="codingNext" type="button"><span class="button-label">下一步</span><span aria-hidden="true">→</span></button>
+        </div>
+      </section>
+
+      <section class="coding-review is-hidden" id="codingReview" aria-live="polite">
+        <header><div><span>STATIC INTERVIEW REVIEW</span><h1>这次手撕的复盘</h1><p id="codingReviewSummary"></p></div><strong id="codingOverallScore">—</strong></header>
+        <div class="coding-dimension-grid" id="codingDimensions"></div>
+        <div class="coding-review-notes"><article><h2>做得好的地方</h2><ul id="codingStrengths"></ul></article><article><h2>下一次要改</h2><ul id="codingImprovements"></ul></article></div>
+        <p class="coding-execution-note">本次仅做静态代码面试复盘，没有编译或执行提交内容。</p>
+        <div class="coding-review-actions"><button class="secondary-button" id="codingRetry" type="button">带着反馈重做</button><button class="primary-button coding-another" id="codingAnother" type="button">换一道题</button></div>
+      </section>
+    </main>
+    <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="/js/coding.js?v=20260830-coding-workbench"></script>
+  </body>
+</html>

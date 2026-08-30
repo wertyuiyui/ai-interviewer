@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f6f4ef">
-    <meta name="description" content="面向后端实习面试的快速练习，支持综合刷题、真实题库手撕代码专项以及语音与文字作答。">
+    <meta name="description" content="面向后端实习面试的八股快速刷题，支持技术与综合面知识题、语音与文字作答。">
     <title>快速刷题 · 砺面</title>
     <link rel="stylesheet" href="/assets/app.css?v=20260830-profile-bank-v2">
     <link rel="stylesheet" href="/assets/practice.css?v=20260830-infinite-practice">
@@ -17,6 +17,7 @@
       </a>
       <nav class="header-actions" aria-label="刷题导航">
         <a class="text-link" href="/">完整模拟</a>
+        <a class="text-link" href="/coding">手撕代码</a>
         <a class="text-link" href="/project">项目解读</a>
         <a class="text-link" href="/report?view=history">历史报告 <span aria-hidden="true">↗</span></a>
       </nav>
@@ -27,7 +28,7 @@
         <div class="practice-intro">
           <span class="eyebrow"><span></span> REAL QUESTION DRILL</span>
           <h1 id="practiceTitle">一次只练好一道题。</h1>
-          <p>按公司、面试类型、方向和难度快速选题。答完立即看扣分点，也可以从面试报告回来重答薄弱题。</p>
+          <p>按公司、面试类型、八股方向和难度快速选题。答完立即看扣分点，也可以从面试报告回来重答薄弱题。</p>
           <div class="practice-proof-grid" aria-label="刷题特点">
             <article><strong>单题闭环</strong><small>作答、评分、改写、再练</small></article>
             <article><strong>语音或文字</strong><small id="practiceVoiceProof">正在检查实时转写能力</small></article>
@@ -45,19 +46,6 @@
             <strong>正在准备面后错题重答</strong>
             <p>会保留原题与原扣分点，新的回答单独评分，不覆盖原报告。</p>
           </div>
-
-          <div class="practice-coding-notice is-hidden" id="codingNotice">
-            <strong>手撕代码 · 真实题库专项</strong>
-            <p>只抽取已审核、可追溯的 coding 题。请提交代码或完整伪代码；这里做静态讲评，不会冒充在线编译判题。</p>
-          </div>
-
-          <fieldset class="practice-choice practice-drill-type" id="practiceDrillType">
-            <legend>训练类型</legend>
-            <div class="segmented" role="radiogroup" aria-label="训练类型">
-              <label><input type="radio" name="drill_type" value="general" checked><span>综合刷题</span></label>
-              <label><input type="radio" name="drill_type" value="coding"><span>手撕代码</span></label>
-            </div>
-          </fieldset>
 
           <label class="practice-field" for="practiceCompany">
             <span>目标公司</span>

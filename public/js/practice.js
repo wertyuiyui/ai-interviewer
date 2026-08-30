@@ -6,7 +6,6 @@ import { AudioSession } from './audio-session.js?v=20260830-mic-release';
 const query = new URLSearchParams(location.search);
 const reviewInterviewId = String(query.get('review') || query.get('interview') || '').trim();
 const reviewOrdinal = Number(query.get('ordinal'));
-const requestedDrillType = query.get('drill') === 'coding' ? 'coding' : 'general';
 
 const elements = {
   setup: $('#practiceSetup'),
@@ -14,8 +13,6 @@ const elements = {
   formTitle: $('#practiceFormTitle'),
   bankBadge: $('#practiceBankBadge'),
   reviewNotice: $('#reviewNotice'),
-  codingNotice: $('#codingNotice'),
-  drillType: $('#practiceDrillType'),
   interviewType: $('#practiceInterviewType'),
   answerModeChoice: $('#practiceAnswerMode'),
   company: $('#practiceCompany'),
@@ -49,7 +46,6 @@ const elements = {
   recordLevel: $('#recordLevel'),
   recordHint: $('#recordHint'),
   answer: $('#practiceAnswer'),
-  answerLabel: $('#answerInputLabel'),
   hint: $('#practiceHint'),
   hintBox: $('#practiceHintBox'),
   hintText: $('#practiceHintText'),
@@ -91,15 +87,9 @@ let providerTranscript = '';
 let transcriptManuallyEdited = false;
 let attempts = [];
 let voiceTranscriptionAvailable = true;
-let codingQuestionCount = 0;
 
 function selectedValue(name, fallback) {
   return $(`input[name="${name}"]:checked`)?.value || fallback;
-}
-
-function isCodingDrill() {
-  return practiceSession?.drill_type === 'coding'
-    || (!practiceSession && selectedValue('drill_type', requestedDrillType) === 'coding');
 }
 
 function createAudioSession() {
@@ -144,7 +134,7 @@ function renderSessionElapsed() {
 
 function setAnswerMode(nextMode, { focus = true, quiet = false } = {}) {
   const requested = nextMode === 'text' ? 'text' : 'voice';
-  const next = requested === 'voice' && (!voiceTranscriptionAvailable || isCodingDrill()) ? 'text' : requested;
+  const next = requested === 'voice' && !voiceTranscriptionAvailable ? 'text' : requested;
   if (requested === 'voice' && next === 'text' && !quiet) {
     showToast('当前服务模式不提供实时转写，已切换为文字作答。', 'info');
   }
@@ -156,14 +146,10 @@ function setAnswerMode(nextMode, { focus = true, quiet = false } = {}) {
   elements.voiceMode.classList.toggle('is-active', next === 'voice');
   elements.textMode.classList.toggle('is-active', next === 'text');
   setVisible(elements.recorder, next === 'voice');
-  elements.answer.placeholder = isCodingDrill()
-    ? '在这里写代码或完整伪代码；建议在末尾注明时间复杂度、空间复杂度和边界自测…'
-    : next === 'voice'
-      ? '点击开始语音回答，实时转写会出现在这里，也可以手动修正…'
-      : '在这里输入本题回答…';
-  elements.answerStatus.textContent = isCodingDrill()
-    ? '静态代码讲评，不执行或编译代码'
-    : next === 'voice' ? '准备好后开始录音' : '开始输入后计时';
+  elements.answer.placeholder = next === 'voice'
+    ? '点击开始语音回答，实时转写会出现在这里，也可以手动修正…'
+    : '在这里输入本题回答…';
+  elements.answerStatus.textContent = next === 'voice' ? '准备好后开始录音' : '开始输入后计时';
   if (focus && next === 'text') elements.answer.focus();
 }
 
@@ -187,12 +173,6 @@ function configureVoiceAvailability(available, { notify = false } = {}) {
 
 function syncPracticeFilters() {
   if (reviewInterviewId) return;
-  if (selectedValue('drill_type', requestedDrillType) === 'coding') {
-    elements.topic.value = '';
-    elements.topic.disabled = true;
-    elements.difficulty.disabled = false;
-    return;
-  }
   const interviewType = selectedValue('practice_interview_type', 'technical');
   const behavioralTopic = elements.topic.value === 'English behavioral';
   if (interviewType === 'hr') {
@@ -205,46 +185,6 @@ function syncPracticeFilters() {
   elements.topic.disabled = false;
   elements.difficulty.disabled = false;
   if (behavioralTopic) elements.topic.value = '';
-}
-
-function syncDrillType({ resetDifficulty = false } = {}) {
-  if (reviewInterviewId) return;
-  const coding = selectedValue('drill_type', requestedDrillType) === 'coding';
-  const technical = $('input[name="practice_interview_type"][value="technical"]');
-  const setupVoice = $('input[name="answer_mode"][value="voice"]');
-  const setupText = $('input[name="answer_mode"][value="text"]');
-  document.body.classList.toggle('is-coding-drill', coding);
-  setVisible(elements.codingNotice, coding);
-  if (coding) {
-    if (technical) technical.checked = true;
-    document.querySelectorAll('input[name="practice_interview_type"]').forEach((input) => {
-      input.disabled = input.value !== 'technical';
-    });
-    elements.topic.value = '';
-    elements.topic.disabled = true;
-    if (resetDifficulty) elements.difficulty.value = '';
-    if (setupText) setupText.checked = true;
-    if (setupVoice) setupVoice.disabled = true;
-    elements.formTitle.textContent = '手撕代码专项';
-    elements.bankBadge.textContent = `${codingQuestionCount || 4} 道手撕真题`;
-    $('.button-label', elements.start).textContent = '开始手撕';
-    elements.formNote.textContent = '只使用真实授权题库；提交后按正确性、完整性、复杂度和边界做静态讲评。';
-    elements.answerLabel.innerHTML = '代码 / 完整伪代码 <small>不会在服务器执行</small>';
-    setAnswerMode('text', { focus: false, quiet: true });
-  } else {
-    document.querySelectorAll('input[name="practice_interview_type"]').forEach((input) => {
-      input.disabled = false;
-    });
-    if (setupVoice) setupVoice.disabled = !voiceTranscriptionAvailable;
-    elements.formTitle.textContent = '快速刷题';
-    elements.bankBadge.textContent = '练习已就绪';
-    $('.button-label', elements.start).textContent = '开始刷题';
-    elements.formNote.textContent = voiceTranscriptionAvailable
-      ? '每道题都可用语音或文字作答，语音转写可在提交前修正。'
-      : '当前为纯文字模式：不请求麦克风，不会显示实时转写状态。';
-    elements.answerLabel.innerHTML = '回答文字 <small>提交前可手动修正</small>';
-    syncPracticeFilters();
-  }
 }
 
 function currentQuestionNumber() {
@@ -278,7 +218,6 @@ function renderQuestion(question) {
   transcriptManuallyEdited = false;
   answerStartedAt = 0;
   elements.answer.value = '';
-  document.body.classList.toggle('is-coding-session', question.kind === 'coding');
   elements.question.textContent = String(question.question || question.prompt || '题目暂时不可用');
   elements.category.textContent = String(question.category || question.topic || '综合');
   elements.questionDifficulty.textContent = difficultyLabels[question.difficulty] || String(question.difficulty || '进阶');
@@ -643,7 +582,6 @@ async function createPracticeSession(event = null) {
   const reviewMode = Boolean(reviewInterviewId);
   const languageMode = selectedValue('practice_language', 'bilingual');
   const interviewType = selectedValue('practice_interview_type', 'technical');
-  const drillType = reviewMode ? 'general' : selectedValue('drill_type', requestedDrillType);
   const infinite = elements.count.value === 'unlimited';
   const payload = reviewMode
     ? {
@@ -653,10 +591,9 @@ async function createPracticeSession(event = null) {
     }
     : {
       client_id: getClientId(), mode: 'quick', company: elements.company.value,
-      drill_type: drillType,
-      topic: drillType === 'coding' ? null : elements.topic.value || null,
+      topic: elements.topic.value || null,
       difficulty: elements.difficulty.value || null,
-      language_mode: languageMode, interview_type: drillType === 'coding' ? 'technical' : interviewType,
+      language_mode: languageMode, interview_type: interviewType,
       count: infinite ? null : Number(elements.count.value) || 5, infinite,
     };
   try {
@@ -672,15 +609,11 @@ async function createPracticeSession(event = null) {
     elapsedTimer = setInterval(renderSessionElapsed, 500);
     elements.sessionLabel.textContent = reviewMode
       ? '面后错题重答'
-      : response.drill_type === 'coding'
-        ? `${companyLabel(response.company || payload.company)} · 手撕代码${response.infinite ? '无限练习' : '专项'}`
-        : `${companyLabel(response.company || payload.company)} · ${response.infinite ? '无限刷题' : '快速刷题'}`;
+      : `${companyLabel(response.company || payload.company)} · ${response.infinite ? '无限刷题' : '快速刷题'}`;
     setVisible(elements.setup, false);
     setVisible(elements.complete, false);
     setVisible(elements.session, true);
-    answerMode = response.drill_type === 'coding'
-      ? 'text'
-      : voiceTranscriptionAvailable ? selectedValue('answer_mode', 'voice') : 'text';
+    answerMode = voiceTranscriptionAvailable ? selectedValue('answer_mode', 'voice') : 'text';
     renderQuestion(response.current_question);
     renderSessionElapsed();
   } catch (error) {
@@ -781,15 +714,11 @@ function populateCompanies(companies) {
 
 async function initialize() {
   const reviewMode = Boolean(reviewInterviewId);
-  const requestedDrill = reviewMode ? 'general' : requestedDrillType;
-  const requestedInput = $(`input[name="drill_type"][value="${requestedDrill}"]`);
-  if (requestedInput) requestedInput.checked = true;
   elements.formTitle.textContent = reviewMode ? '面后错题重答' : '快速刷题';
   $('.button-label', elements.start).textContent = reviewMode ? '开始重答' : '开始刷题';
   setVisible(elements.reviewNotice, reviewMode);
   if (reviewMode) {
     [elements.company, elements.topic, elements.difficulty, elements.count].forEach((element) => { element.disabled = true; });
-    elements.drillType.querySelectorAll('input').forEach((input) => { input.disabled = true; });
   }
   void loadMistakes();
   try {
@@ -797,10 +726,8 @@ async function initialize() {
       apiFetch('/api/config', { timeout: 12_000 }),
       apiFetch('/api/practice/catalog', { timeout: 12_000 }),
     ]);
-    codingQuestionCount = Number(catalog?.coding_question_count) || 0;
     populateCompanies(catalog?.companies || config?.companies);
     configureVoiceAvailability(normalizeMode(config?.voice_mode) !== 'L3');
-    syncDrillType({ resetDifficulty: requestedDrill === 'coding' });
     syncPracticeFilters();
     elements.start.disabled = false;
     if (reviewMode) await createPracticeSession();
@@ -815,9 +742,6 @@ elements.form.addEventListener('submit', createPracticeSession);
 document.querySelectorAll('input[name="practice_interview_type"]').forEach((input) => {
   input.addEventListener('change', syncPracticeFilters);
 });
-document.querySelectorAll('input[name="drill_type"]').forEach((input) => {
-  input.addEventListener('change', () => syncDrillType({ resetDifficulty: true }));
-});
 elements.voiceMode.addEventListener('click', () => setAnswerMode('voice'));
 elements.textMode.addEventListener('click', () => setAnswerMode('text'));
 elements.record.addEventListener('click', startRecording);
@@ -831,13 +755,7 @@ elements.submit.addEventListener('click', submitAnswer);
 elements.reattempt.addEventListener('click', reattemptQuestion);
 elements.next.addEventListener('click', nextQuestion);
 elements.exit.addEventListener('click', finishPractice);
-elements.again.addEventListener('click', () => {
-  const url = new URL('/practice', location.origin);
-  if (practiceSession?.drill_type === 'coding' || requestedDrillType === 'coding') {
-    url.searchParams.set('drill', 'coding');
-  }
-  location.assign(url.href);
-});
+elements.again.addEventListener('click', () => location.assign('/practice'));
 window.addEventListener('pagehide', () => {
   clearInterval(elapsedTimer);
   audio?.disableMicrophone();

@@ -69,22 +69,17 @@ def test_home_and_report_link_to_quick_and_bad_question_practice() -> None:
     assert "单独重答这题" in report_script
 
 
-def test_practice_page_has_real_bank_coding_drill_and_honest_static_review_ui() -> None:
+def test_quick_practice_is_an_interview_knowledge_drill_not_the_coding_workbench() -> None:
     page = (PUBLIC / "practice.html").read_text(encoding="utf-8")
     script = (PUBLIC / "js" / "practice.js").read_text(encoding="utf-8")
     style = (PUBLIC / "assets" / "practice.css").read_text(encoding="utf-8")
     home = (PUBLIC / "index.html").read_text(encoding="utf-8")
 
-    assert 'name="drill_type" value="coding"' in page
-    assert 'id="codingNotice"' in page
-    assert "真实题库专项" in page
-    assert "静态讲评" in page
-    assert "不会冒充在线编译判题" in page
-    assert "/practice?drill=coding" in home
-    assert "requestedDrillType" in script
-    assert "drill_type: drillType" in script
-    assert "response.drill_type === 'coding'" in script
-    assert "url.searchParams.set('drill', 'coding')" in script
-    assert "静态代码讲评，不执行或编译代码" in script
-    assert ".is-coding-session .practice-answer-input textarea" in style
-    assert 'font-family: "SFMono-Regular"' in style
+    assert "八股快速刷题" in page
+    assert 'name="drill_type"' not in page
+    assert 'id="codingNotice"' not in page
+    assert "requestedDrillType" not in script
+    assert "drill_type: drillType" not in script
+    assert "is-coding-session" not in style
+    assert 'href="/coding">手撕代码' in home
+    assert "/practice?drill=coding" not in home

@@ -18,7 +18,7 @@
       <nav class="header-actions" aria-label="主导航">
         <span class="mode-pill is-loading" id="modePill"><i></i><span>检测服务模式</span></span>
         <a class="text-link" href="/practice">快速刷题</a>
-        <a class="text-link" href="/practice?drill=coding">手撕代码</a>
+        <a class="text-link" href="/coding">手撕代码</a>
         <a class="text-link header-project-link" href="/project">项目解读</a>
         <a class="text-link" href="/report?view=history">历史报告 <span aria-hidden="true">↗</span></a>
       </nav>
@@ -28,27 +28,41 @@
       <section class="feature-launchpad" aria-labelledby="featureLaunchTitle">
         <div class="feature-launch-heading">
           <div><span class="step-kicker">选择练习方式</span><h2 id="featureLaunchTitle">今天想怎么练？</h2></div>
-          <p>三种模式并列使用，资料都保存在当前匿名 Profile 中。</p>
+          <p>完整模拟与单项练习并列使用，资料都保存在当前匿名 Profile 中。</p>
         </div>
-        <div class="feature-launch-grid">
-          <a class="feature-launch-card" href="#setupTitle">
-            <span class="feature-launch-index">01 · 完整闭环</span>
-            <strong>完整模拟</strong>
-            <p>按简历和目标公司连续追问，结束后生成逐题报告。</p>
-            <span class="feature-launch-action">配置一场面试 <i aria-hidden="true">→</i></span>
-          </a>
-          <a class="feature-launch-card is-quick" href="/practice">
-            <span class="feature-launch-index">02 · 随开随练</span>
-            <strong>快速刷题</strong>
-            <p>不用上传简历，选方向后立即作答并查看具体扣分点。</p>
-            <span class="feature-launch-action">马上刷一道 <i aria-hidden="true">→</i></span>
-          </a>
-          <a class="feature-launch-card is-project" href="/project">
-            <span class="feature-launch-index">03 · 项目深挖</span>
-            <strong>项目解读</strong>
-            <p>上传项目资料或添加 GitHub，梳理架构并练习高频追问。</p>
-            <span class="feature-launch-action">解读我的项目 <i aria-hidden="true">→</i></span>
-          </a>
+        <div class="feature-module-grid">
+          <section class="feature-module is-simulation" aria-labelledby="simulationModuleTitle">
+            <header><span>完整流程</span><h3 id="simulationModuleTitle">模拟面试</h3></header>
+            <a class="feature-launch-card is-simulation" href="#setupTitle">
+              <span class="feature-launch-index">01 · 完整闭环</span>
+              <strong>完整模拟</strong>
+              <p>按简历和目标公司连续追问，结束后生成逐题报告。</p>
+              <span class="feature-launch-action">配置一场面试 <i aria-hidden="true">→</i></span>
+            </a>
+          </section>
+          <section class="feature-module is-practice" aria-labelledby="practiceModuleTitle">
+            <header><span>针对性补强</span><h3 id="practiceModuleTitle">单项练习</h3></header>
+            <div class="feature-launch-grid">
+              <a class="feature-launch-card is-quick" href="/practice">
+                <span class="feature-launch-index">02 · 八股题库</span>
+                <strong>快速刷题</strong>
+                <p>专练后端八股知识题，按公司、方向和难度立即开练。</p>
+                <span class="feature-launch-action">马上刷一道 <i aria-hidden="true">→</i></span>
+              </a>
+              <a class="feature-launch-card is-coding" href="/coding">
+                <span class="feature-launch-index">03 · 代码面试</span>
+                <strong>手撕代码</strong>
+                <p>从澄清、方案到编码和自测，按四维面试 rubric 复盘。</p>
+                <span class="feature-launch-action">打开代码工作台 <i aria-hidden="true">→</i></span>
+              </a>
+              <a class="feature-launch-card is-project" href="/project">
+                <span class="feature-launch-index">04 · 项目深挖</span>
+                <strong>项目解读</strong>
+                <p>上传项目资料或添加 GitHub，梳理架构并练习高频追问。</p>
+                <span class="feature-launch-action">解读我的项目 <i aria-hidden="true">→</i></span>
+              </a>
+            </div>
+          </section>
         </div>
       </section>
 

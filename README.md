@@ -10,8 +10,9 @@
 - 面试类型可选纯技术面、独立综合（HR）面或技术+综合面，旧请求默认保持技术面。HR 环节分别考察价值观与公司契合、人生规划和选择、协作证据与薪酬沟通；面向本科实习候选人，不套用管理岗问题，也不因薪酬数值本身扣分。
 - 固定主问题只来自 108 道可追溯公共题池；每道主问题后允许一次绑定上一答关键词的个性化追问，再切到下一道。六份公司 skill 只改变题目排序、节奏、深挖维度和压力方式，不把公共题冒充为某公司的独家真题。
 - 公开面经只作为公司风格与报告建议的可追溯样本，不进入可逐字提问的固定题面数组。它们未经招聘企业确认，不是官方标准，也不会复制原帖叙事、答案、图片或长题单。
-- `/practice` 快速刷题只从经过审核的静态授权题库选题，当前包含 108 道中英双语短题，覆盖 Java / Go、MySQL、Redis、并发、操作系统、计网、分布式系统、口述算法、AI 工程和英文行为题。题目选自或经压缩、翻译自固定版本的 JavaGuide、interview-go、Tech Interview Handbook 与 ARIS-in-AI-Offer；每题内部保留来源路径、提交版本和 Apache-2.0 / MIT 许可证，但这些字段不会返回到学习端 API 或显示在作答、评分 UI。
+- `/practice` 快速刷题定位为八股知识题练习，只从经过审核的静态授权题库选题，当前包含 108 道中英双语短题，覆盖 Java / Go、MySQL、Redis、并发、操作系统、计网、分布式系统、AI 工程和英文行为题。题目选自或经压缩、翻译自固定版本的 JavaGuide、interview-go、Tech Interview Handbook 与 ARIS-in-AI-Offer；每题内部保留来源路径、提交版本和 Apache-2.0 / MIT 许可证，但这些字段不会返回到学习端 API 或显示在作答、评分 UI。
 - 快速刷题支持中文、中英双语和纯英文，按公司练习侧重、面试类型、方向与难度筛选；公司选择会按对应 skill 对同一审核公共题池重新排序，组合面稳定保留技术题与行为题。每道题可用文字或语音作答，语音经实时 ASR 进入可编辑文本框，用户确认或修正后才提交评分。同一题可以重复作答，评分失败会明确显示“不可评分”，不会补成默认 5.0。
+- `/coding` 是与八股快刷、项目解读并列的手撕代码单项训练。首批 8 道题按 Grind 75 的公开策展清单选择并独立改写，覆盖数组与哈希、栈、链表、二分、区间、网格与图；作答流程为澄清约束、方案设计、编码实现、主动自测，最终按沟通、解题、技术实现、测试四维静态复盘。MVP 不执行或编译代码，也不会声称用例通过。
 - CloudWeGo Hertz / Kitex、Spring PetClinic、PingCAP Talent Plan / TinyKV 等开源项目会被改写成背压、重试预算、事务边界、崩溃一致性等工程场景题，并按岗位细分方向匹配。候选人无需读过指定仓库，仓库只提供可追溯的实践背景。
 - 岗位仍限定为后端实习，但支持通用、Java、Go、C++、Python、基础架构、云原生、数据库与存储、中间件、分布式系统、AI 工程后端等常见细分方向，也支持 1–80 字自定义方向。
 - AI 工程后端 / LLM Infra 方向会把已审核短名单中的模型服务题控制在约三分之一，当前 12 道覆盖请求状态机、TTFT/TPOT、continuous batching、KV cache、量化、RAG 与评测；知识点经人工改写自 MIT 许可的 [ARIS-in-AI-Offer](https://wanshuiyin.github.io/ARIS-in-AI-Offer/)，不会进入默认通用后端题池。
@@ -46,7 +47,8 @@
 3. 按隐私和练习目标选择是否开启“记住本场表现”。该开关只控制本场是否读取和贡献后续弱项记忆，不影响本场报告生成。
 4. 每题点击“开始回答”后服务端开始计时，点击“结束回答”才封口并提交整题；思考停顿不会自动拆成下一题。语音回答会边说边进入右侧对话，识别完成后可点“修正转写”，保存后系统按当前题重新评估。面试官语音可以随时关闭而不影响文字提问；面试中卡住时也可点击“给我一点提示”，提示只给结构化思路并会记入报告。
 5. 面试结束并生成报告后，点击“用原简历复练弱项”即可直接进入下一场。系统复用原设置，把报告中的低分知识点放进新剧本，并开启该复练场次的弱项记忆。
-6. 打开 `/practice` 可按公司、方向、难度、题量和语言创建快速练习。语音模式会把增量转写实时写入回答框；停止录音即释放麦克风，提交前仍可手动改字。报告页的“重答低分题”也会进入同一页面，并显示原扣分点供对照。
+6. 打开 `/practice` 可按公司、方向、难度、题量和语言创建八股快速练习。语音模式会把增量转写实时写入回答框；停止录音即释放麦克风，提交前仍可手动改字。报告页的“重答低分题”也会进入同一页面，并显示原扣分点供对照。
+7. 打开 `/coding` 可按题型、难度和编程语言选择手撕题；依次完成澄清、方案、代码、复杂度和自拟测试后提交四维复盘。各语言草稿只保存在当前浏览器中，服务器只做静态评估。
 
 所有题库和资料来源均为随代码发布的静态 JSON。运行时不会抓取第三方页面、不会构建 RAG 或向量索引，也不会抓取小红书；面经/工程参考目录可通过 `GET /api/resources/catalog` 查看来源 URL、来源类型、授权/使用方式、核验日期和考察信号。快速刷题的逐题来源不会出现在学习 UI 或 `/api/practice/*` 的公开响应中，开发者可在 [`resources/practice_source_manifest.json`](resources/practice_source_manifest.json) 和 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 审核固定版本与许可证。完整策展规则见 [`references/CURATED_SOURCES.md`](references/CURATED_SOURCES.md)。
 
@@ -72,7 +74,7 @@ interview_skills/    6 份可版本化、运行时实际应用的公司面试 sk
 questions/           公司题库、授权快速题库、面经衍生题、工程场景题、ARIS 精选题与前沿讨论题
 resources/           面经/工程来源目录、快速题库来源清单与学习链接白名单
 references/          策展规则、来源说明与 Apache-2.0 / MIT 许可证副本
-public/              首页、面试、报告、快速刷题 UI，AudioWorklet 与 Canvas 雷达图
+public/              首页、面试、报告、八股快刷、手撕代码 UI，AudioWorklet 与 Canvas 雷达图
 scripts/             测试简历 PDF 生成器
 testdata/            虚构简历结构化源数据、文字版与本地 PDF
 tests/               核心状态机和语音协议离线测试
@@ -219,6 +221,9 @@ REST：
 - `POST /api/practice/sessions/{id}/answers`，提交文字或语音转写，可用 `reattempt: true` 重答同题
 - `POST /api/practice/sessions/{id}/hint`
 - `GET /api/practice/history?client_id=...&limit=20`
+- `GET /api/coding/catalog`，返回手撕题面、函数签名、题型与公开来源策略，不返回私有 rubric 或提示
+- `POST /api/coding/hint`，按澄清、方案、编码、自测阶段获取当前题的递进提示
+- `POST /api/coding/review`，提交方案、代码文本、复杂度和自拟用例，返回四维静态复盘；`execution_status` 固定为 `not_executed`
 - `GET /api/profile`，使用 `X-Profile-Key` 读取当前匿名 Profile 的简历/项目元数据
 - `POST /api/profile/resumes`、`POST /api/profile/resumes/text`，保存并结构化 PDF 或粘贴文本
 - `POST /api/profile/projects`、`POST /api/profile/projects/github`，保存多文件/ZIP 或公开 GitHub 项目快照；两者都接受可选的 `responsibility`

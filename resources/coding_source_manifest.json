@@ -1,0 +1,35 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-08-30",
+  "policy": {
+    "runtime_rule": "The app reads a checked-in reviewed bank and never scrapes coding platforms at runtime.",
+    "content_rule": "Problem statements, constraints and examples are independently rewritten around classic concepts. External sites are used for curated-list membership and further study links; proprietary statements and solutions are not copied.",
+    "company_claim_rule": "Questions are common interview patterns, not claimed as official or exclusive questions from any company."
+  },
+  "sources": [
+    {
+      "id": "grind75",
+      "title": "Grind 75 · Tech Interview Handbook",
+      "url": "https://www.techinterviewhandbook.org/grind75/?grouping=topics",
+      "repository": "https://github.com/yangshun/tech-interview-handbook",
+      "license": "MIT",
+      "use": "Question selection, topic, difficulty and recommended-duration reference; prompts are independently rewritten."
+    },
+    {
+      "id": "tih-rubric",
+      "title": "Coding interview evaluation rubric",
+      "url": "https://www.techinterviewhandbook.org/coding-interview-rubrics/",
+      "repository": "https://github.com/yangshun/tech-interview-handbook",
+      "license": "MIT",
+      "use": "Four-dimension practice feedback: communication, problem solving, technical competency and testing."
+    },
+    {
+      "id": "tih-techniques",
+      "title": "Coding interview techniques and best practices",
+      "url": "https://www.techinterviewhandbook.org/coding-interview-techniques/",
+      "repository": "https://github.com/yangshun/tech-interview-handbook",
+      "license": "MIT",
+      "use": "Clarify, explore examples, discuss approach, implement and self-test workflow."
+    }
+  ]
+}

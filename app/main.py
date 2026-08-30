@@ -27,6 +27,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
+from .coding_practice import (
+    CodingHintRequest,
+    CodingPracticeService,
+    CodingReviewRequest,
+)
 from .config import ROOT_DIR, Settings, get_settings
 from .content import (
     COMPANIES,
@@ -67,6 +72,7 @@ resume_parser = ResumeParser(settings)
 interview_engine = InterviewEngine(db, settings)
 report_engine = ReportEngine(db, settings)
 practice_service = PracticeService(db, settings)
+coding_practice_service = CodingPracticeService(settings)
 profile_service = ProfileService(db, settings, resume_parser=resume_parser)
 background_tasks: set[asyncio.Task[Any]] = set()
 session_locks: dict[str, asyncio.Lock] = {}
@@ -97,6 +103,7 @@ resume_limiter = SlidingWindowLimiter()
 hardware_test_limiter = SlidingWindowLimiter()
 practice_voice_limiter = SlidingWindowLimiter()
 practice_answer_limiter = SlidingWindowLimiter()
+coding_review_limiter = SlidingWindowLimiter()
 
 
 @asynccontextmanager
@@ -392,6 +399,31 @@ async def hardware_test_socket(websocket: WebSocket) -> None:
 @app.get("/api/practice/catalog")
 async def practice_catalog() -> dict[str, Any]:
     return await practice_service.catalog()
+
+
+@app.get("/api/coding/catalog")
+async def coding_catalog() -> dict[str, Any]:
+    return await coding_practice_service.catalog()
+
+
+@app.post("/api/coding/hint")
+async def coding_hint(request: CodingHintRequest) -> dict[str, str]:
+    return await coding_practice_service.hint(request)
+
+
+@app.post("/api/coding/review")
+async def coding_review(
+    request: CodingReviewRequest,
+    http_request: Request,
+) -> dict[str, Any]:
+    client_host = http_request.client.host if http_request.client else "unknown"
+    if not await coding_review_limiter.allow(f"coding-review:{client_host}", 30, 3600):
+        raise AppError(
+            "CODING_REVIEW_RATE_LIMIT",
+            "代码复盘过于频繁，请稍后再试。你的草稿仍保留在浏览器中。",
+            status_code=429,
+        )
+    return await coding_practice_service.review(request)
 
 
 @app.post("/api/practice/sessions", status_code=201)
@@ -1519,6 +1551,11 @@ async def report_page() -> FileResponse:
 @app.get("/practice", include_in_schema=False)
 async def practice_page() -> FileResponse:
     return FileResponse(PUBLIC_DIR / "practice.html")
+
+
+@app.get("/coding", include_in_schema=False)
+async def coding_page() -> FileResponse:
+    return FileResponse(PUBLIC_DIR / "coding.html")
 
 
 @app.get("/project", include_in_schema=False)

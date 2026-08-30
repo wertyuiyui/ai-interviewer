@@ -1,0 +1,102 @@
+{
+  "schema_version": "1.0",
+  "source_manifest": "resources/coding_source_manifest.json",
+  "questions": [
+    {
+      "id": "grind-two-sum",
+      "title": {"zh": "两数之和", "en": "Two Sum"},
+      "topic": "数组与哈希表", "patterns": ["哈希表", "补数查找"], "difficulty": "easy", "recommended_minutes": 15,
+      "prompt": {"zh": "给定整数数组 nums 和目标值 target，返回两个不同下标，使对应元素之和等于 target。若不存在则返回空数组。请先说明输入是否保证唯一解。", "en": "Given an integer array nums and target, return two distinct indices whose values sum to target, or an empty array if no pair exists. Clarify whether a unique solution is guaranteed."},
+      "constraints": ["不能重复使用同一位置", "需要说明无解行为", "目标复杂度优于 O(n²)"],
+      "examples": [{"input": "nums=[2,7,11,15], target=9", "output": "[0,1]"}, {"input": "nums=[3,3], target=6", "output": "[0,1]"}],
+      "signatures": {"python": "def two_sum(nums: list[int], target: int) -> list[int]:", "java": "int[] twoSum(int[] nums, int target)", "go": "func twoSum(nums []int, target int) []int", "javascript": "function twoSum(nums, target)"},
+      "rubric": {"key_points": ["单次遍历维护值到下标的映射", "先查补数再写入当前值以避免复用自身"], "edge_cases": ["重复元素", "负数", "无解"], "expected_complexity": "平均时间 O(n)，空间 O(n)"},
+      "hints": {"clarify": "先确认是否保证有解、是否只需返回任意一组。", "approach": "思考遍历到当前值时，怎样 O(1) 判断它需要的搭档是否已经出现。", "test": "至少覆盖重复值构成答案，以及不存在答案。"},
+      "source_ref": "grind75"
+    },
+    {
+      "id": "grind-valid-parentheses",
+      "title": {"zh": "有效括号", "en": "Valid Parentheses"},
+      "topic": "栈", "patterns": ["栈", "配对消除"], "difficulty": "easy", "recommended_minutes": 15,
+      "prompt": {"zh": "判断只包含圆括号、方括号和花括号的字符串是否有效：每个右括号必须与最近尚未闭合的同类左括号匹配。", "en": "Determine whether a string containing only (), [] and {} is valid: every closing bracket must match the most recent unmatched opening bracket of the same type."},
+      "constraints": ["空字符串如何处理需明确", "错误嵌套应返回 false"],
+      "examples": [{"input": "s=\"()[]{}\"", "output": "true"}, {"input": "s=\"([)]\"", "output": "false"}],
+      "signatures": {"python": "def is_valid(s: str) -> bool:", "java": "boolean isValid(String s)", "go": "func isValid(s string) bool", "javascript": "function isValid(s)"},
+      "rubric": {"key_points": ["左括号入栈，右括号检查栈顶", "遇到右括号时先处理空栈，结束时栈必须为空"], "edge_cases": ["空串", "单个右括号", "未闭合左括号", "交叉嵌套"], "expected_complexity": "时间 O(n)，空间 O(n)"},
+      "hints": {"clarify": "确认输入字符范围，以及空字符串的定义。", "approach": "嵌套关系要求最后打开的括号最先关闭。", "test": "分别测试多种括号并列、正确嵌套、错误交叉和提前闭合。"},
+      "source_ref": "grind75"
+    },
+    {
+      "id": "grind-reverse-linked-list",
+      "title": {"zh": "反转单链表", "en": "Reverse Linked List"},
+      "topic": "链表", "patterns": ["指针操作", "迭代"], "difficulty": "easy", "recommended_minutes": 20,
+      "prompt": {"zh": "原地反转一个单链表并返回新的头节点。实现中要避免在改写 next 后丢失尚未处理的链表。", "en": "Reverse a singly linked list in place and return the new head. Do not lose the unprocessed suffix when rewriting next pointers."},
+      "constraints": ["要求迭代版额外空间 O(1)", "节点值可重复"],
+      "examples": [{"input": "1 -> 2 -> 3 -> null", "output": "3 -> 2 -> 1 -> null"}, {"input": "null", "output": "null"}],
+      "signatures": {"python": "def reverse_list(head: ListNode | None) -> ListNode | None:", "java": "ListNode reverseList(ListNode head)", "go": "func reverseList(head *ListNode) *ListNode", "javascript": "function reverseList(head)"},
+      "rubric": {"key_points": ["改写指针前保存 next", "previous/current 同步推进并返回 previous"], "edge_cases": ["空链表", "单节点", "双节点"], "expected_complexity": "时间 O(n)，额外空间 O(1)"},
+      "hints": {"clarify": "确认是否允许递归，以及空间复杂度要求。", "approach": "维护已反转前缀和未处理后缀两个区域。", "test": "手动逐行走一遍双节点链表，观察每个 next。"},
+      "source_ref": "grind75"
+    },
+    {
+      "id": "grind-binary-search",
+      "title": {"zh": "二分查找", "en": "Binary Search"},
+      "topic": "二分查找", "patterns": ["有序区间", "边界收缩"], "difficulty": "easy", "recommended_minutes": 15,
+      "prompt": {"zh": "在升序且元素互异的整数数组中查找 target，命中时返回下标，否则返回 -1。明确使用闭区间还是左闭右开区间。", "en": "Find target in an ascending array of distinct integers. Return its index or -1, and state whether your search interval is closed or half-open."},
+      "constraints": ["必须保持区间定义一致", "每轮必须严格缩小范围"],
+      "examples": [{"input": "nums=[-1,0,3,5,9,12], target=9", "output": "4"}, {"input": "nums=[], target=2", "output": "-1"}],
+      "signatures": {"python": "def binary_search(nums: list[int], target: int) -> int:", "java": "int search(int[] nums, int target)", "go": "func search(nums []int, target int) int", "javascript": "function search(nums, target)"},
+      "rubric": {"key_points": ["循环条件与区间定义匹配", "左右边界更新越过 mid 并保证终止"], "edge_cases": ["空数组", "首尾命中", "目标不存在"], "expected_complexity": "时间 O(log n)，空间 O(1)"},
+      "hints": {"clarify": "先写下区间含义，再决定循环条件。", "approach": "每次比较后都要排除 mid，确保搜索区间严格变小。", "test": "测试空数组、单元素、首尾元素和两个元素间的缺失值。"},
+      "source_ref": "grind75"
+    },
+    {
+      "id": "grind-max-profit",
+      "title": {"zh": "买卖股票的最佳时机", "en": "Best Time to Buy and Sell Stock"},
+      "topic": "数组", "patterns": ["前缀最值", "单次扫描"], "difficulty": "easy", "recommended_minutes": 20,
+      "prompt": {"zh": "给定每天的股票价格，只允许先买入一次、再在未来卖出一次，求最大利润；若始终下跌则利润为 0。", "en": "Given daily stock prices, buy once and sell once on a later day to maximize profit. Return 0 if prices never rise."},
+      "constraints": ["卖出必须发生在买入之后", "最多完成一笔交易"],
+      "examples": [{"input": "prices=[7,1,5,3,6,4]", "output": "5"}, {"input": "prices=[7,6,4,3,1]", "output": "0"}],
+      "signatures": {"python": "def max_profit(prices: list[int]) -> int:", "java": "int maxProfit(int[] prices)", "go": "func maxProfit(prices []int) int", "javascript": "function maxProfit(prices)"},
+      "rubric": {"key_points": ["维护当前元素之前的最低价格", "用当前价格减最低价更新最大利润"], "edge_cases": ["空数组", "单日", "持续下跌", "最低价在末尾"], "expected_complexity": "时间 O(n)，空间 O(1)"},
+      "hints": {"clarify": "确认交易次数以及无利润时返回什么。", "approach": "遍历到某天时，只需要知道此前最适合买入的价格。", "test": "覆盖持续上涨、持续下跌和最低价出现在最后一天。"},
+      "source_ref": "grind75"
+    },
+    {
+      "id": "grind-merge-intervals",
+      "title": {"zh": "合并区间", "en": "Merge Intervals"},
+      "topic": "区间", "patterns": ["排序", "区间扫描"], "difficulty": "medium", "recommended_minutes": 25,
+      "prompt": {"zh": "给定若干闭区间，合并所有重叠区间并返回互不重叠的结果。相接端点是否算重叠需要在实现前说明。", "en": "Merge all overlapping closed intervals and return non-overlapping results. Clarify whether touching endpoints should merge."},
+      "constraints": ["输入顺序任意", "结果顺序需确定"],
+      "examples": [{"input": "[[1,3],[2,6],[8,10],[15,18]]", "output": "[[1,6],[8,10],[15,18]]"}, {"input": "[[1,4],[4,5]]", "output": "[[1,5]]"}],
+      "signatures": {"python": "def merge(intervals: list[list[int]]) -> list[list[int]]:", "java": "int[][] merge(int[][] intervals)", "go": "func merge(intervals [][]int) [][]int", "javascript": "function merge(intervals)"},
+      "rubric": {"key_points": ["按起点排序后线性扫描", "重叠时扩展当前右端点，否则提交当前区间"], "edge_cases": ["空输入", "完全包含", "端点相接", "单区间"], "expected_complexity": "时间 O(n log n)，额外空间取决于排序与输出"},
+      "hints": {"clarify": "确认区间是闭区间，以及输出排序要求。", "approach": "先让可能重叠的区间在顺序上相邻。", "test": "覆盖完全包含、端点相等、无重叠和乱序输入。"},
+      "source_ref": "grind75"
+    },
+    {
+      "id": "grind-number-of-islands",
+      "title": {"zh": "岛屿数量", "en": "Number of Islands"},
+      "topic": "图与网格", "patterns": ["DFS/BFS", "连通分量"], "difficulty": "medium", "recommended_minutes": 25,
+      "prompt": {"zh": "二维网格由陆地 1 和水 0 构成，只按上下左右相连。返回岛屿（陆地连通分量）的数量。说明是否允许原地修改网格。", "en": "A grid contains land 1 and water 0; cells connect only vertically and horizontally. Return the number of land components and clarify whether the grid may be modified."},
+      "constraints": ["不包含对角连接", "需避免重复访问"],
+      "examples": [{"input": "[[1,1,0],[0,1,0],[1,0,1]]", "output": "3"}, {"input": "[]", "output": "0"}],
+      "signatures": {"python": "def num_islands(grid: list[list[str]]) -> int:", "java": "int numIslands(char[][] grid)", "go": "func numIslands(grid [][]byte) int", "javascript": "function numIslands(grid)"},
+      "rubric": {"key_points": ["发现未访问陆地时岛屿数加一并遍历整个分量", "访问标记或原地沉岛防止重复"], "edge_cases": ["空网格", "全水", "全陆地", "细长网格"], "expected_complexity": "时间 O(mn)，空间 O(mn) 最坏（或原地标记另计栈/队列）"},
+      "hints": {"clarify": "确认连接方向和是否可修改输入。", "approach": "把每个陆地格看成图节点；每启动一次新的遍历，就发现一个新分量。", "test": "覆盖全水、全陆地、对角但不相连、单行网格。"},
+      "source_ref": "grind75"
+    },
+    {
+      "id": "grind-course-schedule",
+      "title": {"zh": "课程表", "en": "Course Schedule"},
+      "topic": "图", "patterns": ["拓扑排序", "环检测"], "difficulty": "medium", "recommended_minutes": 30,
+      "prompt": {"zh": "有 numCourses 门课，先修关系 [a,b] 表示学 a 前必须先学 b。判断是否能完成全部课程。", "en": "There are numCourses courses; prerequisite [a,b] means b must be completed before a. Determine whether all courses can be finished."},
+      "constraints": ["课程编号为 0 到 numCourses-1", "重复边的处理需保持正确"],
+      "examples": [{"input": "numCourses=2, prerequisites=[[1,0]]", "output": "true"}, {"input": "numCourses=2, prerequisites=[[1,0],[0,1]]", "output": "false"}],
+      "signatures": {"python": "def can_finish(num_courses: int, prerequisites: list[list[int]]) -> bool:", "java": "boolean canFinish(int numCourses, int[][] prerequisites)", "go": "func canFinish(numCourses int, prerequisites [][]int) bool", "javascript": "function canFinish(numCourses, prerequisites)"},
+      "rubric": {"key_points": ["构图并用入度拓扑排序或 DFS 三色标记检测环", "最终处理节点数应等于课程数"], "edge_cases": ["没有先修关系", "自环", "多个独立分量", "重复边"], "expected_complexity": "时间 O(V+E)，空间 O(V+E)"},
+      "hints": {"clarify": "确认先修对的方向，以及是否可能存在重复边。", "approach": "问题等价于判断有向图是否存在环。", "test": "覆盖无边、自环、两节点环和多个互不相关的课程组。"},
+      "source_ref": "grind75"
+    }
+  ]
+}
