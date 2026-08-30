@@ -266,6 +266,23 @@ def test_project_zip_filters_normal_repository_assets_and_caps_source_snapshot()
     assert "src/generated.js" not in {item.path for item in files}
 
 
+def test_project_zip_documentation_cannot_evict_implementation_snapshot() -> None:
+    entries = {
+        **{
+            f"docs/section-{index:03d}/README.md": f"documentation {index}\n".encode()
+            for index in range(105)
+        },
+        "app/main.py": b"def handle_request():\n    return 200\n",
+    }
+
+    files = validate_project_uploads(
+        [ProjectUpload("repository.zip", _zip(entries, compression=zipfile.ZIP_STORED))]
+    )
+
+    assert len(files) == 100
+    assert any(item.path == "app/main.py" for item in files)
+
+
 @pytest.mark.parametrize(
     ("upload", "code"),
     [
@@ -607,7 +624,15 @@ def test_path_only_request_flow_evidence_stays_partial_and_filters_meta_rules() 
             ],
             "technology_choices": [],
             "risks": [],
-            "interview_questions": [],
+            "interview_questions": [
+                {
+                    "question": "你在入口链路里具体怎样使用 hello 函数处理请求？",
+                    "focus": "个人实现与函数边界。",
+                    "suggested_answer": "结合 hello 的真实实现说明，不补写不存在的逻辑。",
+                    "evidence": ["main.py:hello"],
+                    "responsibility_relevance": "对应候选人填写的入口链路职责。",
+                }
+            ],
             "improvements": [],
         }
     )
@@ -626,6 +651,7 @@ def test_path_only_request_flow_evidence_stays_partial_and_filters_meta_rules() 
     assert any("静态文件路径核对" in item for item in grounded.request_flow_review.to_verify)
     assert [item.component for item in grounded.request_flow] == ["量子网关", "火星数据库"]
     assert any("控制规则" in item for item in grounded.request_flow_review.issues)
+    assert grounded.interview_questions[0].evidence == ["main.py#hello"]
     assert "源码能核实" not in grounded.interview_intro
     assert "入口 → 服务 → 数据库链路" in grounded.interview_intro
 
@@ -748,7 +774,7 @@ async def test_project_analysis_uses_qwen_plus_structured_schema_and_cache(
     assert first["analysis"]["architecture"][0]["evidence"] == ["main.py"]
     assert first["analysis"]["request_flow_review"]["status"] == "partial"
     assert first["analysis"]["request_flow_review"]["issues"]
-    assert "我在其中主要负责 负责订单入口与幂等逻辑" in first["analysis"]["interview_intro"]
+    assert "我在其中负责订单入口与幂等逻辑" in first["analysis"]["interview_intro"]
     assert [item["question"] for item in first["analysis"]["interview_questions"]] == [
         "如何保证幂等？"
     ]

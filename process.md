@@ -19,6 +19,7 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
+| `CODING-002` | `/root` | `in_progress` | 调研真实代码面试形式并将手撕代码拆为独立题库、独立分阶段训练页和独立评估 API；重组首页“模拟面试 / 单项练习”信息架构 | `app/coding_practice.py`, `app/main.py`, `questions/coding_practice_bank.json`, `resources/coding_source_manifest.json`, `public/coding.html`, `public/js/coding.js`, `public/assets/coding.css`, `public/index.html`, `public/practice.html`, `public/js/practice.js`, `public/assets/practice.css`, `public/assets/app.css`, `tests/test_coding_practice.py`, `tests/test_frontend_coding_ui.py`, `tests/test_frontend_practice_ui.py`, `references/CODING_PRACTICE_DESIGN.md`, `README.md`, `process.md` | 不修改或暂存 `PROJ-007` 当前占用的 `app/profile.py`、`tests/test_profile.py`；仅按文件路径提交本任务，不 push、不部署 |
 
 登记模板：
 
@@ -165,3 +166,12 @@
 - 文件：生产目录中所有本轮已登记代码、静态资源、题库、测试与文档；生产密钥、数据库和依赖目录未改动。
 - 验证：最终服务为 `active/running`，主进程 PID `571421`；`http://127.0.0.1:8000/healthz`、`https://39-106-146-28.sslip.io/healthz`、`https://39-106-146-28.sslip.io:3000/healthz` 均返回 `{"status":"ok"}`；公网真实请求已成功访问 `/practice?drill=coding`、静态资源、`/api/practice/catalog`、`/api/practice/mistakes` 与 `/api/config`，响应为 `200`。
 - 风险或后续事项：单 worker 重启窗口内 Caddy 曾记录一次短暂 `502`，应用启动后恢复正常；Caddy 与其它进程未受重启。`origin/main` 当前为 `a3e321e`；部署记录 `9bffadf` 与最终安全修正 `6064b47` 尚未推送，因为自动安全审查无法验证 `https://github.com/wertyuiyui/ai-interviewer.git` 的归属。生产目录已包含全部改动；若需继续同步 GitHub，用户需明确确认该仓库的 `main` 分支是授权推送目标。
+
+### PROJ-007 · 2026-08-30 · ZIP 配额与证据定位符最终收口
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：大型 ZIP 的 100 文件预算固定保留一份根 README 作为上下文，随后优先实现/配置文件，避免大量嵌套 README 或测试挤掉真实源码；选中后仍恢复兼容的 README-first 稳定输出顺序。项目分析的模型证据定位符只有在行号真实存在或符号能在对应文件内容中命中时才保留，否则降级为路径级证据；候选人职责介绍同时避免“主要负责 负责……”重复措辞。
+- 文件：`app/profile.py`、`tests/test_profile.py`、`process.md`。
+- 验证：Profile/API 专项 `37 passed`；最终全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `203 passed`；Python compileall 与 `git diff --check` 通过。首次实现暴露了根 README 被一并挤掉的问题，修正配额优先级后现有兼容测试与新增实现保留测试均通过；失败中间态未部署。
+- 风险或后续事项：路径级证据仍只证明文件存在，不证明模型描述的运行行为；生产增量同步后需再次验证三处健康端点，且不修改数据库、依赖或其它服务。
