@@ -90,6 +90,35 @@ def test_mock_research_gap_is_low_score_but_not_breakdown(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_second_hint_requests_a_direct_answer_with_personal_context(tmp_path) -> None:
+    captured: dict = {}
+
+    class HintClient:
+        async def chat_json(self, messages, **kwargs):
+            captured["messages"] = messages
+            captured["schema"] = kwargs["response_schema"]
+            return {"answer": "我会结合校园秒杀系统中的 Redis Lua 库存预扣说明原子性和失败边界。"}
+
+    settings = replace(
+        get_settings(),
+        mock_llm=False,
+        db_path=tmp_path / "recommended-hint.db",
+    )
+    engine = InterviewEngine(Database(settings), settings, client=HintClient())
+    hint = await engine._recommended_answer_hint(
+        {"language_mode": "zh", "resume": resume_payload()},
+        "Redis Lua 为什么能保证库存预扣的原子性？",
+        [],
+    )
+
+    assert hint.startswith("推荐回答：")
+    assert "校园秒杀系统" in hint and "Redis Lua" in hint
+    prompt = captured["messages"][1]["content"]
+    assert "Redis Lua 为什么" in prompt and "峰值 QPS 3000" in prompt
+    assert captured["schema"]["required"] == ["answer"]
+
+
+@pytest.mark.asyncio
 async def test_hint_memory_opt_out_and_owned_retry(tmp_path, monkeypatch) -> None:
     settings = replace(
         get_settings(),
@@ -147,7 +176,9 @@ async def test_hint_memory_opt_out_and_owned_retry(tmp_path, monkeypatch) -> Non
         assert advanced_hint.status_code == 200
         assert advanced_hint.json()["level"] == 2
         assert advanced_hint.json()["hint_count"] == 2
-        assert "简化示例" in advanced_hint.json()["hint"]
+        assert "推荐回答" in advanced_hint.json()["hint"]
+        assert "校园秒杀系统" in advanced_hint.json()["hint"]
+        assert "Redis Lua" in advanced_hint.json()["hint"]
 
         result = await engine.answer(
             interview_id,

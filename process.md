@@ -46,6 +46,14 @@
 - 验证：最新隔离基线全量 `269 passed`，项目阶段/归属/核心面试专项 `19 passed`，Python compileall 与 `git diff --check` 通过。生产服务为 `active`，主进程 PID `865116`；本机 8000、正式域名 HTTPS 443 和 3000 均返回 `{"status":"ok"}`；生产代码确认包含 `switch_project_after_unknown`、持久化经历排除与“换一个项目”转场。
 - 回滚与风险：部署前代码备份为 `/tmp/ai-interviewer-mvp-pre-bc9c737-20260830.tar.gz`，不含密钥、数据库、虚拟环境和依赖。未迁移或修改历史数据，已有问答会直接参与重连后的项目排除恢复。
 
+### INTERVIEW-020 · 2026-08-30 · 进一步提示生成个人化推荐回答
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：一级提示继续给当前题目的作答思路；二级“进一步提示”不再返回固定 X/Y/Z 或通用项目模板，而是把当前完整题目、结构化简历和最近四轮真实问答作为不可信事实数据交给专用生成调用，输出第一人称、可直接参考的推荐回答。个人公司、动作、指标和结果只能取自这些材料，缺失内容明确写【补充真实信息】；技术机制可使用通用知识。生成失败时按简历首个真实项目或实习生成个人化兜底，不回退为泛泛提纲。English 场次保持英文回答。
+- 实际文件：`app/interview_engine.py`、`tests/test_hint_memory_retry.py`、`process.md`。
+- 验证：提示/记忆/API 专项 `4 passed`；最新远端全量 `270 passed`；`node --check public/js/interview.js`、Python compileall 与 `git diff --check` 通过。回归确认生成 payload 同时包含 Redis Lua 当前题、校园秒杀系统、峰值 QPS 3000，并验证 mock/故障兜底仍输出含真实项目名与本人职责的“推荐回答”。
+- 风险或后续事项：只有用户点击第二次提示时才新增一次文本模型调用；同题同级提示仍由 SQLite 幂等持久化，不会重复计费。推荐回答明确要求候选人核对事实，缺少个人数据时不替其编造。
+
 ### INTERVIEW-019 · 2026-08-30 · 项目不会时切换其它简历经历
 
 - Agent：`/root`；状态：`completed`。

@@ -254,20 +254,114 @@ class InterviewEngine:
             if isinstance(item, dict) and int(item.get("ordinal") or 0) == ordinal
         }
         level = 2 if 1 in prior_levels else 1
+        hint = self._build_hint(
+            question,
+            str(interview.get("language_mode") or "zh"),
+            level=level,
+        )
+        if level >= 2:
+            hint = await self._recommended_answer_hint(interview, question, turns)
         event = await self.db.record_hint(
             interview_id,
             ordinal=ordinal,
             question=question,
-            hint=self._build_hint(
-                question,
-                str(interview.get("language_mode") or "bilingual"),
-                level=level,
-            ),
+            hint=hint,
             level=level,
         )
         if not event:
             raise AppError("INTERVIEW_NOT_FOUND", "面试不存在", status_code=404)
         return event
+
+    async def _recommended_answer_hint(
+        self,
+        interview: dict[str, Any],
+        question: str,
+        turns: list[InterviewTurn],
+    ) -> str:
+        language_mode = str(interview.get("language_mode") or "zh")
+        resume = ResumeData.model_validate(interview.get("resume") or {})
+        fallback = self._personalized_hint_fallback(question, resume, language_mode)
+        if self.settings.mock_llm:
+            return fallback
+        system = (
+            "Write a first-person recommended answer to the current interview question. "
+            "Use only personal facts present in the supplied resume or prior answers. General technical knowledge "
+            "may explain mechanisms, but never invent personal actions, metrics, employers, or results. Mark missing "
+            "personal details as [add your real detail]. Return one direct answer, not advice or an outline."
+            if language_mode == "en"
+            else
+            "针对当前面试题写一段第一人称、可直接参考的推荐回答。个人经历只能使用所给简历和本场历史回答中的事实；"
+            "技术原理可使用通用知识，但不得编造本人动作、公司、指标或结果，缺失信息写成【补充真实信息】。"
+            "直接回答问题，不要输出答题建议、结构提纲或评分。允许保留 Java、Redis、P95 等英文技术术语。"
+        )
+        try:
+            raw = await self.client.chat_json(
+                [
+                    {"role": "system", "content": system},
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "question": question,
+                                "resume": resume.model_dump(by_alias=True),
+                                "prior_answers": [
+                                    {"question": turn.question, "answer": turn.answer}
+                                    for turn in turns[-4:]
+                                ],
+                            },
+                            ensure_ascii=False,
+                        ),
+                    },
+                ],
+                response_schema={
+                    "type": "object",
+                    "properties": {"answer": {"type": "string"}},
+                    "required": ["answer"],
+                    "additionalProperties": False,
+                },
+                schema_name="interview_recommended_answer_hint",
+                model=self.settings.qwen_text_model,
+                temperature=0.2,
+                max_tokens=900,
+            )
+            answer = " ".join(str(raw.get("answer") or "").split()).strip()
+            if answer:
+                label = "Recommended answer" if language_mode == "en" else "推荐回答"
+                return f"{label}：{answer[:2400]}"
+        except (LLMError, ValueError):
+            pass
+        return fallback
+
+    @staticmethod
+    def _personalized_hint_fallback(
+        question: str, resume: ResumeData, language_mode: str
+    ) -> str:
+        project = resume.projects[0] if resume.projects else None
+        internship = resume.internships[0] if resume.internships else None
+        if language_mode == "en":
+            if project:
+                details = " ".join([*project.highlights[:1], *project.metrics[:1]])
+                return (
+                    f"Recommended answer: In my {project.name} project, I worked as {project.role or '[add your real role]'}. "
+                    f"{details or '[add one action and result you can verify]'} For this question—{question}—"
+                    "I would connect that experience to the relevant mechanism and state its failure boundary, "
+                    "without adding any result I cannot verify."
+                )
+            return f"Recommended answer: For this question—{question}—[add your real conclusion, evidence, and boundary]."
+        if project:
+            details = "".join([*project.highlights[:1], *project.metrics[:1]])
+            return (
+                f"推荐回答：以我的“{project.name}”为例，我担任{project.role or '【补充真实角色】'}。"
+                f"{details or '【补充一项本人真实动作和结果】'}针对“{question}”，"
+                "我会结合这段真实实现说明相关机制、取舍和失效边界，不补造未验证的数据。"
+            )
+        if internship:
+            details = "".join([*internship.highlights[:1], *internship.metrics[:1]])
+            return (
+                f"推荐回答：在{internship.company or '【补充真实公司】'}担任{internship.role or '【补充真实岗位】'}期间，"
+                f"{details or '【补充本人真实动作和结果】'}针对“{question}”，我会据此说明具体行动、依据和复盘。"
+            )
+        return f"推荐回答：针对“{question}”，【补充你的真实结论、个人依据、具体行动和结果】。"
 
     def _question_for_stage(
         self,
