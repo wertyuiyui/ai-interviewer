@@ -91,32 +91,72 @@ class ResumeParser:
             return self._mock_parse(text)
 
         schema = ResumeData.model_json_schema(by_alias=True)
-        try:
-            raw = await self.client.chat_json(
-                [
-                    {
-                        "role": "system",
-                        "content": RESUME_SYSTEM_PROMPT + "\n\n" + load_resume_reader_skill(),
-                    },
-                    {
-                        "role": "user",
-                        "content": "请抽取以下简历。\n<resume>\n"
-                        + text[:30000]
-                        + "\n</resume>",
-                    },
-                ],
-                response_schema=schema,
-                schema_name="resume_data",
-                model=self.settings.qwen_text_model,
-                temperature=0.0,
-                max_tokens=3000,
-            )
-            return ResumeData.model_validate(self._normalize(raw, source_text=text))
-        except ValidationError as exc:
-            raise LLMError(
-                "简历结构化结果不符合 Schema",
-                details={"errors": exc.errors(include_input=False)},
-            ) from exc
+        best: ResumeData | None = None
+        for attempt in range(2):
+            try:
+                raw = await self.client.chat_json(
+                    [
+                        {
+                            "role": "system",
+                            "content": RESUME_SYSTEM_PROMPT + "\n\n" + load_resume_reader_skill(),
+                        },
+                        {
+                            "role": "user",
+                            "content": "请抽取以下简历。\n<resume>\n"
+                            + text[:30000]
+                            + "\n</resume>",
+                        },
+                    ],
+                    response_schema=schema,
+                    schema_name="resume_data",
+                    model=self.settings.qwen_text_model,
+                    temperature=0.0,
+                    max_tokens=3000,
+                )
+                parsed = ResumeData.model_validate(self._normalize(raw, source_text=text))
+            except ValidationError as exc:
+                if attempt == 0:
+                    continue
+                if best is not None:
+                    return best
+                raise LLMError(
+                    "简历结构化结果不符合 Schema",
+                    details={"errors": exc.errors(include_input=False)},
+                ) from exc
+            except LLMError:
+                if attempt == 0:
+                    continue
+                if best is not None:
+                    return best
+                raise
+
+            if best is not None:
+                parsed = best.model_copy(
+                    update={
+                        "candidate_name": best.candidate_name or parsed.candidate_name,
+                        "education": best.education or parsed.education,
+                        "internships": best.internships or parsed.internships,
+                        "projects": best.projects or parsed.projects,
+                        "skills": best.skills or parsed.skills,
+                    }
+                )
+            best = parsed
+            if attempt or not self._needs_retry(parsed, text):
+                return parsed
+        raise LLMError("简历识别失败，请重试")
+
+    @staticmethod
+    def _needs_retry(parsed: ResumeData, source_text: str) -> bool:
+        if not any((parsed.education, parsed.internships, parsed.projects, parsed.skills)):
+            return True
+        headings = {ResumeParser._text_key(line) for line in source_text.splitlines()}
+        expected = (
+            ({"教育", "教育经历", "教育背景", "education"}, parsed.education),
+            ({"实习", "实习经历", "实习经验", "internship", "internships"}, parsed.internships),
+            ({"项目", "项目经历", "项目经验", "个人项目", "project", "projects"}, parsed.projects),
+            ({"技能", "专业技能", "技能特长", "skill", "skills"}, parsed.skills),
+        )
+        return any(not values and names & headings for names, values in expected)
 
     @staticmethod
     def _normalize(raw: dict[str, Any], source_text: str = "") -> dict[str, Any]:

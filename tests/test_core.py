@@ -1032,6 +1032,43 @@ async def test_real_resume_parser_normalizes_each_resume_response_independently(
 
 
 @pytest.mark.asyncio
+async def test_resume_parser_retries_section_dropout_and_keeps_first_pass_data(tmp_path) -> None:
+    class UnstableResumeClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def chat_json(self, *_args, **_kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return {
+                    "姓名": "李明",
+                    "教育": [{"school": "某大学", "major": "计算机"}],
+                    "实习经历": [],
+                    "项目": [],
+                    "技能": ["Java"],
+                }
+            return {
+                "姓名": "李明",
+                "教育": [],
+                "实习经历": [],
+                "项目": [{"name": "订单平台", "technologies": ["Java"]}],
+                "技能": [],
+            }
+
+    client = UnstableResumeClient()
+    settings = replace(mock_settings(tmp_path), mock_llm=False)
+    parsed = await ResumeParser(settings, client).parse(
+        "姓名：李明\nliming@example.com\n教育经历\n某大学 计算机本科\n"
+        "项目经历\n订单平台\n技能\nJava"
+    )
+
+    assert client.calls == 2
+    assert parsed.education[0].school == "某大学"
+    assert parsed.projects[0].name == "订单平台"
+    assert parsed.skills == ["Java"]
+
+
+@pytest.mark.asyncio
 async def test_zero_turn_report_is_unscored_without_llm_or_memory_pollution(
     tmp_path,
 ) -> None:
