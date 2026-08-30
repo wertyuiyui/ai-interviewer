@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 import logging
 import math
 import os
+import re
 import sys
 import time
 from array import array
@@ -127,6 +129,7 @@ class BrowserVoiceSession:
         self.closed = False
         self.ending = False
         self._answer_pending = False
+        self._preserving_pending_transcripts = False
         self._omni_response_started = asyncio.Event()
         self._omni_response_events: dict[str, asyncio.Event] = {}
         self._omni_response_statuses: dict[str, str] = {}
@@ -156,12 +159,22 @@ class BrowserVoiceSession:
         self._transcript_done_count = 0
         self._transcript_failed_count = 0
         self._completed_transcription_item_ids: set[str] = set()
+        self._transcript_items: dict[str, dict[str, Any]] = {}
         self._first_audio_input_at: float | None = None
         self._last_audio_input_at: float | None = None
         self._last_audio_health_log_at = 0.0
         self._last_audio_level_sent_at = 0.0
         self._speech_started_at: float | None = None
+        self._speech_duration_seconds: float | None = None
         self._omni_expected_speech: str | None = None
+        # L0 audio is held until the provider's completed audio transcript is
+        # checked against the already displayed question.  This prevents a
+        # generative realtime model from paraphrasing text while audio is
+        # already playing in the browser.
+        self._omni_expected_by_response: dict[str, str] = {}
+        self._omni_spoken_by_response: dict[str, str] = {}
+        self._omni_audio_buffers: dict[str, list[tuple[bytes, int]]] = {}
+        self._omni_release_tasks: dict[str, asyncio.Task[None]] = {}
 
     async def start(self, initial_question: str) -> str:
         errors: list[str] = []
@@ -408,8 +421,11 @@ class BrowserVoiceSession:
             raise AppError("EMPTY_ANSWER", "回答不能为空", status_code=422)
         if self.closed or self.ending:
             raise AppError("INTERVIEW_ENDED", "本场面试正在结束", status_code=409)
+        ordinal = len(await self.db.list_turns(self.interview_id)) + 1
         if self.actual_mode == "L0" and self.omni:
-            await self.send("candidate.transcript.done", text=text, source="text")
+            await self.send(
+                "candidate.transcript.done", text=text, source="text", ordinal=ordinal
+            )
             await self._interrupt_for_typed_input()
             try:
                 await self.omni.send_text(text, create_response=False)
@@ -423,52 +439,143 @@ class BrowserVoiceSession:
                     recoverable=True,
                 )
                 await self._runtime_fallback("L0 文字上行不可用")
-                await self._schedule_evaluation(self._pipeline_answer(text))
+                await self._schedule_evaluation(
+                    self._pipeline_answer(text, input_mode="text")
+                )
                 return
-            await self._schedule_evaluation(self._evaluate_l0(text))
+            await self._schedule_evaluation(self._evaluate_l0(text, input_mode="text"))
             return
         if self.actual_mode in {"L1", "L2"}:
-            await self.send("candidate.transcript.done", text=text, source="text")
+            await self.send(
+                "candidate.transcript.done", text=text, source="text", ordinal=ordinal
+            )
             await self._interrupt_for_typed_input()
-            await self._schedule_evaluation(self._pipeline_answer(text))
+            await self._schedule_evaluation(self._pipeline_answer(text, input_mode="text"))
             return
         # A voice session that degraded at runtime keeps this lock so a still
         # finishing voice evaluation cannot race a second L3 engine.answer.
         await self._wait_for_current_evaluation()
-        await self.send("candidate.transcript.done", text=text, source="text")
-        await self._schedule_evaluation(self._pipeline_answer(text))
+        await self.send(
+            "candidate.transcript.done", text=text, source="text", ordinal=ordinal
+        )
+        await self._schedule_evaluation(self._pipeline_answer(text, input_mode="text"))
+
+    async def handle_transcript_correction(
+        self,
+        *,
+        text: str,
+        ordinal: int | None,
+        item_id: str | None,
+    ) -> None:
+        """Resolve a live ASR item to a persisted turn, re-score, and update it."""
+
+        evaluation_finished = await self._wait_for_current_evaluation(timeout=15.0)
+        if not evaluation_finished:
+            raise AppError(
+                "TRANSCRIPT_NOT_PERSISTED",
+                "这段实时转写仍在处理，请等下一题出现后再修正。",
+                status_code=409,
+            )
+        normalized_item_id = str(item_id or "").strip()
+        item = self._transcript_items.get(normalized_item_id, {})
+        # A browser-provided ordinal is only a display hint for a live ASR
+        # item.  Concurrent answers can claim that ordinal before this item is
+        # persisted, so item_id mappings must be resolved exclusively from the
+        # engine's committed turn.
+        resolved_ordinal = (
+            item.get("ordinal")
+            if normalized_item_id and item.get("persisted") is True
+            else (ordinal if not normalized_item_id else None)
+        )
+        if resolved_ordinal is None:
+            raise AppError(
+                "TRANSCRIPT_NOT_PERSISTED",
+                "这段实时转写仍在处理，请等下一题出现后再修正。",
+                status_code=409,
+            )
+        corrected = await self.engine.correct_answer(
+            self.interview_id,
+            ordinal=int(resolved_ordinal),
+            text=text,
+        )
+        if normalized_item_id:
+            self._transcript_items[normalized_item_id] = {
+                **item,
+                "ordinal": int(resolved_ordinal),
+                "text": text,
+                "original_text": corrected["original_text"],
+            }
+        await self.send(
+            "candidate.transcript.corrected",
+            **corrected,
+            item_id=normalized_item_id or None,
+        )
 
     async def handle_playback_done(self, announcement_id: str) -> None:
         waiter = self._playback_waiters.get(announcement_id)
         if waiter:
             waiter.set()
 
-    async def prepare_end(self) -> None:
-        """Stop new input and cancel in-flight generation before a terminal line."""
+    async def prepare_end(self, *, drain_timeout: float = 20.0) -> None:
+        """Stop input while preserving every accepted voice transcript."""
 
         if self.ending:
             return
         self.ending = True
         self.generation += 1
+        self._drop_omni_audio = True
+        await self._cancel_omni_audio_releases()
+        self._preserving_pending_transcripts = True
         if self._deliberate_interrupt_task and not self._deliberate_interrupt_task.done():
             self._deliberate_interrupt_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._deliberate_interrupt_task
             self._deliberate_interrupt_task = None
-        current = asyncio.current_task()
-        tasks = [
-            task
-            for task in self.evaluation_tasks
-            if task is not current and not task.done()
-        ]
-        for task in tasks:
-            task.cancel()
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-        if self.tts_task and self.tts_task is not current and not self.tts_task.done():
-            self.tts_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self.tts_task
+        async def drain_and_preserve() -> None:
+            # Match the text-mode drain: give an accepted answer time to commit
+            # its real assessment before cancelling slow provider work.
+            await self._wait_for_current_evaluation(timeout=max(0.0, drain_timeout))
+            current = asyncio.current_task()
+            tasks = [
+                task
+                for task in self.evaluation_tasks
+                if task is not current and not task.done()
+            ]
+            for task in tasks:
+                task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Cancellation can arrive before the engine commits a scored turn.
+            # Keep the already displayed transcript in SQLite as explicitly
+            # unscored so report generation cannot race an empty interview.
+            pending_items = [
+                (item_id, dict(item))
+                for item_id, item in self._transcript_items.items()
+                if item.get("persisted") is not True
+            ]
+            for item_id, item in pending_items:
+                await self._preserve_unscored_transcript(item_id, item)
+
+            if self.tts_task and self.tts_task is not current and not self.tts_task.done():
+                self.tts_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self.tts_task
+
+        drain_task = asyncio.create_task(
+            drain_and_preserve(),
+            name=f"drain-voice-answers-{self.interview_id}",
+        )
+        try:
+            await asyncio.shield(drain_task)
+        except asyncio.CancelledError:
+            # Ending/report generation may outlive the WebSocket owner. Finish
+            # the accepted-transcript write before propagating cancellation.
+            with suppress(asyncio.CancelledError, Exception):
+                await asyncio.shield(drain_task)
+            raise
+        finally:
+            self._preserving_pending_transcripts = False
 
     async def announce(
         self,
@@ -595,14 +702,14 @@ class BrowserVoiceSession:
                         self._completed_transcription_item_ids.add(item_id)
                     text = str(event.get("text", "")).strip()
                     self._transcript_done_count += 1
-                    speech_ms = None
-                    if self._speech_started_at is not None:
-                        speech_ms = int(
-                            (time.monotonic() - self._speech_started_at) * 1000
-                        )
+                    speech_ms = (
+                        int(self._speech_duration_seconds * 1000)
+                        if self._speech_duration_seconds is not None
+                        else None
+                    )
                     logger.info(
                         "voice.transcript.done interview_id=%s count=%d chars=%d "
-                        "speech_to_final_ms=%s language=%s",
+                        "speech_ms=%s language=%s",
                         self.interview_id,
                         self._transcript_done_count,
                         len(text),
@@ -610,13 +717,41 @@ class BrowserVoiceSession:
                         str(event.get("language") or "unknown"),
                     )
                     self._speech_started_at = None
+                    self._speech_duration_seconds = None
                     if text:
+                        ordinal = len(await self.db.list_turns(self.interview_id)) + 1
+                        if item_id:
+                            self._transcript_items[item_id] = {
+                                "ordinal": None,
+                                "predicted_ordinal": ordinal,
+                                "text": text,
+                                "original_text": text,
+                                "input_mode": "voice",
+                                "answer_duration_seconds": (
+                                    speech_ms / 1000
+                                    if speech_ms is not None
+                                    else None
+                                ),
+                            }
                         await self.send(
                             "candidate.transcript.done",
                             text=text,
                             item_id=event.get("item_id"),
+                            ordinal=ordinal,
+                            source="voice",
+                            editable=True,
                         )
-                        await self._schedule_evaluation(self._evaluate_l0(text))
+                        await self._schedule_evaluation(
+                            self._evaluate_l0(
+                                text,
+                                input_mode="voice",
+                                item_id=item_id or None,
+                                answer_duration_seconds=(
+                                    speech_ms / 1000 if speech_ms is not None else None
+                                ),
+                            ),
+                            item_id=item_id or None,
+                        )
                     else:
                         self._transcript_failed_count += 1
                         logger.warning(
@@ -639,6 +774,7 @@ class BrowserVoiceSession:
                     await self._candidate_speech_ended()
                     self._transcript_failed_count += 1
                     self._speech_started_at = None
+                    self._speech_duration_seconds = None
                     logger.warning(
                         "voice.transcript.failed interview_id=%s count=%d code=%s item_present=%s",
                         self.interview_id,
@@ -674,6 +810,10 @@ class BrowserVoiceSession:
                     self._omni_response_events.setdefault(
                         response_id, asyncio.Event()
                     )
+                    self._omni_expected_by_response[response_id] = (
+                        self._omni_expected_speech or ""
+                    )
+                    self._omni_audio_buffers[response_id] = []
                     self._omni_response_started.set()
                     logger.info(
                         "voice.tts.started interview_id=%s response_id=%s",
@@ -688,7 +828,16 @@ class BrowserVoiceSession:
                     # not duplicated into the transcript.
                 elif event_type == "assistant_done":
                     actual = str(event.get("text") or "")
-                    expected = self._omni_expected_speech or ""
+                    response_id = str(
+                        event.get("response_id")
+                        or self._omni_active_response_id
+                        or ""
+                    )
+                    expected = self._omni_expected_by_response.get(
+                        response_id, self._omni_expected_speech or ""
+                    )
+                    if response_id:
+                        self._omni_spoken_by_response[response_id] = actual
                     compact_actual = "".join(actual.split())
                     compact_expected = "".join(expected.split())
                     logger.info(
@@ -705,21 +854,24 @@ class BrowserVoiceSession:
                         continue
                     self._audio_output_chunks += 1
                     self._audio_output_bytes += len(event.get("audio") or b"")
-                    await self.send(
-                        "audio.chunk",
-                        audio=base64.b64encode(event["audio"]).decode("ascii"),
-                        sample_rate=event.get("sample_rate", 24000),
-                        format="pcm_s16le",
+                    response_id = str(
+                        event.get("response_id")
+                        or self._omni_active_response_id
+                        or ""
                     )
+                    if response_id:
+                        self._omni_audio_buffers.setdefault(response_id, []).append(
+                            (event["audio"], int(event.get("sample_rate", 24000)))
+                        )
                 elif event_type == "response_done":
                     response_id = str(event.get("response_id") or "").strip()
                     if not response_id:
                         raise VoiceTransportError("Omni response.done 缺少 ID")
                     status = str(event.get("status") or "").strip().lower()
                     self._omni_response_statuses[response_id] = status
-                    self._omni_response_events.setdefault(
+                    response_complete = self._omni_response_events.setdefault(
                         response_id, asyncio.Event()
-                    ).set()
+                    )
                     if response_id == self._omni_active_response_id:
                         self._omni_active_response_id = None
                         self._omni_response_pending = False
@@ -735,13 +887,15 @@ class BrowserVoiceSession:
                     )
                     self._omni_expected_speech = None
                     if status == "completed" and not self._drop_omni_audio:
-                        # This marker is ordered after all audio.chunk events by
-                        # the browser WebSocket send lock.  The AudioWorklet
-                        # turns it into a real queue-drained signal, so a brief
-                        # network gap cannot masquerade as end-of-question.
-                        await self.send(
-                            "audio.stream.done", announcement_id=response_id
+                        self._start_verified_omni_audio_release(
+                            response_id,
+                            generation=self.generation,
                         )
+                    else:
+                        self._omni_audio_buffers.pop(response_id, None)
+                        self._omni_expected_by_response.pop(response_id, None)
+                        self._omni_spoken_by_response.pop(response_id, None)
+                        response_complete.set()
                     expected_cancel = self._omni_cancel_in_flight or self._drop_omni_audio
                     if (
                         self._omni_cancel_in_flight
@@ -792,6 +946,201 @@ class BrowserVoiceSession:
                 )
                 await self._runtime_fallback("L0 实时连接异常")
 
+    @staticmethod
+    def _speech_signature(text: str) -> str:
+        # Punctuation and whitespace are not audible content.  Everything
+        # else, including numbers and technical terms, must remain identical.
+        return re.sub(r"[\s，。！？,.!?；;：:“”‘’'\"（）()、]", "", text).casefold()
+
+    def _start_verified_omni_audio_release(
+        self,
+        response_id: str,
+        *,
+        generation: int,
+    ) -> None:
+        """Release buffered L0 audio without blocking provider VAD events."""
+
+        existing = self._omni_release_tasks.get(response_id)
+        if existing is not None and not existing.done():
+            return
+        self._omni_response_events.setdefault(response_id, asyncio.Event())
+
+        async def release() -> None:
+            try:
+                await self._release_verified_omni_audio(
+                    response_id,
+                    generation=generation,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                if not self.closed:
+                    with suppress(Exception):
+                        await self.send(
+                            "error",
+                            code="VOICE_PROVIDER_ERROR",
+                            message=f"L0 语音下发失败：{exc}",
+                            recoverable=True,
+                        )
+                    if self.actual_mode == "L0":
+                        await self._runtime_fallback("L0 语音下发不可用")
+            finally:
+                self._finish_omni_audio_release(
+                    response_id,
+                    asyncio.current_task(),
+                )
+
+        task = asyncio.create_task(
+            release(),
+            name=f"omni-audio-release-{self.interview_id}-{response_id}",
+        )
+        self._omni_release_tasks[response_id] = task
+        # A queued speech_started event can cancel this task before its
+        # coroutine executes, in which case its ``finally`` block never runs.
+        # The callback still releases the matching announce() waiter.
+        task.add_done_callback(
+            lambda completed, rid=response_id: self._finish_omni_audio_release(
+                rid, completed
+            )
+        )
+
+    def _finish_omni_audio_release(
+        self,
+        response_id: str,
+        task: asyncio.Task[Any] | None,
+    ) -> None:
+        self._omni_audio_buffers.pop(response_id, None)
+        self._omni_expected_by_response.pop(response_id, None)
+        self._omni_spoken_by_response.pop(response_id, None)
+        if task is not None and self._omni_release_tasks.get(response_id) is task:
+            self._omni_release_tasks.pop(response_id, None)
+        # ``announce()`` must not start another response until either verified
+        # audio and its marker were sent, or a barge-in definitively cancelled
+        # this release.
+        self._omni_response_events.setdefault(response_id, asyncio.Event()).set()
+
+    def _omni_release_allowed(self, response_id: str, generation: int) -> bool:
+        return (
+            not self.closed
+            and generation == self.generation
+            and not self._drop_omni_audio
+            and self._omni_release_tasks.get(response_id) is asyncio.current_task()
+        )
+
+    async def _release_verified_omni_audio(
+        self,
+        response_id: str,
+        *,
+        generation: int,
+    ) -> None:
+        expected = self._omni_expected_by_response.pop(response_id, "")
+        provider_spoken = self._omni_spoken_by_response.pop(response_id, "")
+        chunks = self._omni_audio_buffers.pop(response_id, [])
+        if not self._omni_release_allowed(response_id, generation):
+            return
+        exact_content = bool(expected) and self._speech_signature(
+            provider_spoken
+        ) == self._speech_signature(expected)
+        if exact_content:
+            for audio, sample_rate in chunks:
+                # The release runs outside the provider consumer so queued VAD
+                # events get a chance to cancel it between buffered chunks.
+                await asyncio.sleep(0)
+                if not self._omni_release_allowed(response_id, generation):
+                    return
+                await self.send(
+                    "audio.chunk",
+                    audio=base64.b64encode(audio).decode("ascii"),
+                    sample_rate=sample_rate,
+                    format="pcm_s16le",
+                )
+                if not self._omni_release_allowed(response_id, generation):
+                    return
+            if not self._omni_release_allowed(response_id, generation):
+                return
+            await self.send(
+                "interviewer.audio.synced",
+                text=expected,
+                spoken_text=provider_spoken,
+                audio_transcript=provider_spoken,
+                exact_match=True,
+                fallback_tts=False,
+            )
+        else:
+            # Never play a known paraphrase.  A conventional TTS engine takes
+            # the locked display string as direct synthesis input, so the
+            # spoken content and transcript stay on the same source of truth.
+            if not self._omni_release_allowed(response_id, generation):
+                return
+            await self.send("audio.clear")
+            if not self._omni_release_allowed(response_id, generation):
+                return
+            try:
+                fallback_tts = EdgeTTS()
+                audio, mime_type = await fallback_tts.synthesize(expected)
+                if not self._omni_release_allowed(response_id, generation):
+                    return
+                self._audio_output_chunks += 1
+                self._audio_output_bytes += len(audio)
+                encoded = base64.b64encode(audio).decode("ascii")
+                if mime_type.startswith("audio/pcm"):
+                    rate = 24000
+                    if "rate=" in mime_type:
+                        with suppress(ValueError):
+                            rate = int(mime_type.split("rate=", 1)[1].split(";", 1)[0])
+                    await self.send(
+                        "audio.chunk",
+                        audio=encoded,
+                        sample_rate=rate,
+                        format="pcm_s16le",
+                    )
+                else:
+                    await self.send("audio.file", audio=encoded, mime_type=mime_type)
+                if not self._omni_release_allowed(response_id, generation):
+                    return
+                await self.send(
+                    "interviewer.audio.synced",
+                    text=expected,
+                    spoken_text=expected,
+                    audio_transcript=expected,
+                    discarded_provider_transcript=provider_spoken,
+                    exact_match=False,
+                    fallback_tts=True,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                if not self._omni_release_allowed(response_id, generation):
+                    return
+                await self.send(
+                    "error",
+                    code="VOICE_TEXT_MISMATCH",
+                    message=f"检测到语音与题目文字不一致，已阻止播放；精确朗读兜底失败：{exc}",
+                    recoverable=True,
+                )
+        # Ordered after the verified/fallback audio; the browser only marks the
+        # interviewer idle after its playback queue drains.
+        if not self._omni_release_allowed(response_id, generation):
+            return
+        await self.send("audio.stream.done", announcement_id=response_id)
+
+    async def _cancel_omni_audio_releases(self) -> None:
+        current = asyncio.current_task()
+        releases = [
+            (response_id, task)
+            for response_id, task in self._omni_release_tasks.items()
+            if task is not current and not task.done()
+        ]
+        for _, task in releases:
+            task.cancel()
+        if releases:
+            await asyncio.gather(
+                *(task for _, task in releases),
+                return_exceptions=True,
+            )
+            for response_id, task in releases:
+                self._finish_omni_audio_release(response_id, task)
+
     async def _consume_asr(self) -> None:
         assert self.asr is not None
         try:
@@ -814,10 +1163,45 @@ class BrowserVoiceSession:
                         self._transcript_done_count,
                         len(text),
                     )
+                    speech_ms = (
+                        int(self._speech_duration_seconds * 1000)
+                        if self._speech_duration_seconds is not None
+                        else None
+                    )
                     self._speech_started_at = None
+                    self._speech_duration_seconds = None
                     if text:
-                        await self.send("candidate.transcript.done", text=text)
-                        await self._schedule_evaluation(self._pipeline_answer(text))
+                        item_id = str(event.get("item_id") or uuid.uuid4().hex)
+                        ordinal = len(await self.db.list_turns(self.interview_id)) + 1
+                        self._transcript_items[item_id] = {
+                            "ordinal": None,
+                            "predicted_ordinal": ordinal,
+                            "text": text,
+                            "original_text": text,
+                            "input_mode": "voice",
+                            "answer_duration_seconds": (
+                                speech_ms / 1000 if speech_ms is not None else None
+                            ),
+                        }
+                        await self.send(
+                            "candidate.transcript.done",
+                            text=text,
+                            item_id=item_id,
+                            ordinal=ordinal,
+                            source="voice",
+                            editable=True,
+                        )
+                        await self._schedule_evaluation(
+                            self._pipeline_answer(
+                                text,
+                                input_mode="voice",
+                                item_id=item_id,
+                                answer_duration_seconds=(
+                                    speech_ms / 1000 if speech_ms is not None else None
+                                ),
+                            ),
+                            item_id=item_id,
+                        )
                     else:
                         self._transcript_failed_count += 1
                         await self.send("candidate.transcript.failed")
@@ -854,11 +1238,22 @@ class BrowserVoiceSession:
                 )
                 await self._runtime_fallback("Paraformer 连接异常")
 
-    async def _evaluate_l0(self, text: str) -> None:
+    async def _evaluate_l0(
+        self,
+        text: str,
+        *,
+        input_mode: str = "voice",
+        item_id: str | None = None,
+        answer_duration_seconds: float | None = None,
+    ) -> None:
         async with self.answer_lock:
             await self.send("interviewer.state", state="thinking")
             try:
-                result = await self.engine.answer(self.interview_id, text)
+                result = await self._engine_answer(
+                    text,
+                    input_mode=input_mode,
+                    answer_duration_seconds=answer_duration_seconds,
+                )
             except AppError as exc:
                 if exc.code == "INTERVIEW_TIMEOUT":
                     await self.on_end("time")
@@ -869,6 +1264,11 @@ class BrowserVoiceSession:
                     message=exc.message,
                     recoverable=exc.code not in {"INTERVIEW_ENDED", "INTERVIEW_TIMEOUT"},
                 )
+                return
+            if item_id and item_id in self._transcript_items and hasattr(result, "turn"):
+                self._transcript_items[item_id]["ordinal"] = result.turn.ordinal
+                self._transcript_items[item_id]["persisted"] = True
+            if self.ending and not result.ended:
                 return
             await self.db.set_last_question(self.interview_id, result.question)
             if result.silence_seconds:
@@ -882,6 +1282,11 @@ class BrowserVoiceSession:
                 "interviewer.text.done",
                 text=result.question,
                 pressure_action=result.pressure_action,
+                recommended_answer_seconds=getattr(
+                    result,
+                    "recommended_answer_seconds",
+                    InterviewEngine.recommended_answer_seconds(result.question),
+                ),
             )
             if result.ended:
                 self.ending = True
@@ -906,11 +1311,22 @@ class BrowserVoiceSession:
             else:
                 await self.send("interviewer.state", state="listening")
 
-    async def _pipeline_answer(self, text: str) -> None:
+    async def _pipeline_answer(
+        self,
+        text: str,
+        *,
+        input_mode: str = "voice",
+        item_id: str | None = None,
+        answer_duration_seconds: float | None = None,
+    ) -> None:
         async with self.answer_lock:
             await self.send("interviewer.state", state="thinking")
             try:
-                result = await self.engine.answer(self.interview_id, text)
+                result = await self._engine_answer(
+                    text,
+                    input_mode=input_mode,
+                    answer_duration_seconds=answer_duration_seconds,
+                )
             except AppError as exc:
                 if exc.code == "INTERVIEW_TIMEOUT":
                     await self.on_end("time")
@@ -921,6 +1337,11 @@ class BrowserVoiceSession:
                     message=exc.message,
                     recoverable=exc.code not in {"INTERVIEW_ENDED", "INTERVIEW_TIMEOUT"},
                 )
+                return
+            if item_id and item_id in self._transcript_items and hasattr(result, "turn"):
+                self._transcript_items[item_id]["ordinal"] = result.turn.ordinal
+                self._transcript_items[item_id]["persisted"] = True
+            if self.ending and not result.ended:
                 return
             if result.silence_seconds:
                 await self.send(
@@ -933,6 +1354,11 @@ class BrowserVoiceSession:
                 "interviewer.text.done",
                 text=result.question,
                 pressure_action=result.pressure_action,
+                recommended_answer_seconds=getattr(
+                    result,
+                    "recommended_answer_seconds",
+                    InterviewEngine.recommended_answer_seconds(result.question),
+                ),
             )
             if result.ended:
                 self.ending = True
@@ -944,6 +1370,23 @@ class BrowserVoiceSession:
                 await self.on_end(result.end_reason or "poor_performance")
             else:
                 await self.send("interviewer.state", state="listening")
+
+    async def _engine_answer(
+        self,
+        text: str,
+        *,
+        input_mode: str,
+        answer_duration_seconds: float | None,
+    ) -> EngineResult:
+        parameters = inspect.signature(self.engine.answer).parameters
+        if "input_mode" not in parameters:
+            return await self.engine.answer(self.interview_id, text)
+        return await self.engine.answer(
+            self.interview_id,
+            text,
+            input_mode=input_mode,
+            answer_duration_seconds=answer_duration_seconds,
+        )
 
     async def _speak(
         self, text: str, *, wait_for_playback: bool = False
@@ -991,6 +1434,14 @@ class BrowserVoiceSession:
                 await self.send(
                     "audio.file", audio=encoded, mime_type=mime_type
                 )
+            await self.send(
+                "interviewer.audio.synced",
+                text=text,
+                spoken_text=text,
+                audio_transcript=text,
+                exact_match=True,
+                fallback_tts=False,
+            )
 
         tts_task = asyncio.create_task(
             synthesize(), name=f"tts-{self.interview_id}-{generation}"
@@ -1031,8 +1482,9 @@ class BrowserVoiceSession:
         if self.closed or self.ending:
             return
         self.generation += 1
-        if self.omni:
+        if self.omni or self._omni_release_tasks:
             self._drop_omni_audio = True
+        await self._cancel_omni_audio_releases()
         if self.tts_task and not self.tts_task.done():
             self.tts_task.cancel()
         if cancel_provider and self.omni:
@@ -1049,10 +1501,12 @@ class BrowserVoiceSession:
         """Typed answers are also barge-ins and must stop stale playback."""
 
         self.generation += 1
+        if self.omni or self._omni_release_tasks:
+            self._drop_omni_audio = True
+        await self._cancel_omni_audio_releases()
         if self.omni and (
             self._omni_response_pending or self._omni_active_response_id
         ):
-            self._drop_omni_audio = True
             self._begin_omni_cancel()
             try:
                 await self.omni.cancel()
@@ -1066,19 +1520,22 @@ class BrowserVoiceSession:
         await self.send("audio.clear")
         await self._wait_for_current_evaluation()
 
-    async def _wait_for_current_evaluation(self, timeout: float = 7.0) -> None:
+    async def _wait_for_current_evaluation(self, timeout: float = 7.0) -> bool:
         current = asyncio.current_task()
         pending = [
             task
             for task in self.evaluation_tasks
             if task is not current and not task.done()
         ]
-        if pending:
-            await asyncio.wait(pending, timeout=timeout)
+        if not pending:
+            return True
+        _, still_pending = await asyncio.wait(pending, timeout=timeout)
+        return not still_pending
 
     async def _candidate_speech_started(
         self, *, source: str, cancel_provider: bool = True
     ) -> None:
+        self._speech_duration_seconds = None
         if source != "server_vad":
             self._vad_started_count += 1
             self._speech_started_at = time.monotonic()
@@ -1115,6 +1572,10 @@ class BrowserVoiceSession:
         )
 
     async def _candidate_speech_ended(self) -> None:
+        if self._candidate_speaking and self._speech_started_at is not None:
+            self._speech_duration_seconds = max(
+                0.0, time.monotonic() - self._speech_started_at
+            )
         self._candidate_speaking = False
         task = self._deliberate_interrupt_task
         if task and not task.done() and not self._deliberate_interrupt_firing:
@@ -1167,21 +1628,98 @@ class BrowserVoiceSession:
             if self._deliberate_interrupt_task is asyncio.current_task():
                 self._deliberate_interrupt_task = None
 
-    async def _schedule_evaluation(self, coroutine: Awaitable[None]) -> None:
+    async def _preserve_unscored_transcript(
+        self,
+        item_id: str,
+        item: dict[str, Any],
+    ) -> None:
+        preserve = getattr(self.engine, "preserve_unscored_answer", None)
+        if preserve is None:
+            await self._fail_pending_transcript(item_id)
+            return
+        predicted_ordinal = item.get("predicted_ordinal")
+        preserve_task = asyncio.create_task(
+            preserve(
+                self.interview_id,
+                str(item.get("text") or ""),
+                input_mode=str(item.get("input_mode") or "voice"),
+                answer_duration_seconds=item.get("answer_duration_seconds"),
+                ordinal=(
+                    int(predicted_ordinal)
+                    if predicted_ordinal is not None
+                    else None
+                ),
+            ),
+            name=f"preserve-voice-answer-{self.interview_id}-{item_id}",
+        )
+        turn: Any = None
+        cancelled = False
+        try:
+            turn = await asyncio.shield(preserve_task)
+        except asyncio.CancelledError:
+            cancelled = True
+            # Complete the independent SQLite write before propagating
+            # cancellation so report generation cannot overtake it.
+            with suppress(asyncio.CancelledError, Exception):
+                turn = await asyncio.shield(preserve_task)
+        except Exception as exc:
+            if not self.closed:
+                await self.send(
+                    "error",
+                    code="ANSWER_PRESERVE_FAILED",
+                    message=f"结束时保留最后一条回答失败：{exc}",
+                    recoverable=True,
+                )
+            await self._fail_pending_transcript(item_id)
+            return
+
+        if turn is not None and item_id in self._transcript_items:
+            committed_ordinal = getattr(turn, "ordinal", predicted_ordinal)
+            self._transcript_items[item_id].update(
+                ordinal=committed_ordinal,
+                persisted=True,
+                unscored=True,
+            )
+        if cancelled:
+            raise asyncio.CancelledError
+
+    async def _fail_pending_transcript(self, item_id: str | None) -> None:
+        normalized_item_id = str(item_id or "").strip()
+        if not normalized_item_id:
+            return
+        item = self._transcript_items.pop(normalized_item_id, None)
+        if item is None:
+            return
+        self._transcript_failed_count += 1
+        if not self.closed:
+            await self.send(
+                "candidate.transcript.failed",
+                item_id=normalized_item_id,
+            )
+
+    async def _schedule_evaluation(
+        self,
+        coroutine: Awaitable[None],
+        *,
+        item_id: str | None = None,
+    ) -> bool:
+        normalized_item_id = str(item_id or "").strip() or None
         if self.closed or self.ending:
             if hasattr(coroutine, "close"):
                 coroutine.close()  # type: ignore[attr-defined]
-            return
+            await self._fail_pending_transcript(normalized_item_id)
+            return False
         if self._answer_pending or self.answer_lock.locked():
             if hasattr(coroutine, "close"):
                 coroutine.close()  # type: ignore[attr-defined]
+            await self._fail_pending_transcript(normalized_item_id)
             await self.send(
                 "error",
                 code="ANSWER_IN_PROGRESS",
                 message="上一轮仍在生成，请稍候",
                 recoverable=True,
             )
-            return
+            return False
         self._answer_pending = True
 
         async def run() -> None:
@@ -1198,13 +1736,27 @@ class BrowserVoiceSession:
                         recoverable=True,
                     )
             finally:
-                self._answer_pending = False
+                try:
+                    item = (
+                        self._transcript_items.get(normalized_item_id)
+                        if normalized_item_id
+                        else None
+                    )
+                    if (
+                        item is not None
+                        and item.get("persisted") is not True
+                        and not self._preserving_pending_transcripts
+                    ):
+                        await self._fail_pending_transcript(normalized_item_id)
+                finally:
+                    self._answer_pending = False
 
         task = asyncio.create_task(
             run(), name=f"voice-answer-{self.interview_id}"
         )
         self.evaluation_tasks.add(task)
         task.add_done_callback(self.evaluation_tasks.discard)
+        return True
 
     async def _finish_active_omni_response(self, *, cancel: bool) -> None:
         if not self.omni or not (
@@ -1308,6 +1860,8 @@ class BrowserVoiceSession:
                 reason,
             )
             self.generation += 1
+            self._drop_omni_audio = True
+            await self._cancel_omni_audio_releases()
             current = asyncio.current_task()
             if self.tts_task and self.tts_task is not current and not self.tts_task.done():
                 self.tts_task.cancel()
@@ -1343,6 +1897,8 @@ class BrowserVoiceSession:
             self.closed = True
             self.ending = True
             self.generation += 1
+            self._drop_omni_audio = True
+            await self._cancel_omni_audio_releases()
             if self._deliberate_interrupt_task and not self._deliberate_interrupt_task.done():
                 self._deliberate_interrupt_task.cancel()
                 with suppress(asyncio.CancelledError):

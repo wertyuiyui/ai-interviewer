@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import os
 import sys
@@ -68,6 +69,19 @@ class EventRecorder:
         )
 
 
+class BlockingAudioRecorder(EventRecorder):
+    def __init__(self) -> None:
+        super().__init__()
+        self.audio_send_started = asyncio.Event()
+        self.allow_audio_send = asyncio.Event()
+
+    async def __call__(self, event_type: str, **payload: Any) -> None:
+        if event_type == "audio.chunk":
+            self.audio_send_started.set()
+            await self.allow_audio_send.wait()
+        await super().__call__(event_type, **payload)
+
+
 class FakeDatabase:
     def __init__(self, turn_count: int = 0) -> None:
         self.last_questions: list[tuple[str, str]] = []
@@ -86,6 +100,7 @@ class FakeDatabase:
 class FakeEngine:
     async def answer(self, _interview_id: str, _text: str) -> Any:
         return SimpleNamespace(
+            turn=SimpleNamespace(ordinal=1),
             question="请继续解释 Redis 的过期删除策略。",
             pressure_action="chain",
             silence_seconds=0,
@@ -97,6 +112,7 @@ class FakeEngine:
 class BilingualFakeEngine:
     async def answer(self, _interview_id: str, _text: str) -> Any:
         return SimpleNamespace(
+            turn=SimpleNamespace(ordinal=1),
             question="请解释 MySQL InnoDB 的 MVCC，并说明 Redis cache miss 的处理。",
             pressure_action="chain",
             silence_seconds=0,
@@ -219,6 +235,67 @@ class BlockingTTS:
         raise AssertionError("unreachable")
 
 
+class CancellationResistantTTS:
+    """Models a provider operation that consumes task cancellation late."""
+
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.cancellation_received = asyncio.Event()
+        self.allow_return = asyncio.Event()
+
+    async def synthesize(self, _text: str) -> tuple[bytes, str]:
+        self.started.set()
+        try:
+            await self.allow_return.wait()
+        except asyncio.CancelledError:
+            self.cancellation_received.set()
+            await self.allow_return.wait()
+        return b"late-fallback-audio", "audio/mpeg"
+
+
+class BlockingCorrectionEngine:
+    def __init__(self) -> None:
+        self.answer_started = asyncio.Event()
+        self.allow_answer = asyncio.Event()
+        self.corrected_ordinals: list[int] = []
+        self.preserved_answers: list[dict[str, Any]] = []
+
+    async def answer(self, _interview_id: str, _text: str) -> Any:
+        self.answer_started.set()
+        await self.allow_answer.wait()
+        return SimpleNamespace(
+            turn=SimpleNamespace(ordinal=7),
+            question="请继续说明事务隔离级别。",
+            pressure_action=None,
+            silence_seconds=0,
+            ended=False,
+            end_reason=None,
+        )
+
+    async def correct_answer(
+        self,
+        _interview_id: str,
+        *,
+        ordinal: int,
+        text: str,
+    ) -> dict[str, Any]:
+        self.corrected_ordinals.append(ordinal)
+        return {
+            "ordinal": ordinal,
+            "original_text": "原始转写",
+            "answer": text,
+        }
+
+    async def preserve_unscored_answer(
+        self,
+        _interview_id: str,
+        text: str,
+        **metadata: Any,
+    ) -> Any:
+        self.preserved_answers.append({"text": text, **metadata})
+        return SimpleNamespace(ordinal=metadata.get("ordinal") or 1)
+
+
 def make_session(
     recorder: EventRecorder,
     *,
@@ -323,6 +400,13 @@ def test_typed_l0_answer_does_not_cancel_and_waits_for_matching_response_done() 
             event.get("state") == "listening" for event in recorder.events
         )
 
+        await omni.emit(
+            {
+                "type": "assistant_done",
+                "response_id": omni.control_response_id,
+                "text": "请继续解释 Redis 的过期删除策略。",
+            }
+        )
         await omni.emit(
             {
                 "type": "response_done",
@@ -438,6 +522,243 @@ def test_l0_browser_session_mixed_language_audio_to_next_spoken_question(
     assert "请解释 MySQL InnoDB" not in caplog.text
 
 
+def test_l0_blocks_paraphrased_audio_and_synthesizes_locked_display_text() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+        omni = FakeOmni()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+        session._omni_expected_speech = "请解释 Redis 的过期删除策略。"
+        session.provider_task = asyncio.create_task(session._consume_omni())
+
+        with patch("app.voice_session.EdgeTTS", return_value=FakeTTS()):
+            await omni.emit(
+                {
+                    "type": "response_started",
+                    "response_id": "mismatch-response",
+                    "status": "in_progress",
+                }
+            )
+            await omni.emit(
+                {
+                    "type": "audio_chunk",
+                    "response_id": "mismatch-response",
+                    "audio": b"provider-paraphrase",
+                    "sample_rate": 24000,
+                }
+            )
+            await omni.emit(
+                {
+                    "type": "assistant_done",
+                    "response_id": "mismatch-response",
+                    "text": "我们换一道题吧。",
+                }
+            )
+            await omni.emit(
+                {
+                    "type": "response_done",
+                    "response_id": "mismatch-response",
+                    "status": "completed",
+                }
+            )
+            await wait_until(
+                lambda: recorder.first("interviewer.audio.synced") is not None
+            )
+
+        synced = recorder.first("interviewer.audio.synced")
+        assert synced is not None
+        assert synced["text"] == "请解释 Redis 的过期删除策略。"
+        assert synced["spoken_text"] == synced["text"]
+        assert synced["audio_transcript"] == synced["text"]
+        assert synced["fallback_tts"] is True
+        assert synced["discarded_provider_transcript"] == "我们换一道题吧。"
+        audio_event = recorder.first("audio.chunk")
+        assert audio_event is not None
+        played = base64.b64decode(audio_event["audio"])
+        assert played == "pcm:请解释 Redis 的过期删除策略。".encode()
+        assert played != b"provider-paraphrase"
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_l0_response_waiter_wakes_only_after_verified_audio_is_sent() -> None:
+    async def scenario() -> None:
+        recorder = BlockingAudioRecorder()
+        session = make_session(recorder)
+        omni = FakeOmni()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+        session._omni_expected_speech = "请解释 Redis 的过期删除策略。"
+        session.provider_task = asyncio.create_task(session._consume_omni())
+
+        await omni.emit(
+            {
+                "type": "response_started",
+                "response_id": "ordered-response",
+                "status": "in_progress",
+            }
+        )
+        await omni.emit(
+            {
+                "type": "assistant_done",
+                "response_id": "ordered-response",
+                "text": "请解释 Redis 的过期删除策略。",
+            }
+        )
+        await omni.emit(
+            {
+                "type": "audio_chunk",
+                "response_id": "ordered-response",
+                "audio": b"verified-audio",
+                "sample_rate": 24000,
+            }
+        )
+        await omni.emit(
+            {
+                "type": "response_done",
+                "response_id": "ordered-response",
+                "status": "completed",
+            }
+        )
+
+        await asyncio.wait_for(recorder.audio_send_started.wait(), timeout=1)
+        response_done = session._omni_response_events["ordered-response"]
+        assert not response_done.is_set()
+
+        recorder.allow_audio_send.set()
+        await asyncio.wait_for(response_done.wait(), timeout=1)
+        event_types = [event["type"] for event in recorder.events]
+        assert event_types.index("audio.chunk") < event_types.index("audio.stream.done")
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_l0_vad_cancels_verified_release_without_blocking_event_consumer() -> None:
+    async def scenario() -> None:
+        recorder = BlockingAudioRecorder()
+        session = make_session(recorder)
+        omni = FakeOmni()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+        session._omni_expected_speech = "请解释 Redis 的过期删除策略。"
+        session.provider_task = asyncio.create_task(session._consume_omni())
+
+        await omni.emit(
+            {
+                "type": "response_started",
+                "response_id": "vad-release",
+                "status": "in_progress",
+            }
+        )
+        await omni.emit(
+            {
+                "type": "assistant_done",
+                "response_id": "vad-release",
+                "text": "请解释 Redis 的过期删除策略。",
+            }
+        )
+        await omni.emit(
+            {
+                "type": "audio_chunk",
+                "response_id": "vad-release",
+                "audio": b"verified-audio",
+                "sample_rate": 24000,
+            }
+        )
+        await omni.emit(
+            {
+                "type": "response_done",
+                "response_id": "vad-release",
+                "status": "completed",
+            }
+        )
+        await asyncio.wait_for(recorder.audio_send_started.wait(), timeout=1)
+
+        # This event is consumed by the same provider loop that previously
+        # blocked while forwarding verified audio.
+        await omni.emit({"type": "speech_started", "item_id": "next-answer"})
+        await wait_until(
+            lambda: recorder.first("input.speech_started") is not None
+        )
+        await asyncio.wait_for(
+            session._omni_response_events["vad-release"].wait(), timeout=1
+        )
+
+        event_types = [event["type"] for event in recorder.events]
+        assert "audio.chunk" not in event_types
+        assert "interviewer.audio.synced" not in event_types
+        assert "audio.stream.done" not in event_types
+        assert "audio.clear" in event_types
+        assert omni.cancel_calls == 0
+        assert session._omni_release_tasks == {}
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_typed_barge_in_drops_late_fallback_audio_after_cancellation() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+        omni = FakeOmni()
+        fallback_tts = CancellationResistantTTS()
+        session.actual_mode = "L0"
+        session.omni = omni  # type: ignore[assignment]
+        session._omni_expected_speech = "请解释 Redis 的过期删除策略。"
+        session.provider_task = asyncio.create_task(session._consume_omni())
+
+        with patch("app.voice_session.EdgeTTS", return_value=fallback_tts):
+            await omni.emit(
+                {
+                    "type": "response_started",
+                    "response_id": "fallback-release",
+                    "status": "in_progress",
+                }
+            )
+            await omni.emit(
+                {
+                    "type": "assistant_done",
+                    "response_id": "fallback-release",
+                    "text": "这段内容被模型改写了。",
+                }
+            )
+            await omni.emit(
+                {
+                    "type": "response_done",
+                    "response_id": "fallback-release",
+                    "status": "completed",
+                }
+            )
+            await asyncio.wait_for(fallback_tts.started.wait(), timeout=1)
+
+            interrupt = asyncio.create_task(session._interrupt_for_typed_input())
+            await asyncio.wait_for(
+                fallback_tts.cancellation_received.wait(), timeout=1
+            )
+            fallback_tts.allow_return.set()
+            await asyncio.wait_for(interrupt, timeout=1)
+
+        await asyncio.wait_for(
+            session._omni_response_events["fallback-release"].wait(), timeout=1
+        )
+        event_types = [event["type"] for event in recorder.events]
+        assert "audio.chunk" not in event_types
+        assert "audio.file" not in event_types
+        assert "interviewer.audio.synced" not in event_types
+        assert "audio.stream.done" not in event_types
+        assert session._drop_omni_audio is True
+        assert session._omni_release_tasks == {}
+        # response.done already cleared the active provider response, so typed
+        # barge-in only needs to cancel the local verified/fallback release.
+        assert omni.cancel_calls == 0
+        await session.close()
+
+    asyncio.run(scenario())
+
+
 def test_l0_transcription_failure_is_recoverable_and_clears_partial() -> None:
     async def scenario() -> None:
         recorder = EventRecorder()
@@ -500,6 +821,159 @@ def test_l0_duplicate_completed_item_is_scored_only_once() -> None:
             for event in recorder.events
         ) == 1
         assert session._completed_transcription_item_ids == {"duplicate-item-1"}
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_voice_item_uses_committed_ordinal_for_correction_not_prediction() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        database = FakeDatabase(turn_count=4)
+        engine = BlockingCorrectionEngine()
+        session = make_session(recorder, engine=engine, database=database)
+        asr = FakeOmni()
+        session.actual_mode = "L3"
+        session.asr = asr  # type: ignore[assignment]
+        session.provider_task = asyncio.create_task(session._consume_asr())
+
+        await asr.emit(
+            {
+                "type": "user_done",
+                "item_id": "correction-item",
+                "text": "MySQL 默认是可重复读。",
+            }
+        )
+        await asyncio.wait_for(engine.answer_started.wait(), timeout=1)
+
+        displayed = recorder.first("candidate.transcript.done")
+        assert displayed is not None and displayed["ordinal"] == 5
+        assert session._transcript_items["correction-item"]["ordinal"] is None
+
+        correction = asyncio.create_task(
+            session.handle_transcript_correction(
+                text="MySQL InnoDB 默认是可重复读。",
+                ordinal=5,
+                item_id="correction-item",
+            )
+        )
+        await asyncio.sleep(0)
+        assert not correction.done()
+
+        engine.allow_answer.set()
+        await asyncio.wait_for(correction, timeout=1)
+
+        assert engine.corrected_ordinals == [7]
+        item = session._transcript_items["correction-item"]
+        assert item["ordinal"] == 7
+        assert item["persisted"] is True
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_rejected_voice_evaluation_discards_uncommitted_item() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+        session._answer_pending = True
+        session._transcript_items["overlap-item"] = {
+            "ordinal": None,
+            "text": "重叠回答",
+            "original_text": "重叠回答",
+        }
+
+        accepted = await session._schedule_evaluation(
+            session._pipeline_answer("重叠回答", item_id="overlap-item"),
+            item_id="overlap-item",
+        )
+
+        assert accepted is False
+        assert "overlap-item" not in session._transcript_items
+        failed = recorder.first("candidate.transcript.failed")
+        assert failed is not None and failed["item_id"] == "overlap-item"
+        error = recorder.first("error")
+        assert error is not None and error["code"] == "ANSWER_IN_PROGRESS"
+        session._answer_pending = False
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_correction_reports_timeout_instead_of_using_client_ordinal() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        engine = BlockingCorrectionEngine()
+        session = make_session(recorder, engine=engine)
+        session._transcript_items["pending-item"] = {
+            "ordinal": None,
+            "text": "待处理转写",
+            "original_text": "待处理转写",
+        }
+
+        async def timed_out(*, timeout: float = 7.0) -> bool:
+            assert timeout == 15.0
+            return False
+
+        session._wait_for_current_evaluation = timed_out  # type: ignore[method-assign]
+        try:
+            await session.handle_transcript_correction(
+                text="修正后的转写",
+                ordinal=99,
+                item_id="pending-item",
+            )
+        except AppError as exc:
+            assert exc.code == "TRANSCRIPT_NOT_PERSISTED"
+            assert exc.status_code == 409
+        else:
+            raise AssertionError("a correction timeout must be reported")
+
+        assert engine.corrected_ordinals == []
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_prepare_end_preserves_accepted_voice_answer_when_scoring_times_out() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        engine = BlockingCorrectionEngine()
+        session = make_session(recorder, engine=engine)
+        session._transcript_items["final-voice-item"] = {
+            "ordinal": None,
+            "predicted_ordinal": 1,
+            "text": "这是结束前已经完成转写的回答。",
+            "original_text": "这是结束前已经完成转写的回答。",
+            "input_mode": "voice",
+            "answer_duration_seconds": 3.5,
+        }
+        accepted = await session._schedule_evaluation(
+            session._pipeline_answer(
+                "这是结束前已经完成转写的回答。",
+                input_mode="voice",
+                item_id="final-voice-item",
+                answer_duration_seconds=3.5,
+            ),
+            item_id="final-voice-item",
+        )
+        assert accepted is True
+        await asyncio.wait_for(engine.answer_started.wait(), timeout=1)
+
+        await session.prepare_end(drain_timeout=0.01)
+
+        assert engine.preserved_answers == [
+            {
+                "text": "这是结束前已经完成转写的回答。",
+                "input_mode": "voice",
+                "answer_duration_seconds": 3.5,
+                "ordinal": 1,
+            }
+        ]
+        item = session._transcript_items["final-voice-item"]
+        assert item["ordinal"] == 1
+        assert item["persisted"] is True
+        assert item["unscored"] is True
+        assert recorder.first("candidate.transcript.failed") is None
         await session.close()
 
     asyncio.run(scenario())
@@ -590,6 +1064,27 @@ def test_stress_interrupt_speaks_while_candidate_is_still_talking() -> None:
         assert session._candidate_speaking is True
         assert "先停一下" in interrupt["text"]
         await session._candidate_speech_ended()
+        await session.close()
+
+    asyncio.run(scenario())
+
+
+def test_answer_duration_stops_at_vad_end_not_transcription_completion() -> None:
+    async def scenario() -> None:
+        recorder = EventRecorder()
+        session = make_session(recorder)
+
+        await session._candidate_speech_started(source="silero")
+        await asyncio.sleep(0.01)
+        await session._candidate_speech_ended()
+        measured = session._speech_duration_seconds
+        assert measured is not None and measured >= 0.005
+
+        # ASR finalization can arrive later. A duplicate speech-ended call from
+        # that final event must not add provider latency to the spoken duration.
+        await asyncio.sleep(0.04)
+        await session._candidate_speech_ended()
+        assert session._speech_duration_seconds == measured
         await session.close()
 
     asyncio.run(scenario())

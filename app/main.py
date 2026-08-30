@@ -23,6 +23,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import ValidationError
 
 from .config import ROOT_DIR, Settings, get_settings
 from .content import (
@@ -36,7 +37,12 @@ from .errors import AppError
 from .interview_engine import InterviewEngine
 from .report_engine import ReportEngine
 from .resume import ResumeParser, extract_pdf_text
-from .schemas import InterviewCreate, InterviewFinish, InterviewRetry
+from .schemas import (
+    InterviewCreate,
+    InterviewFinish,
+    InterviewRetry,
+    TranscriptCorrection,
+)
 from .voice_session import BrowserVoiceSession
 
 
@@ -93,7 +99,7 @@ if settings.allowed_origins:
         CORSMiddleware,
         allow_origins=list(settings.allowed_origins),
         allow_credentials=False,
-        allow_methods=["GET", "POST", "DELETE"],
+        allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Content-Type"],
     )
 
@@ -280,6 +286,17 @@ async def retry_interview(
     return await interview_engine.retry(interview_id, request.client_id)
 
 
+@app.patch("/api/interviews/{interview_id}/turns/{ordinal}")
+async def correct_interview_transcript(
+    interview_id: str, ordinal: int, request: TranscriptCorrection
+) -> dict[str, Any]:
+    await _require_interview(interview_id)
+    corrected = await interview_engine.correct_answer(
+        interview_id, ordinal=ordinal, text=request.text
+    )
+    return {**corrected, "item_id": request.item_id}
+
+
 @app.post("/api/interviews/{interview_id}/finish", status_code=202)
 async def finish_interview(
     interview_id: str, request: InterviewFinish | None = None
@@ -381,6 +398,23 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
 
+    async def drain_answers(timeout: float = 20.0) -> None:
+        """Let accepted answers commit before ending, then preserve on cancel."""
+
+        current = asyncio.current_task()
+        pending = [
+            task
+            for task in answer_tasks
+            if task is not current and not task.done()
+        ]
+        if not pending:
+            return
+        _, unfinished = await asyncio.wait(pending, timeout=timeout)
+        for task in unfinished:
+            task.cancel()
+        if unfinished:
+            await asyncio.gather(*unfinished, return_exceptions=True)
+
     async def finalize(reason: str) -> None:
         async with terminal_lock:
             if ended.is_set():
@@ -398,9 +432,16 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
             if ended.is_set() or ending.is_set():
                 return
             ending.set()
-            await cancel_answers()
-            if voice_session:
-                await voice_session.prepare_end()
+        # Do not hold terminal_lock while an accepted answer finishes: an
+        # answer that independently triggers early-stop calls finalize(), which
+        # also needs the lock.
+        if voice_session:
+            await voice_session.prepare_end()
+        else:
+            await drain_answers()
+        async with terminal_lock:
+            if ended.is_set():
+                return
             reason = reason if reason in {"time", "manual"} else "manual"
             await db.finish_interview(interview_id, reason)
             closing = (
@@ -509,7 +550,11 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                     voice_mode=interview["voice_mode"],
                 )
                 await send(
-                    "interviewer.text.done", text=interview["last_question"]
+                    "interviewer.text.done",
+                    text=interview["last_question"],
+                    recommended_answer_seconds=interview_engine.recommended_answer_seconds(
+                        str(interview["last_question"])
+                    ),
                 )
                 if interview["voice_mode"] != "L3":
                     voice_session = BrowserVoiceSession(
@@ -558,6 +603,49 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
                         ),
                         answer_tasks,
                         f"text-answer-{interview_id}",
+                    )
+            elif event_type == "candidate.transcript.correct":
+                if not ready:
+                    await send("error", code="NOT_READY", message="请先开始面试")
+                    continue
+                try:
+                    correction = TranscriptCorrection.model_validate(event)
+                    if voice_session:
+                        await voice_session.handle_transcript_correction(
+                            text=correction.text,
+                            ordinal=correction.ordinal,
+                            item_id=correction.item_id,
+                        )
+                    else:
+                        if correction.ordinal is None:
+                            raise AppError(
+                                "TURN_ORDINAL_REQUIRED",
+                                "文字模式修正转写时必须提供 ordinal",
+                                status_code=422,
+                            )
+                        corrected = await interview_engine.correct_answer(
+                            interview_id,
+                            ordinal=correction.ordinal,
+                            text=correction.text,
+                        )
+                        await send(
+                            "candidate.transcript.corrected",
+                            **corrected,
+                            item_id=correction.item_id,
+                        )
+                except AppError as exc:
+                    await send(
+                        "error",
+                        code=exc.code,
+                        message=exc.message,
+                        recoverable=exc.status_code < 500,
+                    )
+                except ValidationError:
+                    await send(
+                        "error",
+                        code="INVALID_TRANSCRIPT_CORRECTION",
+                        message="转写修正参数不正确",
+                        recoverable=True,
                     )
             elif event_type == "interview.end":
                 reason = str(event.get("reason") or "manual")
@@ -623,10 +711,36 @@ async def _handle_text_answer(
         )
         return
     async with lock:
-        await send("candidate.transcript.done", text=answer)
+        predicted_ordinal = len(await db.list_turns(interview_id)) + 1
+        await send(
+            "candidate.transcript.done",
+            text=answer,
+            source="text",
+            ordinal=predicted_ordinal,
+        )
         await send("interviewer.state", state="thinking")
+        persisted = False
         try:
             result = await interview_engine.answer(interview_id, answer)
+            persisted = True
+        except asyncio.CancelledError:
+            if not persisted:
+                preserve_task = asyncio.create_task(
+                    interview_engine.preserve_unscored_answer(
+                        interview_id,
+                        answer,
+                        input_mode="text",
+                        ordinal=predicted_ordinal,
+                    )
+                )
+                try:
+                    await asyncio.shield(preserve_task)
+                except asyncio.CancelledError:
+                    # Finish the independent SQLite write before propagating
+                    # cancellation; otherwise the report can race an empty DB.
+                    with suppress(asyncio.CancelledError, Exception):
+                        await asyncio.shield(preserve_task)
+            raise
         except AppError as exc:
             if exc.code == "INTERVIEW_TIMEOUT":
                 await on_end("time")
@@ -637,6 +751,10 @@ async def _handle_text_answer(
                 message=exc.message,
                 recoverable=exc.code != "INTERVIEW_ENDED",
             )
+            return
+        if stop_event.is_set():
+            if result.ended:
+                await on_end(result.end_reason or "poor_performance")
             return
         if result.silence_seconds:
             await send(
@@ -655,6 +773,7 @@ async def _handle_text_answer(
             "interviewer.text.done",
             text=result.question,
             pressure_action=result.pressure_action,
+            recommended_answer_seconds=result.recommended_answer_seconds,
         )
         if result.ended:
             await on_end(result.end_reason or "poor_performance")
@@ -705,7 +824,7 @@ async def _require_interview(interview_id: str) -> dict[str, Any]:
 
 
 def _public_interview(interview: dict[str, Any]) -> dict[str, Any]:
-    return {
+    result = {
         key: interview.get(key)
         for key in (
             "id",
@@ -731,6 +850,10 @@ def _public_interview(interview: dict[str, Any]) -> dict[str, Any]:
             "end_reason",
         )
     }
+    result["recommended_answer_seconds"] = interview_engine.recommended_answer_seconds(
+        str(interview.get("last_question") or "")
+    )
+    return result
 
 
 def _validate_client_id(client_id: str) -> None:

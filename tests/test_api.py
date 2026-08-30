@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from app.db import Database
 from app.interview_engine import InterviewEngine
 from app.report_engine import ReportEngine
 from app.resume import ResumeParser
+from app.schemas import InterviewCreate, Project, ResumeData
 
 
 @pytest.mark.asyncio
@@ -171,3 +173,69 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
         )
         assert history.status_code == 200
         assert history.json()["items"][0]["interview_id"] == interview_id
+
+
+@pytest.mark.asyncio
+async def test_cancelled_accepted_text_answer_is_preserved_without_fake_score(
+    tmp_path, monkeypatch
+) -> None:
+    settings = replace(
+        get_settings(),
+        mock_llm=True,
+        voice_mode="L3",
+        db_path=tmp_path / "cancelled-answer.db",
+    )
+    database = Database(settings)
+    await database.initialize()
+
+    class SlowEngine(InterviewEngine):
+        def __init__(self) -> None:
+            super().__init__(database, settings)
+            self.started = asyncio.Event()
+
+        async def answer(self, *_args, **_kwargs):
+            self.started.set()
+            await asyncio.Event().wait()
+
+    engine = SlowEngine()
+    monkeypatch.setattr(main_module, "db", database)
+    monkeypatch.setattr(main_module, "interview_engine", engine)
+    created = await engine.create(
+        InterviewCreate(
+            client_id="cancel-answer-client",
+            company="bytedance",
+            resume=ResumeData(
+                项目=[Project(name="订单服务", technologies=["Java", "MySQL"])]
+            ),
+        )
+    )
+    await database.start_interview(created["id"])
+    events: list[dict] = []
+
+    async def send(event_type: str, **payload) -> None:
+        events.append({"type": event_type, **payload})
+
+    async def on_end(_reason: str) -> None:
+        return None
+
+    task = asyncio.create_task(
+        main_module._handle_text_answer(
+            interview_id=created["id"],
+            answer="我会先说明订单链路和事务边界。",
+            send=send,
+            stop_event=asyncio.Event(),
+            on_end=on_end,
+        )
+    )
+    await asyncio.wait_for(engine.started.wait(), timeout=1)
+    assert any(event["type"] == "candidate.transcript.done" for event in events)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    turns = await database.list_turns(created["id"])
+    assert len(turns) == 1
+    assert turns[0].answer == "我会先说明订单链路和事务边界。"
+    assert turns[0].score is None
+    assert turns[0].scorable is False
+    assert turns[0].score_source == "unavailable"
