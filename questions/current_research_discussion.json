@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0",
+  "curated_at": "2026-08-30",
+  "specialization": "AI 工程后端 / LLM Infra",
+  "selection_note": "只考察工程理解、相关经验和观点，不要求复现论文公式或记忆实验数字。",
+  "questions": [
+    {
+      "id": "research-2026-smartgen",
+      "category": "前沿讨论",
+      "topic": "pd_disaggregation_kv_transfer",
+      "question": "近期推理系统常把 prefill 和 decode 分开部署，但 KV cache 传输会吃满网络。你怎么看选择性传输 KV 的收益与正确性风险？",
+      "followups": ["如果让你做小规模验证，会看哪些延迟、带宽和质量指标？", "什么流量结构下保持同机执行反而更合适？"],
+      "difficulty": "discussion",
+      "detail_required": false,
+      "published_at": "2026-07-30",
+      "source_title": "SmartGen: Seamless Disaggregated LLM Inference with Selective KV Cache Transfer",
+      "source_url": "https://arxiv.org/abs/2607.28150",
+      "source_ids": ["research-smartgen-2026"]
+    },
+    {
+      "id": "research-2026-llmd",
+      "category": "前沿讨论",
+      "topic": "inference_aware_routing",
+      "question": "普通轮询不了解 prefix cache、请求 token 长度和 GPU 排队。你会如何设计一个推理感知路由器，同时守住租户公平和 SLO？",
+      "followups": ["路由决策依赖的状态变旧时会发生什么？", "你会先做哪一个最小实验来证明复杂路由值得上线？"],
+      "difficulty": "discussion",
+      "detail_required": false,
+      "project_as_of": "2026-05",
+      "source_title": "llm-d: Kubernetes-native distributed inference",
+      "source_url": "https://github.com/llm-d/llm-d",
+      "source_ids": ["project-llm-d"]
+    },
+    {
+      "id": "research-2026-flashattention4",
+      "category": "前沿讨论",
+      "topic": "hardware_aware_attention",
+      "question": "FlashAttention-4 强调为新一代 GPU 的不对称硬件能力重做流水线。作为后端或 Infra 工程师，你如何判断一项 kernel 优化能否转化为线上收益？",
+      "followups": ["为什么单 kernel 的 TFLOPS 提升不等于端到端成本下降？", "你会怎样设计不同上下文长度与并发量的基准测试？"],
+      "difficulty": "discussion",
+      "detail_required": false,
+      "published_at": "2026-03-05",
+      "source_title": "FlashAttention-4: Algorithm and Kernel Pipelining Co-Design for Asymmetric Hardware Scaling",
+      "source_url": "https://arxiv.org/abs/2603.05451",
+      "source_ids": ["research-flashattention4-2026"]
+    },
+    {
+      "id": "research-2025-camel",
+      "category": "前沿讨论",
+      "topic": "agent_capability_security",
+      "question": "CaMeL 主张把 Agent 的控制流与不可信数据分开，并用 capability 限制工具权限。你会如何把这个思想落到一个真实工具调用服务？",
+      "followups": ["只在 system prompt 里写“忽略恶意指令”为什么不够？", "安全边界变强后，产品可用性和开发复杂度会付出什么代价？"],
+      "difficulty": "discussion",
+      "detail_required": false,
+      "published_at": "2025-03-24",
+      "source_title": "Defeating Prompt Injections by Design",
+      "source_url": "https://arxiv.org/abs/2503.18813",
+      "source_ids": ["research-camel-2025"]
+    },
+    {
+      "id": "research-2026-mooncake",
+      "category": "前沿讨论",
+      "topic": "hierarchical_kv_cache",
+      "question": "分布式 KV cache 正从 GPU 显存扩展到主存、SSD 和远端存储。你认为多级缓存最难的是命中率、传输调度、隔离还是故障恢复？为什么？",
+      "followups": ["多租户长对话下缓存键和淘汰策略需要包含哪些信息？", "远端命中但读取更慢时，调度器如何决定复用还是重算？"],
+      "difficulty": "discussion",
+      "detail_required": false,
+      "paper_published_at": "2025-02",
+      "project_as_of": "2026-05",
+      "source_title": "Mooncake: A KVCache-centric Disaggregated Architecture (FAST '25) and current project",
+      "source_url": "https://www.usenix.org/conference/fast25/presentation/qin",
+      "project_url": "https://github.com/kvcache-ai/Mooncake",
+      "source_ids": ["research-mooncake-fast25", "project-mooncake"]
+    }
+  ]
+}

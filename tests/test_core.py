@@ -13,7 +13,11 @@ from pydantic import ValidationError
 from app.config import get_settings
 from app.content import (
     is_ai_specialization,
+    load_current_research_question_bank,
+    load_experience_question_bank,
+    load_project_question_bank,
     load_question_bank,
+    load_source_catalog,
     load_specialization_question_bank,
     load_style_card,
     load_topic_links,
@@ -143,7 +147,8 @@ def test_aris_ai_backend_bank_is_only_weighted_for_matching_specialization() -> 
     )
     assert len(baseline) == len(tailored) == 18
     assert not any(item["category"] == "AI工程" for item in baseline)
-    assert sum(item["category"] == "AI工程" for item in tailored) == 6
+    assert sum(item["category"] == "AI工程" for item in tailored) == 5
+    assert sum(item["category"] == "前沿讨论" for item in tailored) == 1
 
     prompt = build_system_prompt(
         company="tencent",
@@ -158,6 +163,60 @@ def test_aris_ai_backend_bank_is_only_weighted_for_matching_specialization() -> 
         '"AI 工程后端 / LLM Infra"'
     ) in prompt
     assert "llm_request_lifecycle" in prompt
+    assert "不要求背论文数字" in prompt
+
+
+def test_real_experience_and_current_research_sources_are_traceable() -> None:
+    catalog = load_source_catalog()
+    sources = catalog["sources"]
+    source_ids = {item["id"] for item in sources}
+    assert len(source_ids) == len(sources) >= 15
+    assert all(urlparse(item["url"]).scheme == "https" for item in sources)
+    assert all("license_spdx" in item and item["usage_mode"] for item in sources)
+    assert {"question_bank", "github_project", "interview_experience", "research"} <= {
+        item["kind"] for item in sources
+    }
+    assert "不绕过登录" in catalog["collection_policy"]["social_media"]
+
+    for company in ("bytedance", "meituan", "tencent"):
+        bank = load_experience_question_bank(company)
+        assert len(bank) >= 4
+        assert all(set(item["source_ids"]) <= source_ids for item in bank)
+        selected = select_questions(company, [], 15, "通用后端")
+        assert sum(item["id"].startswith("experience-") for item in selected) == 2
+
+    experience_sources = [
+        item for item in sources if item["kind"] == "interview_experience"
+    ]
+    assert all(
+        item["provenance_type"] in {"first_hand", "compilation"}
+        for item in experience_sources
+    )
+    assert any(item["provenance_type"] == "compilation" for item in experience_sources)
+
+    projects = load_project_question_bank("通用后端")
+    assert projects
+    assert all(item["source_ids"] for item in projects)
+    assert all(set(item["source_ids"]) <= source_ids for item in projects)
+
+    research = load_current_research_question_bank("AI 工程后端 / LLM Infra")
+    assert len(research) >= 5
+    assert all(item["category"] == "前沿讨论" for item in research)
+    assert all(item["difficulty"] == "discussion" for item in research)
+    assert all(item["detail_required"] is False for item in research)
+    assert all(item["source_ids"] for item in research)
+    assert all(set(item["source_ids"]) <= source_ids for item in research)
+    assert not load_current_research_question_bank("Java 后端")
+
+    selected_research_ids = {
+        item["id"]
+        for seed in ("a", "b", "c", "d", "e", "f", "g", "h")
+        for item in select_questions(
+            "tencent", [], 15, "AI Infra", selection_seed=seed
+        )
+        if item["category"] == "前沿讨论"
+    }
+    assert len(selected_research_ids) >= 4
 
 
 def test_interview_parameter_contract_and_pressure_levels() -> None:

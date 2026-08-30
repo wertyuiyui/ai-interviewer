@@ -1,0 +1,228 @@
+{
+  "schema_version": "1.0",
+  "curated_at": "2026-08-30",
+  "collection_policy": {
+    "summary": "只收录公开可访问、可追溯的原始链接；运行时使用人工改写的短问题与考察信号，不复制长篇正文。",
+    "verification": "面经只代表发帖者的公开自述，未经招聘企业确认；产品中称为‘面经衍生题’，不宣称为官方真题。",
+    "social_media": "不绕过登录、验证码、robots 或反爬措施。小红书正文目前无法稳定公开复核，因此本版不抓取、不入库；后续只接受作者公开分享链接或得到授权的材料。",
+    "runtime": "静态 JSON，不使用 RAG、向量库或运行时爬虫。"
+  },
+  "sources": [
+    {
+      "id": "bank-javaguide",
+      "kind": "question_bank",
+      "title": "JavaGuide",
+      "url": "https://github.com/Snailclimb/JavaGuide",
+      "license_spdx": "Apache-2.0",
+      "usage_mode": "licensed reference; prompts rewritten",
+      "last_verified": "2026-08-30",
+      "signals": ["Java", "MySQL", "Redis", "并发", "计算机网络", "系统设计"]
+    },
+    {
+      "id": "bank-advanced-java",
+      "kind": "question_bank",
+      "title": "doocs/advanced-java",
+      "url": "https://github.com/doocs/advanced-java",
+      "license_spdx": null,
+      "usage_mode": "link-only; concepts rewritten",
+      "last_verified": "2026-08-30",
+      "signals": ["高并发", "分布式事务", "幂等", "消息队列", "高可用"]
+    },
+    {
+      "id": "bank-codetop",
+      "kind": "question_bank",
+      "title": "CodeTop",
+      "url": "https://codetop.cc/home",
+      "license_spdx": null,
+      "usage_mode": "link-only",
+      "last_verified": "2026-08-30",
+      "signals": ["大厂高频算法", "手撕思路", "复杂度", "边界条件"]
+    },
+    {
+      "id": "bank-aris",
+      "kind": "question_bank",
+      "title": "ARIS-in-AI-Offer",
+      "url": "https://github.com/wanshuiyin/ARIS-in-AI-Offer",
+      "license_spdx": "MIT",
+      "usage_mode": "licensed reference; prompts rewritten",
+      "last_verified": "2026-08-30",
+      "signals": ["LLM Serving", "KV Cache", "量化", "Agent", "评测"]
+    },
+    {
+      "id": "project-cloudwego-hertz",
+      "kind": "github_project",
+      "title": "CloudWeGo Hertz",
+      "url": "https://github.com/cloudwego/hertz",
+      "license_spdx": "Apache-2.0",
+      "usage_mode": "metadata and rewritten scenario",
+      "last_verified": "2026-08-30",
+      "signals": ["Go", "HTTP 框架", "中间件", "高性能", "可观测性"]
+    },
+    {
+      "id": "project-cloudwego-kitex",
+      "kind": "github_project",
+      "title": "CloudWeGo Kitex",
+      "url": "https://github.com/cloudwego/kitex",
+      "license_spdx": "Apache-2.0",
+      "usage_mode": "metadata and rewritten scenario",
+      "last_verified": "2026-08-30",
+      "signals": ["Go", "RPC", "服务治理", "超时重试", "负载均衡"]
+    },
+    {
+      "id": "project-spring-petclinic",
+      "kind": "github_project",
+      "title": "Spring PetClinic",
+      "url": "https://github.com/spring-projects/spring-petclinic",
+      "license_spdx": "Apache-2.0",
+      "usage_mode": "metadata and rewritten scenario",
+      "last_verified": "2026-08-30",
+      "signals": ["Spring Boot", "JPA", "事务", "REST", "测试"]
+    },
+    {
+      "id": "project-pingcap-talent-plan",
+      "kind": "github_project",
+      "title": "PingCAP Talent Plan / TinyKV",
+      "url": "https://github.com/pingcap/talent-plan",
+      "license_spdx": null,
+      "usage_mode": "link-only; each course has its own license; scenario rewritten",
+      "last_verified": "2026-08-30",
+      "signals": ["Go", "KV 存储", "Raft", "事务", "分布式系统"]
+    },
+    {
+      "id": "experience-bytedance-2026-06",
+      "kind": "interview_experience",
+      "company": "bytedance",
+      "title": "字节跳动后端开发实习生二面复盘（2026-06-15）",
+      "url": "https://www.nowcoder.com/discuss/898592450359349248",
+      "license_spdx": null,
+      "usage_mode": "link-only; prompts rewritten",
+      "provenance_type": "first_hand",
+      "published_at": "2026-06-15",
+      "last_verified": "2026-08-30",
+      "signals": ["项目链路深挖", "本人贡献", "AI 工程取舍", "Java 反射", "SQL"]
+    },
+    {
+      "id": "experience-bytedance-project-drill",
+      "kind": "interview_experience",
+      "company": "bytedance",
+      "title": "字节跳动后端开发实习面经",
+      "url": "https://www.nowcoder.com/discuss/831675",
+      "license_spdx": null,
+      "usage_mode": "link-only; prompts rewritten",
+      "provenance_type": "first_hand",
+      "last_verified": "2026-08-30",
+      "signals": ["线程模型", "HTTP", "数据库隔离", "联合索引", "连续追问"]
+    },
+    {
+      "id": "experience-meituan-2025-04",
+      "kind": "interview_experience",
+      "company": "meituan",
+      "title": "美团后端暑期实习复盘（2025-04）",
+      "url": "https://www.nowcoder.com/discuss/739237507367256064",
+      "license_spdx": null,
+      "usage_mode": "link-only; prompts rewritten",
+      "provenance_type": "first_hand",
+      "published_at": "2025-04",
+      "last_verified": "2026-08-30",
+      "signals": ["Kafka 与 ES", "数据一致性", "缓存 TTL", "第三方故障", "业务降级"]
+    },
+    {
+      "id": "experience-meituan-index-drill",
+      "kind": "interview_experience",
+      "company": "meituan",
+      "title": "美团后端一面复盘（MySQL 深挖）",
+      "url": "https://www.nowcoder.com/discuss/608995688709455872",
+      "license_spdx": null,
+      "usage_mode": "link-only; prompts rewritten",
+      "provenance_type": "first_hand",
+      "last_verified": "2026-08-30",
+      "signals": ["项目收益", "Explain", "B+ 树页", "索引选择", "HashMap 并发"]
+    },
+    {
+      "id": "experience-tencent-2026-06",
+      "kind": "interview_experience",
+      "company": "tencent",
+      "title": "腾讯后台开发日常实习全流程复盘（2026-06）",
+      "url": "https://www.nowcoder.com/discuss/898687456680103936",
+      "license_spdx": null,
+      "usage_mode": "link-only; prompts rewritten",
+      "provenance_type": "first_hand",
+      "published_at": "2026-06",
+      "last_verified": "2026-08-30",
+      "signals": ["循循善诱", "Protobuf", "缓存击穿", "测试与 QPS", "LRU"]
+    },
+    {
+      "id": "experience-tencent-2026-08",
+      "kind": "interview_experience",
+      "company": "tencent",
+      "title": "腾讯后端开发岗面经（2026-08）",
+      "url": "https://www.nowcoder.com/discuss/922860300762611712",
+      "license_spdx": null,
+      "usage_mode": "link-only; prompts rewritten",
+      "provenance_type": "compilation",
+      "published_at": "2026-08",
+      "last_verified": "2026-08-30",
+      "signals": ["多级缓存", "Redis 集群", "分布式锁边界", "高可用", "量化指标"]
+    },
+    {
+      "id": "research-smartgen-2026",
+      "kind": "research",
+      "title": "SmartGen: Selective KV Cache Transfer",
+      "url": "https://arxiv.org/abs/2607.28150",
+      "license_spdx": null,
+      "usage_mode": "link-only; discussion prompt rewritten",
+      "last_verified": "2026-08-30",
+      "signals": ["Prefill/Decode 解耦", "KV 传输", "网络瓶颈", "尾延迟"]
+    },
+    {
+      "id": "research-flashattention4-2026",
+      "kind": "research",
+      "title": "FlashAttention-4",
+      "url": "https://arxiv.org/abs/2603.05451",
+      "license_spdx": null,
+      "usage_mode": "link-only; discussion prompt rewritten",
+      "last_verified": "2026-08-30",
+      "signals": ["软硬件协同", "Blackwell", "流水线", "性能基准"]
+    },
+    {
+      "id": "research-camel-2025",
+      "kind": "research",
+      "title": "CaMeL: Defeating Prompt Injections by Design",
+      "url": "https://arxiv.org/abs/2503.18813",
+      "license_spdx": null,
+      "usage_mode": "link-only; discussion prompt rewritten",
+      "last_verified": "2026-08-30",
+      "signals": ["Agent 安全", "控制流与数据流", "Capability", "最小权限"]
+    },
+    {
+      "id": "project-llm-d",
+      "kind": "github_project",
+      "title": "llm-d",
+      "url": "https://github.com/llm-d/llm-d",
+      "license_spdx": "Apache-2.0",
+      "usage_mode": "metadata and rewritten discussion prompt",
+      "last_verified": "2026-08-30",
+      "signals": ["Kubernetes", "推理路由", "Prefix Cache", "SLO", "自动扩缩容"]
+    },
+    {
+      "id": "project-mooncake",
+      "kind": "github_project",
+      "title": "Mooncake",
+      "url": "https://github.com/kvcache-ai/Mooncake",
+      "license_spdx": "Apache-2.0",
+      "usage_mode": "metadata and rewritten discussion prompt",
+      "last_verified": "2026-08-30",
+      "signals": ["分布式 KV Cache", "RDMA", "分层缓存", "长上下文"]
+    },
+    {
+      "id": "research-mooncake-fast25",
+      "kind": "research",
+      "title": "Mooncake: A KVCache-centric Disaggregated Architecture (FAST '25)",
+      "url": "https://www.usenix.org/conference/fast25/presentation/qin",
+      "license_spdx": null,
+      "usage_mode": "link-only; discussion prompt rewritten",
+      "last_verified": "2026-08-30",
+      "signals": ["Prefill/Decode 解耦", "KV Cache", "分布式缓存", "SLO"]
+    }
+  ]
+}

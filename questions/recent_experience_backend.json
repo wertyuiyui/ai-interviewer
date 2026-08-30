@@ -1,0 +1,130 @@
+{
+  "schema_version": "1.0",
+  "curated_at": "2026-08-30",
+  "note": "根据公开面经中反复出现的考察模式人工改写；不复制原帖答案或长段落。",
+  "companies": {
+    "bytedance": [
+      {
+        "id": "experience-byte-project-chain",
+        "category": "项目深挖",
+        "topic": "project_request_chain",
+        "question": "选一个你最熟悉的项目，从入口请求讲到数据落盘；每一跳由谁负责，你亲自改了哪一段？",
+        "followups": ["你说的性能提升用什么口径测量，基线和样本量是多少？", "如果去掉你做的这一层，最先出现的业务后果是什么？"],
+        "difficulty": "medium",
+        "source_ids": ["experience-bytedance-2026-06", "experience-bytedance-project-drill"]
+      },
+      {
+        "id": "experience-byte-thread-model",
+        "category": "并发",
+        "topic": "thread_model_contention",
+        "question": "你的服务从接收连接到执行业务分别在哪些线程上？共享状态如何同步，最可能争用在哪里？",
+        "followups": ["为什么不用另一种线程模型？", "怎样用指标或压测证明瓶颈确实来自锁竞争？"],
+        "difficulty": "hard",
+        "source_ids": ["experience-bytedance-project-drill"]
+      },
+      {
+        "id": "experience-byte-http-detail",
+        "category": "计网",
+        "topic": "http_request_path",
+        "question": "浏览器发出一个 HTTPS 请求后，到你的业务 handler 之前经过哪些协议与代理层？请结合项目说实际链路。",
+        "followups": ["URL、Host 和 SNI 分别在哪一步被使用？", "同一请求被重试时，服务端如何避免副作用重复发生？"],
+        "difficulty": "hard",
+        "source_ids": ["experience-bytedance-project-drill"]
+      },
+      {
+        "id": "experience-byte-ai-control-flow",
+        "category": "AI工程",
+        "topic": "agent_control_flow",
+        "question": "如果项目里用了 Agent 或 ReAct，请画出口述状态机：一次工具失败、超时或返回脏数据后如何收敛？",
+        "followups": ["为什么这里需要 Agent，而不是固定工作流？", "怎样限制循环次数、工具权限和总成本？"],
+        "difficulty": "discussion",
+        "source_ids": ["experience-bytedance-2026-06"]
+      }
+    ],
+    "meituan": [
+      {
+        "id": "experience-meituan-es-consistency",
+        "category": "项目深挖",
+        "topic": "mysql_es_consistency",
+        "question": "如果业务把 MySQL 数据经消息队列同步到 Elasticsearch，端到端一致性和重复消费怎么保证？",
+        "followups": ["为什么这里选 ES 而不是 Redis ZSet？", "发生积压或乱序时，用户会看到什么，怎样修复？"],
+        "difficulty": "hard",
+        "source_ids": ["experience-meituan-2025-04"]
+      },
+      {
+        "id": "experience-meituan-third-party",
+        "category": "项目深挖",
+        "topic": "dependency_failure",
+        "question": "一个同步依赖突然变慢或宕机，你的服务如何设置超时、重试、熔断和降级，避免把故障放大？",
+        "followups": ["重试预算如何定，哪些请求绝不能自动重试？", "降级结果如何回补并向用户解释？"],
+        "difficulty": "hard",
+        "source_ids": ["experience-meituan-2025-04"]
+      },
+      {
+        "id": "experience-meituan-cache-key",
+        "category": "Redis",
+        "topic": "redis_key_ttl_design",
+        "question": "结合你的业务设计一个 Redis key 和 TTL；说明容量、热点、版本升级和数据一致性的取舍。",
+        "followups": ["TTL 为什么不是随手写一个整数？", "大面积同时过期时如何避免回源峰值？"],
+        "difficulty": "medium",
+        "source_ids": ["experience-meituan-2025-04"]
+      },
+      {
+        "id": "experience-meituan-index-evidence",
+        "category": "MySQL",
+        "topic": "index_optimization_evidence",
+        "question": "你说一条 SQL 被优化过，请给出优化前后的执行计划、数据规模和延迟分位数，而不是只说加了索引。",
+        "followups": ["B+ 树页分裂和回表会怎样影响你的结论？", "线上分布变化后，这个索引可能为什么失效？"],
+        "difficulty": "hard",
+        "source_ids": ["experience-meituan-index-drill"]
+      }
+    ],
+    "tencent": [
+      {
+        "id": "experience-tencent-protobuf",
+        "category": "计网",
+        "topic": "protobuf_tradeoff",
+        "question": "你的服务为什么选 Protobuf 而不是 JSON？请用兼容性、体积、CPU 和调试成本做完整取舍。",
+        "followups": ["字段删除与编号复用会造成什么兼容问题？", "你实际测过多少收益，压测方法是什么？"],
+        "difficulty": "medium",
+        "source_ids": ["experience-tencent-2026-06"]
+      },
+      {
+        "id": "experience-tencent-cache-collapse",
+        "category": "Redis",
+        "topic": "cache_stampede_singleflight",
+        "question": "热点 key 失效时，singleflight 或请求合并的完整流程是什么？失败请求和跨实例场景怎么处理？",
+        "followups": ["等待者数量过大时会不会形成新的队头阻塞？", "本地合并与分布式锁分别适合什么边界？"],
+        "difficulty": "hard",
+        "source_ids": ["experience-tencent-2026-06"]
+      },
+      {
+        "id": "experience-tencent-test-proof",
+        "category": "项目深挖",
+        "topic": "correctness_performance_evidence",
+        "question": "你如何证明项目代码既正确又有性能收益？请分别说自动化测试、压测流量和线上指标。",
+        "followups": ["压测数据和真实流量分布不同时怎么办？", "一次失败实验如何改变了你的实现？"],
+        "difficulty": "medium",
+        "source_ids": ["experience-tencent-2026-06"]
+      },
+      {
+        "id": "experience-tencent-api-migration",
+        "category": "项目深挖",
+        "topic": "api_migration",
+        "question": "线上旧接口要被新接口替换，你会怎样灰度、双写或对账，并设计可回滚的迁移步骤？",
+        "followups": ["调用方无法同时升级时如何兼容？", "用什么指标决定扩大流量或回滚？"],
+        "difficulty": "hard",
+        "source_ids": ["experience-tencent-2026-06"]
+      },
+      {
+        "id": "experience-tencent-cache-lock",
+        "category": "Redis",
+        "topic": "distributed_lock_boundaries",
+        "question": "Redis 分布式锁的过期时间如何定？业务执行超时、进程暂停和主从切换时分别有什么风险？",
+        "followups": ["续期机制会引入什么新故障？", "什么场景下你会放弃分布式锁，改用数据库约束或消息串行化？"],
+        "difficulty": "hard",
+        "source_ids": ["experience-tencent-2026-08"]
+      }
+    ]
+  }
+}

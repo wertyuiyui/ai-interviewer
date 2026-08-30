@@ -13,3 +13,12 @@ manually selected and rewritten knowledge points based on
 
 No upstream blog images or externally linked community question banks are
 redistributed by this project.
+
+## Link-only source catalog
+
+`resources/source_catalog.json` contains links and short factual metadata for
+public GitHub projects, papers, and author-published interview reports. The
+associated runtime questions are newly written summaries of recurring
+assessment themes. Third-party post bodies, answers, screenshots, and social
+media assets are not redistributed. See `references/CURATED_SOURCES.md` for
+the collection policy.

@@ -4,6 +4,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from .config import ROOT_DIR
 from .errors import AppError
@@ -43,10 +44,14 @@ AI_SPECIALIZATION_KEYWORDS = (
     "模型网关",
     "agent",
     "智能体",
+    "ai infra",
+    "ai-infra",
+    "inference",
+    "推理系统",
 )
 
 
-@lru_cache(maxsize=12)
+@lru_cache(maxsize=24)
 def _load_json(path: str) -> Any:
     with Path(path).open("r", encoding="utf-8") as handle:
         return json.load(handle)
@@ -121,6 +126,98 @@ def load_specialization_question_bank(specialization: str) -> list[dict[str, Any
     if not path.exists():
         return []
     return _normalize_questions(_load_json(str(path)), path)
+
+
+def load_experience_question_bank(company: str) -> list[dict[str, Any]]:
+    """Return short, rewritten prompts distilled from public interview reports.
+
+    The source posts are never copied into the runtime prompt.  Each item only
+    stores our own question wording and stable source identifiers that resolve
+    through ``resources/source_catalog.json``.
+    """
+
+    if company not in COMPANIES:
+        raise AppError("INVALID_COMPANY", "暂不支持该公司", status_code=422)
+    path = ROOT_DIR / "questions" / "recent_experience_backend.json"
+    if not path.exists():
+        return []
+    value = _load_json(str(path))
+    companies = value.get("companies") if isinstance(value, dict) else None
+    if not isinstance(companies, dict):
+        raise RuntimeError(f"面经精选题库格式错误：{path}")
+    return _normalize_questions(companies.get(company, []), path)
+
+
+def load_current_research_question_bank(
+    specialization: str,
+) -> list[dict[str, Any]]:
+    """Return discussion-level current research prompts for AI backend roles."""
+
+    if not is_ai_specialization(specialization):
+        return []
+    path = ROOT_DIR / "questions" / "current_research_discussion.json"
+    if not path.exists():
+        return []
+    return _normalize_questions(_load_json(str(path)), path)
+
+
+def load_project_question_bank(specialization: str) -> list[dict[str, Any]]:
+    """Return open-source-inspired scenarios relevant to the selected role."""
+
+    path = ROOT_DIR / "questions" / "open_source_project_backend.json"
+    if not path.exists():
+        return []
+    questions = _normalize_questions(_load_json(str(path)), path)
+    normalized = " ".join(str(specialization or "通用后端").strip().lower().split())
+    matches: list[dict[str, Any]] = []
+    for item in questions:
+        applicability = {
+            " ".join(str(value).strip().lower().split())
+            for value in item.get("applicability", [])
+        }
+        keywords = {
+            str(value).strip().lower() for value in item.get("keywords", [])
+        }
+        if normalized in applicability or any(
+            keyword and keyword in normalized for keyword in keywords
+        ):
+            matches.append(item)
+    return matches
+
+
+def load_source_catalog() -> dict[str, Any]:
+    """Load the transparent, link-only provenance catalog for curated prompts."""
+
+    path = ROOT_DIR / "resources" / "source_catalog.json"
+    if not path.exists():
+        return {"schema_version": "1.0", "sources": []}
+    value = _load_json(str(path))
+    if not isinstance(value, dict) or not isinstance(value.get("sources"), list):
+        raise RuntimeError(f"资料来源目录格式错误：{path}")
+    allowed_kinds = {
+        "question_bank",
+        "github_project",
+        "interview_experience",
+        "research",
+    }
+    seen_ids: set[str] = set()
+    for source in value["sources"]:
+        if not isinstance(source, dict):
+            raise RuntimeError(f"资料来源条目格式错误：{path}")
+        source_id = str(source.get("id") or "").strip()
+        source_url = str(source.get("url") or "").strip()
+        if not source_id or source_id in seen_ids:
+            raise RuntimeError(f"资料来源 ID 缺失或重复：{source_id or '<empty>'}")
+        if source.get("kind") not in allowed_kinds:
+            raise RuntimeError(f"资料来源类型不受支持：{source_id}")
+        if urlparse(source_url).scheme != "https":
+            raise RuntimeError(f"资料来源必须使用 HTTPS：{source_id}")
+        if "license_spdx" not in source or not str(
+            source.get("usage_mode") or ""
+        ).strip():
+            raise RuntimeError(f"资料来源缺少授权或使用策略：{source_id}")
+        seen_ids.add(source_id)
+    return value
 
 
 def load_topic_links() -> dict[str, dict[str, str]]:

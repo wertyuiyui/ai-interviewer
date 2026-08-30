@@ -1,0 +1,51 @@
+{
+  "schema_version": "1.0",
+  "curated_at": "2026-08-30",
+  "note": "根据公开项目所呈现的工程问题重新编写场景题；候选人无需读过指定仓库，仓库仅作为可追溯的实践参考。",
+  "questions": [
+    {
+      "id": "project-hertz-backpressure",
+      "category": "项目深挖",
+      "topic": "http_server_backpressure",
+      "question": "设计一个高并发 HTTP 服务时，连接数、请求队列和下游并发分别怎样限流，才能把背压传到入口而不是把内存打满？",
+      "followups": ["慢客户端与慢下游应分别在哪一层超时或丢弃？", "你会怎样压测并观察排队、拒绝和尾延迟？"],
+      "difficulty": "hard",
+      "applicability": ["通用后端", "Go 后端", "基础架构", "云原生与微服务"],
+      "keywords": ["go", "http", "网关", "基础架构", "云原生", "高并发"],
+      "source_ids": ["project-cloudwego-hertz"]
+    },
+    {
+      "id": "project-kitex-retry-budget",
+      "category": "项目深挖",
+      "topic": "rpc_retry_budget",
+      "question": "一次 RPC 已经过网关、服务 A 和服务 B，三层都配置重试会发生什么？请设计端到端超时与重试预算。",
+      "followups": ["如何结合幂等性决定哪些请求可以重试？", "负载均衡器怎样避免继续把请求发给正在过载的实例？"],
+      "difficulty": "hard",
+      "applicability": ["通用后端", "Go 后端", "基础架构", "云原生与微服务", "分布式系统"],
+      "keywords": ["go", "rpc", "微服务", "分布式", "服务治理", "网关"],
+      "source_ids": ["project-cloudwego-kitex"]
+    },
+    {
+      "id": "project-petclinic-transaction",
+      "category": "项目深挖",
+      "topic": "spring_transaction_boundary",
+      "question": "一个 Spring 接口同时修改聚合根并写审计记录，你会把事务边界放在哪里？外部通知失败时如何避免长事务？",
+      "followups": ["哪些调用方式会让事务注解失效？", "集成测试如何证明提交、回滚和并发更新都符合预期？"],
+      "difficulty": "medium",
+      "applicability": ["通用后端", "Java 后端"],
+      "keywords": ["java", "spring", "jpa", "事务", "业务后端"],
+      "source_ids": ["project-spring-petclinic"]
+    },
+    {
+      "id": "project-tinykv-crash-consistency",
+      "category": "项目深挖",
+      "topic": "kv_crash_consistency",
+      "question": "实现一个带 Write-Ahead Log 的 KV 存储时，写入在哪些时刻崩溃最危险？重启后怎样恢复并保证操作不重复？",
+      "followups": ["fsync、批量提交和吞吐/持久性如何取舍？", "扩展到 Raft 后，客户端看到成功的时点应如何定义？"],
+      "difficulty": "hard",
+      "applicability": ["数据库与存储", "分布式系统", "基础架构", "Go 后端"],
+      "keywords": ["数据库", "存储", "kv", "raft", "分布式", "go", "基础架构"],
+      "source_ids": ["project-pingcap-talent-plan"]
+    }
+  ]
+}
