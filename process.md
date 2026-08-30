@@ -27,17 +27,24 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`778741d`；GitHub `origin/main` 已包含该功能提交
+- 当前生产已部署提交：`dce4e1d`；GitHub `origin/main` 已包含该功能提交
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 当前模型：文本决策/简历解析/报告 `qwen3.8-flash`；实时语音 `qwen3.5-omni-flash-realtime`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、English
-- 当前已部署功能的全量验证基线：`270 passed`
+- 当前已部署功能的全量验证基线：`271 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### DEPLOY-034 · 2026-08-30 · 项目二三级分层跳题生产发布
+
+- Agent：`/root`；状态：`completed`。
+- 摘要：固定提交 `dce4e1d` 已推送至 GitHub `origin/main`，并以 `git archive` 隔离快照部署至 `/opt/ai-interviewer-mvp`。部署保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 与缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。项目开场不会时换其它经历；同项目二级/三级不会时换其它维度，问满 1–3 个二级问题后结束且不重复项目。
+- 验证：最新隔离基线全量 `271 passed`，项目阶段/归属/核心面试专项 `20 passed`，Python compileall 与 `git diff --check` 通过。生产服务为 `active`，主进程 PID `873919`；本机 8000、正式域名 HTTPS 443 和 3000 均返回 `{"status":"ok"}`；生产代码确认包含 `unknown_in_project_followup`、同项目有效 anchor 恢复和“换个角度”转场。
+- 回滚与风险：部署前代码备份为 `/tmp/ai-interviewer-mvp-pre-dce4e1d-20260830.tar.gz`，不含密钥、数据库、虚拟环境和依赖。未新增状态或迁移，已有问答与阶段轮次直接适用新规则。
 
 ### INTERVIEW-021 · 2026-08-30 · 项目分层跳题与 1–3 个二级问题上限
 
