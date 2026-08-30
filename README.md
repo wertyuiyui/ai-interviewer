@@ -1,15 +1,17 @@
 # 砺面：AI 模拟面试官
 
-面向中国本科生的「大厂后端开发实习一面」语音陪练 Web 应用。候选人上传文字版简历 PDF（也可粘贴文字），选择字节跳动 / 美团 / 腾讯、技术面或技术 + 综合（HR）面、后端细分方向、压力程度和面试时长后，AI 会按公司风格围绕简历连续下钻；面试结束后生成逐题扣分、公开 rubric、改写示范和下次必练清单，并用本地匿名设备 ID 对比历次成绩。
+面向中国本科生的「大厂后端开发实习一面」语音陪练 Web 应用。候选人上传文字版简历 PDF（也可粘贴文字），选择字节跳动 / 美团 / 腾讯 / 阿里巴巴 / 百度 / 华为、技术面或技术 + 综合（HR）面、后端细分方向、压力程度和面试时长后，AI 会按公司风格围绕简历连续下钻；也可以跳过完整模拟，直接用真实公开、许可可追溯的题库进行语音或文字单题练习。面试结束后生成逐题扣分、公开 rubric、改写示范和下次必练清单，并用本地匿名设备 ID 对比历次成绩。
 
 这是 16 小时黑客松范围内的 MVP，只做后端实习一面。明确不包含岗位推荐、面试外部实时辅助（作弊向）、视频/微表情、代码运行判题、RAG、账号系统或运行时面经爬虫。产品内的“提示”只服务于模拟练习，提供回答结构而非答案，并会如实记入最终报告。
 
 ## 已实现的闭环
 
-- 三家公司风格卡，含环节配比、项目/八股权重、手撕难度、默认压力开关和公司化追问偏好。
+- 六家公司风格卡与独立 `interview_skills`，含证据等级、环节顺序、语气、选题权重、难度阶梯、项目追问、压力策略、综合面重点和三种语言 profile；剧本会实际加载对应 skill。资料只够做题库索引、无法支撑公司风格的其它公司没有被冒充成“精准模拟”。
 - 面试类型可选纯技术面或技术 + 综合（HR）面，旧请求默认保持技术面。综合面仍以技术判断为主体，并按公司分别考察价值观与公司契合、人生规划和选择、薪酬期待；面向本科实习候选人，不套用管理岗问题，也不因薪酬数值本身扣分。
-- 每家公司 36 道人工题：MySQL、Redis、Java 并发、计网各 8 道，手撕思路 4 道；每题还有至少两条公司化追问。
+- 首批字节 / 美团 / 腾讯各有 36 道人工题：MySQL、Redis、Java 并发、计网各 8 道，手撕思路 4 道；每题还有至少两条公司化追问。新增公司通过独立 skill 应用公司节奏和追问规则，并复用可追溯的后端公共题池。
 - 公开面经只作为可追溯的自述资料：开发者人工提炼考察信号后重新编写“面经衍生题”，按公司放入候选题短名单。它们未经招聘企业确认，不是官方真题，也不会复制原帖叙事、答案、图片或长题单。
+- `/practice` 快速刷题只从经过审核的静态授权题库选题，当前包含 66 道中英双语短题，覆盖 Java / Go、MySQL、Redis、并发、操作系统、计网、分布式系统、AI 工程和英文行为题。题目选自或经压缩、翻译自固定版本的 JavaGuide、interview-go、Tech Interview Handbook 与 ARIS-in-AI-Offer；每题内部保留来源路径、提交版本和 Apache-2.0 / MIT 许可证，但这些字段不会返回到学习端 API 或显示在作答、评分 UI。
+- 快速刷题支持中文、中英双语和纯英文，按公司适用范围、方向与难度筛选；每道题可用文字或语音作答，语音经实时 ASR 进入可编辑文本框，用户确认或修正后才提交评分。同一题可以重复作答，评分失败会明确显示“不可评分”，不会补成默认 5.0。
 - CloudWeGo Hertz / Kitex、Spring PetClinic、PingCAP Talent Plan / TinyKV 等开源项目会被改写成背压、重试预算、事务边界、崩溃一致性等工程场景题，并按岗位细分方向匹配。候选人无需读过指定仓库，仓库只提供可追溯的实践背景。
 - 岗位仍限定为后端实习，但支持通用、Java、Go、C++、Python、基础架构、云原生、数据库与存储、中间件、分布式系统、AI 工程后端等常见细分方向，也支持 1–80 字自定义方向。
 - AI 工程后端 / LLM Infra 方向额外启用 31 道静态精选题，覆盖模型请求状态机、TTFT/TPOT、continuous batching、KV cache、量化、Agent 工具安全和评测。知识点经人工改写自 MIT 许可的 [ARIS-in-AI-Offer](https://wanshuiyin.github.io/ARIS-in-AI-Offer/)，不会进入默认通用后端题池。
@@ -19,7 +21,7 @@
 - 服务端强制七维项目/实习下钻：业务背景、个人职责、请求链路、技术选型理由、难点与故障、数据指标口径、边界与 trade-off。技术面默认强制 4 层；技术 + 综合（HR）面为给综合环节留出有效时间，默认强制 3 层，若上场项目深度较弱则扩为 4 层。
 - 压力程度分为关闭 / 温和 / 标准 / 高压四档。压力主要来自更高难度、更深且会改变约束的连续追问；质疑只针对确实缺少依据的结论，实时打断只在部分转写已表现出明显跑题、反复绕圈、长时间无有效结论等表达问题时触发，不按轮次盲目抢话。标准/高压连续 2 次、关闭/温和连续 3 次答崩时，服务端强制提前结束。
 - 时长提供 10 / 15 / 25 分钟、自定义 1–180 分钟，以及“不限时（手动结束）”；无限模式前后端都不会创建自动截止时间。
-- 面试语言可选“全程中文”或“中英双语”。双语模式允许候选人用中文、英文或中英混合回答，保留常见英文技术术语，并在合适环节加入简短英文追问；语音模式会播放对应语言的面试官问题，不因口音扣技术分。
+- 面试语言可选“全程中文”“中英双语”或“Pure English”。双语模式允许候选人使用中文、英文或中英混合回答；纯英文模式的开场、项目追问、技术题、综合题、压力转场、提示与结束语均使用英文，并优先使用带来源信息的海外英文题，不因非母语口音扣技术分。
 - 语音回答会以增量字幕实时进入对话区，最终转写可在面试中手动修正；修正后按原题重新评分，报告保留“已修正”标记并使用修正版。L0 会先核对面试官完整朗读转写，发现模型改写问题时丢弃该段音频并用锁定文字精确合成，避免音文不一致。
 - 每道问题同时给出建议回答时间；语音场次记录 VAD 回答时长与转写字符速率，用于报告中的时间把握、语速、措辞和转写流畅度分析。
 - 面试页的“给我一点提示”只拆解回答路线，不直接给出事实答案，也不会替用户提交回答；同一道当前问题至多记录一次。面试仍可完整继续，最终报告会展示提示次数、对应问题和提示内容。
@@ -28,17 +30,21 @@
 - 报告另含简历内容强弱项与改写建议、排版可评估边界、面试时间/语速/措辞/流畅度、岗位契合度和多维雷达图。目标公司的公开个人面经由服务端静态精选，报告展示跨样本共性、针对性建议和可核验原帖；不把这些帖子冒充官方题库。
 - “记住本场表现”可逐场开关。开启时，SQLite 会把最近 3 场归一成 MySQL / Redis / Java 并发 / 计网 / 手撕 / 项目深度等稳定知识域并按时间加权，下一场为可命中的弱项预留约三分之一题目；项目深度较弱时从 4 层扩展到 6 层下钻。关闭时报告仍可查看和保留，但该场既不读取旧弱项，也不参与后续弱项加权。
 - 报告页提供“用原简历复练弱项”：同一匿名设备可一键复用原简历及公司、方向、语言、压力和时长设置，以本场报告的弱项直接创建下一场针对性面试。
+- 报告中的低分题可以进入独立错题重答：既可重答整场筛出的低分题，也可只重答指定题目；练习页会带入原题、上次分数和扣分点，新回答单独保存和评分，不覆盖原报告。
 - Canvas 雷达图、逐知识点前后分数、历史删除和 localStorage 报告兜底。
 - 5 份带 PDF 文字层的完全虚构测试简历仅保存在本地 `testdata/fake-resume-pdfs/`，覆盖 Java、Go、云原生、AI 工程和薄弱项目早停场景；不在产品页面展示或提供公网下载。
 
+六份 `interview_skills/{company}_backend.json` 是基于公开样本和人工归纳的练习策略，不是六家公司发布或确认的招聘标准。公司内部不同事业群、部门、岗位方向、招聘批次和面试官的流程与题目都会有差异；“公司筛选”表示题目适用范围或练习侧重，不表示该公司实际问过这道题，也不保证复刻某一场真实面试。
+
 ## 使用说明
 
-1. 在首页上传文字版 PDF 或粘贴简历，选择公司、面试类型、岗位细分、语言、压力程度和时长。“全程中文”仍会保留 MySQL、Redis、gRPC 等通用术语；“中英双语”会在中文主流程中安排简短英文追问，并接受中英文混合回答。需要时可先运行简易硬件测试，确认麦克风权限、输入电平和中英文实时转写；测试不会创建面试或保存成绩。
+1. 在首页上传文字版 PDF 或粘贴简历，选择公司、面试类型、岗位细分、语言、压力程度和时长。“全程中文”仍会保留 MySQL、Redis、gRPC 等通用术语；“中英双语”会在中文主流程中安排简短英文追问；“Pure English”会保持候选人可见面试内容全英文。需要时可先运行简易硬件测试，确认麦克风权限、输入电平和中英文实时转写；测试不会创建面试或保存成绩。
 2. 按隐私和练习目标选择是否开启“记住本场表现”。该开关只控制本场是否读取和贡献后续弱项记忆，不影响本场报告生成。
 3. 每题点击“开始回答”后服务端开始计时，点击“结束回答”才封口并提交整题；思考停顿不会自动拆成下一题。语音回答会边说边进入右侧对话，识别完成后可点“修正转写”，保存后系统按当前题重新评估。面试官语音可以随时关闭而不影响文字提问；面试中卡住时也可点击“给我一点提示”，提示只给结构化思路并会记入报告。
 4. 面试结束并生成报告后，点击“用原简历复练弱项”即可直接进入下一场。系统复用原设置，把报告中的低分知识点放进新剧本，并开启该复练场次的弱项记忆。
+5. 打开 `/practice` 可按公司、方向、难度、题量和语言创建快速练习。语音模式会把增量转写实时写入回答框；停止录音即释放麦克风，提交前仍可手动改字。报告页的“重答低分题”也会进入同一页面，并显示原扣分点供对照。
 
-所有题库和资料来源均为随代码发布的静态 JSON。运行时不会抓取第三方页面、不会构建 RAG 或向量索引，也不会抓取小红书；可通过 `GET /api/resources/catalog` 查看来源 URL、来源类型、授权/使用方式、核验日期和考察信号。完整策展规则见 [`references/CURATED_SOURCES.md`](references/CURATED_SOURCES.md)。
+所有题库和资料来源均为随代码发布的静态 JSON。运行时不会抓取第三方页面、不会构建 RAG 或向量索引，也不会抓取小红书；面经/工程参考目录可通过 `GET /api/resources/catalog` 查看来源 URL、来源类型、授权/使用方式、核验日期和考察信号。快速刷题的逐题来源不会出现在学习 UI 或 `/api/practice/*` 的公开响应中，开发者可在 [`resources/practice_source_manifest.json`](resources/practice_source_manifest.json) 和 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) 审核固定版本与许可证。完整策展规则见 [`references/CURATED_SOURCES.md`](references/CURATED_SOURCES.md)。
 
 ## 技术栈
 
@@ -55,11 +61,12 @@
 
 ```text
 app/                 FastAPI、状态机、报告、SQLite 与四级语音适配
-cards/               3 张公司风格卡
-questions/           公司题库、面经衍生题、开源工程场景题、ARIS 精选题与前沿讨论题
-resources/           来源目录与 JavaGuide / CodeTop 链接白名单
-references/          策展规则、ARIS 来源说明与第三方许可证
-public/              三页 UI、AudioWorklet 与 Canvas 雷达图
+cards/               6 张兼容公司风格卡
+interview_skills/    6 份可版本化、运行时实际应用的公司面试 skill
+questions/           公司题库、授权快速题库、面经衍生题、工程场景题、ARIS 精选题与前沿讨论题
+resources/           面经/工程来源目录、快速题库来源清单与学习链接白名单
+references/          策展规则、来源说明与 Apache-2.0 / MIT 许可证副本
+public/              首页、面试、报告、快速刷题 UI，AudioWorklet 与 Canvas 雷达图
 scripts/             测试简历 PDF 生成器
 testdata/            虚构简历结构化源数据、文字版与本地 PDF
 tests/               核心状态机和语音协议离线测试
@@ -192,12 +199,20 @@ Caddy 会自动申请并续期证书，反向代理配置已把 WebSocket 读写
 
 只做临时公网演示时，可配套使用 `deploy/ai-interviewer-3000.service` 与 `deploy/Caddyfile.3000-https`：FastAPI 单 worker 仅监听 `127.0.0.1:8000`，Caddy 使用解析到当前服务器的 `39-106-146-28.sslip.io` 自动签发证书，并同时在标准 443 和 HTTPS 3000 端口反向代理。换服务器时必须把 Caddyfile 中的演示域名替换为新 IP 对应的 sslip.io 域名；长期部署建议改用自有域名。
 
+该主机部署的公网入口是 `https://<域名>:3000`（也可走标准 443），不是直接暴露 Uvicorn 的 8000。服务器安全组需要放行 TCP 3000；Caddy 负责 TLS 和 WebSocket 升级，FastAPI 始终只监听回环地址。替换 `/etc/caddy/Caddyfile` 后先执行 `caddy validate --config /etc/caddy/Caddyfile`，再重载 Caddy。
+
 ## API 与浏览器协议
 
 REST：
 
 - `GET /api/config`
 - `GET /api/resources/catalog`，返回静态来源元数据，不包含第三方正文
+- `GET /api/practice/catalog`，返回可筛选的公司、方向、难度、语言和审核题量，不返回逐题来源
+- `POST /api/practice/sessions`，创建 `quick` 真实题库练习或 `review` 面后错题重答
+- `GET /api/practice/sessions/{id}?client_id=...`
+- `POST /api/practice/sessions/{id}/answers`，提交文字或语音转写，可用 `reattempt: true` 重答同题
+- `POST /api/practice/sessions/{id}/hint`
+- `GET /api/practice/history?client_id=...&limit=20`
 - `POST /api/resumes/parse`，multipart 的 `file` 或 `text`
 - `POST /api/interviews`
 - `GET /api/interviews/{id}`
@@ -224,9 +239,11 @@ REST：
 }
 ```
 
-`interview_type` 为 `technical` 或 `technical_hr`，缺省为 `technical` 以兼容旧客户端；`specialization` 可自由输入；`language_mode` 为 `zh` 或 `bilingual`；`stress_level` 为 0–3；`duration_minutes` 接受 1–180 整数，`null` 表示无限且只由用户手动结束；`memory_enabled` 控制本场是否读取和贡献后续弱项记忆。旧客户端的 `stress: true/false` 仍兼容映射为标准压力 / 关闭。
+`interview_type` 为 `technical` 或 `technical_hr`，缺省为 `technical` 以兼容旧客户端；`specialization` 可自由输入；`language_mode` 为 `zh`、`bilingual` 或 `en`；`stress_level` 为 0–3；`duration_minutes` 接受 1–180 整数，`null` 表示无限且只由用户手动结束；`memory_enabled` 控制本场是否读取和贡献后续弱项记忆。旧客户端的 `stress: true/false` 仍兼容映射为标准压力 / 关闭。
 
 正式面试连接 `/ws/interviews/{id}`；首页可选硬件检查连接 `/ws/hardware-test`，后者只做短时 ASR 和麦克风状态测试，不创建面试记录。上行音频固定为 16 kHz、单声道、PCM16LE 二进制帧；每题用 `answer.start / answer.end` 明确回答边界，服务端照常记录按钮之间的完整用时。服务端把供应商事件统一为 `candidate.transcript.*`、`interviewer.text.*`、`interviewer.audio.synced`、`audio.chunk/file/clear`、`input.speech_started`、`timer.sync`、`interview.ended`。转写修正使用 `candidate.transcript.correct / corrected`；API Key 从不发送到浏览器。
+
+快速刷题语音连接 `/ws/practice/sessions/{id}`。浏览器首先发送 `client.ready` 和匿名 `client_id` 完成会话归属校验，再上传同样的 16 kHz PCM16LE 帧；服务端返回 `practice.ready`、`practice.speech.started/ended`、`practice.transcript.partial/done`、`practice.stopped` 或 `practice.error`。WebSocket 只负责 ASR，最终文字会留在可编辑输入框中，用户确认后再通过 `/answers` 提交评分；PCM 音频不落盘。
 
 ## 测试
 
@@ -237,7 +254,9 @@ pytest -q
 
 测试不访问外网，覆盖：
 
-- 三家公司题库数量、类别、追问字段和链接白名单。
+- 六家公司卡片 / skill 完整性、首批三家公司题库数量、类别、追问字段和链接白名单。
+- 授权快速题库的来源路径、固定提交、许可证、审核状态与中英文题面，以及学习端不泄露逐题来源。
+- 快速刷题的公司/方向/难度/语言筛选、文字与语音转写提交、重复作答、不可评分状态和面后低分题重答。
 - ARIS 精选题仅在匹配 AI 工程细分方向时占约三分之一候选题，普通后端不会混入。
 - PDF 文字层 / 扫描件判断、中文简历 Schema，以及 5 份虚构 PDF 的可提取性。
 - 自定义细分方向、1–180 分钟 / 无限时长、四档压力参数与旧 API/SQLite 迁移兼容。
@@ -257,6 +276,8 @@ pytest -q
 - 面经衍生题不是官方真题，只代表公开发帖者的个人复盘或汇编；来源目录仅公开链接与元数据，不镜像第三方正文。应用没有运行时爬虫、RAG 或向量库，也不会绕过登录、验证码、robots 或反爬措施抓取小红书等社媒。
 
 ## 上游协议资料
+
+- [快速刷题来源清单](resources/practice_source_manifest.json)：当前题目来自固定提交的 [JavaGuide](https://github.com/Snailclimb/JavaGuide)（Apache-2.0）、[interview-go](https://github.com/lifei6671/interview-go)（Apache-2.0）、[Tech Interview Handbook](https://github.com/yangshun/tech-interview-handbook)（MIT）和 [ARIS-in-AI-Offer](https://github.com/wanshuiyin/ARIS-in-AI-Offer)（MIT）。仓库只收录经审核的短题与独立整理的评分信号，不重新分发上游长答案、图片或外链材料；归因与许可证副本见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。这些是公开面试学习资料，不是招聘公司认证的官方真题。
 
 - [ARIS-in-AI-Offer](https://github.com/wanshuiyin/ARIS-in-AI-Offer)：AI 工程后端精选题参考，固定参考提交 `6f60d72`，MIT 归因见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。应用运行时只读取人工改写的静态 JSON，不读取上游长文。
 
