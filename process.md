@@ -27,13 +27,13 @@
 ## 当前稳定基线
 
 - 分支：`main`
-- 当前生产已部署提交：`98f5d14`；本地远程跟踪 `origin/main` 为 `e9a62e3`（新提交推送因远程归属未由用户明确确认被安全审查拦截）
+- 当前生产已部署提交：`dd351a8`；本地远程跟踪 `origin/main` 为 `73746c3`（新提交推送因远程归属未由用户明确确认被安全审查拦截）
 - 线上入口：`https://39-106-146-28.sslip.io:3000`，标准 HTTPS 443 同时可用
 - 运行模式：`L0`，百炼配置已就绪；敏感配置仅保存在服务器 `.env`
 - 审核题库：108 个独立题目概念，中文/英文共 216 个运行变体
 - 支持公司：字节跳动、美团、腾讯、阿里巴巴、百度、华为
 - 支持流程：技术面、综合（HR）面、技术+综合面；中文、中英双语、纯英文
-- 当前已部署功能的全量验证基线：`221 passed`
+- 当前已部署功能的全量验证基线：`228 passed`
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
@@ -48,6 +48,15 @@
 - 实际文件：`analysis_skills/resume-reader/SKILL.md`；`app/main.py`, `app/schemas.py`, `app/resume.py`, `app/profile.py`, `app/profile_routes.py`；`public/assets/{app,profile,project,coding}.css`, `public/js/{home,profile}.js`, `public/{index,interview,practice,report,project,coding,profile}.html`；`tests/test_api.py`, `tests/test_core.py`, `tests/test_profile.py`, `tests/test_profile_api.py`, `tests/test_frontend_home_ui.py`, `tests/test_frontend_interview_controls.py`, `tests/test_frontend_profile_project_ui.py`；`process.md`。
 - 验证：`python3 .../quick_validate.py analysis_skills/resume-reader` → `Skill is valid!`；`.venv/bin/python -m compileall -q app`、`node --check public/js/profile.js`、`node --check public/js/home.js` 通过；`PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `228 passed`；`git diff --check` 通过。
 - 风险/后续：姓名刻意采用保守策略，版式特殊且没有明确姓名标签/页眉联系方式的简历会显示 `?`，用户可通过更规范的简历文本改善识别；GitHub/arXiv 追加仍依赖公开可读取资源与外部服务可用性。
+
+### DEPLOY-009 · 2026-08-30 · 个人档案项目编辑与字体统一生产发布
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：以 `git archive dd351a8` 生成固定发布快照并同步到 `/opt/ai-interviewer-mvp`；同步前创建 `/tmp/ai-interviewer-mvp-pre-dd351a8-20260830.tar.gz` 回滚包，明确保留生产 `.env`、`data/`、`.venv/`、`.deps/`、`.git/` 和缓存，只重启 `ai-interviewer-3000.service`，未重启 Caddy 或其它服务。
+- 文件：生产目录中的固定提交 `dd351a8`；生产密钥、SQLite 数据、依赖与 Caddy 配置未修改。
+- 验证：发布前全量回归 `228 passed`；服务最终为 `active/running`，主进程 PID `657364`；`http://127.0.0.1:8000/healthz`、正式域名 HTTPS 443 与 3000 均返回 `{"status":"ok"}`；生产 `/profile`、`profile.js` 与 `app.css` 已确认包含项目编辑弹窗、“编辑并添加资料”和统一字体变量，HTML 使用 `20260830-profile-edit-v1` 静态资源版本；生产工作目录保持 0755。
+- 风险/后续：服务重启后首次即时健康请求处于正常启动窗口、短暂返回连接拒绝，约 1 秒后复检及外部 HTTPS 均稳定通过；GitHub `origin/main` 推送仍因目标仓库归属未被可信用户内容明确确认而被安全审查拒绝，未绕过，当前本地分支领先远程 3 个提交。
 
 ### PROJ-009 · 2026-08-30 · 项目主线解读与候选人介绍净化
 
