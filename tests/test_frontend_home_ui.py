@@ -104,6 +104,10 @@ def test_saved_resume_can_be_selected_directly_in_home_setup() -> None:
     assert 'data-resume-tab="saved"' not in html
     assert 'data-resume-tab="pdf"' not in html
     assert 'data-resume-tab="resume"' in html
+    assert 'class="tab-switch resume-mode-switch"' in html
+    assert html.count('class="tab-button resume-mode-option') == 2
+    assert 'class="resume-mode-icon"' in html
+    assert "已保存简历 / PDF" in html and "扫描件 / 自定义内容" in html
     assert 'id="savedPanel"' not in html
     assert 'id="pdfPanel"' not in html
     resume_panel = html.split('id="resumePanel"', 1)[1].split('id="textPanel"', 1)[0]
@@ -115,3 +119,10 @@ def test_saved_resume_can_be_selected_directly_in_home_setup() -> None:
     assert "resumeMode === 'resume' ? (selectedResumeId ? savedResumeSelect : fileInput)" in home
     assert "resumeMode === 'resume' && !selectedFile" in home
     assert "selectSavedResume('', { switchMode: false })" in home
+
+    home_profile_style = (ROOT / "public" / "assets" / "home-profile.css").read_text(encoding="utf-8")
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in home_profile_style
+    assert ".resume-mode-option.is-active" in home_profile_style
+    assert ".resume-mode-copy strong" in home_profile_style
+    assert "font-size: 14px" in home_profile_style
+    assert "/assets/home-profile.css?v=20260830-resume-choice-v2" in html

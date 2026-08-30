@@ -7,7 +7,7 @@
     <meta name="description" content="面向中国本科生的大厂后端实习一面 AI 陪练。">
     <title>砺面 · AI 技术面试陪练</title>
     <link rel="stylesheet" href="/assets/app.css?v=20260830-profile-edit-v1">
-    <link rel="stylesheet" href="/assets/home-profile.css?v=20260830-resume-profile-v1">
+    <link rel="stylesheet" href="/assets/home-profile.css?v=20260830-resume-choice-v2">
     <link rel="stylesheet" href="/assets/home-hardware.css?v=20260830-interview-flow">
   </head>
   <body class="home-page">
@@ -127,9 +127,17 @@
           </div>
             </details>
 
-            <div class="tab-switch" role="tablist" aria-label="简历输入方式">
-              <button type="button" class="tab-button is-active" role="tab" aria-selected="true" aria-controls="resumePanel" id="resumeTab" data-resume-tab="resume">选择 / 上传简历</button>
-              <button type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="textPanel" id="textTab" data-resume-tab="text">粘贴文字</button>
+            <div class="tab-switch resume-mode-switch" role="tablist" aria-label="简历输入方式">
+              <button type="button" class="tab-button resume-mode-option is-active" role="tab" aria-selected="true" aria-controls="resumePanel" id="resumeTab" data-resume-tab="resume">
+                <span class="resume-mode-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 3.5h7l3 3V20H7zM14 3.5V7h3M9.5 11h5M9.5 14h5M9.5 17h3"/></svg></span>
+                <span class="resume-mode-copy"><strong>选择或上传</strong><small>已保存简历 / PDF</small></span>
+                <span class="resume-mode-check" aria-hidden="true">✓</span>
+              </button>
+              <button type="button" class="tab-button resume-mode-option" role="tab" aria-selected="false" aria-controls="textPanel" id="textTab" data-resume-tab="text">
+                <span class="resume-mode-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 5.5h14v13H5zM8 9h8M8 12h8M8 15h5"/></svg></span>
+                <span class="resume-mode-copy"><strong>粘贴文字</strong><small>扫描件 / 自定义内容</small></span>
+                <span class="resume-mode-check" aria-hidden="true">✓</span>
+              </button>
             </div>
             <div class="resume-panel resume-combined-panel" id="resumePanel" role="tabpanel" aria-labelledby="resumeTab">
               <div class="saved-resume-panel">

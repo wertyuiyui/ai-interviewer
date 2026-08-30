@@ -7,7 +7,109 @@
 }
 
 .resume-profile-section > .tab-switch {
-  margin-top: 4px;
+  width: 100%;
+  margin: 4px 0 13px;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  border-radius: 0;
+  background: transparent;
+}
+
+.resume-profile-section .resume-mode-option {
+  position: relative;
+  min-width: 0;
+  min-height: 62px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 20px;
+  gap: 11px;
+  align-items: center;
+  border: 1px solid #dfe2e7;
+  border-radius: 13px;
+  color: #667184;
+  background: linear-gradient(145deg, #fff, #faf9f6);
+  text-align: left;
+  box-shadow: 0 5px 16px rgba(25, 39, 61, .035);
+  transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+}
+
+.resume-profile-section .resume-mode-option:hover {
+  transform: translateY(-1px);
+  border-color: #b9c7dc;
+  box-shadow: 0 8px 22px rgba(35, 65, 112, .08);
+}
+
+.resume-profile-section .resume-mode-option:focus-visible {
+  outline: 3px solid rgba(53, 110, 234, .16);
+  outline-offset: 2px;
+}
+
+.resume-profile-section .resume-mode-option.is-active {
+  color: #18345f;
+  border-color: #7d9bd1;
+  background: linear-gradient(145deg, #f8faff, #eef4ff);
+  box-shadow: inset 0 0 0 1px rgba(53, 110, 234, .15), 0 9px 24px rgba(53, 110, 234, .1);
+}
+
+.resume-mode-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  color: #65738a;
+  background: #eff1f4;
+}
+
+.resume-mode-icon svg {
+  width: 20px;
+}
+
+.resume-mode-option.is-active .resume-mode-icon {
+  color: white;
+  background: var(--blue);
+  box-shadow: 0 6px 14px rgba(53, 110, 234, .22);
+}
+
+.resume-mode-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.resume-mode-copy strong {
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.resume-mode-copy small {
+  overflow: hidden;
+  color: #8a93a0;
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resume-mode-check {
+  width: 19px;
+  height: 19px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d5dae2;
+  border-radius: 50%;
+  color: transparent;
+  background: white;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.resume-mode-option.is-active .resume-mode-check {
+  color: white;
+  border-color: var(--blue);
+  background: var(--blue);
 }
 
 .resume-combined-panel {
@@ -15,8 +117,93 @@
   gap: 12px;
 }
 
+.resume-profile-section .saved-resume-panel {
+  min-height: 72px;
+  padding: 11px 13px;
+  gap: 12px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f8faff, #f1f6ff);
+}
+
+.resume-profile-section .saved-resume-mark {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  font-size: 14px;
+  box-shadow: 0 7px 16px rgba(53, 110, 234, .2);
+}
+
+.resume-profile-section .saved-resume-panel > span:nth-child(2) {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 5px 10px;
+  align-items: end;
+}
+
+.resume-profile-section .saved-resume-panel strong {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.resume-profile-section .saved-resume-panel small {
+  font-size: 10px;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.resume-profile-section #savedResumeSelect {
+  grid-column: 1 / -1;
+  min-height: 39px;
+  padding: 8px 34px 8px 11px;
+  border-color: #cbd6e8;
+  color: #263b5f;
+  background-color: white;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.resume-profile-section .saved-resume-panel button {
+  min-height: 39px;
+  padding: 0 13px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.resume-profile-section .drop-zone {
+  min-height: 88px;
+  padding: 13px 15px;
+}
+
+.resume-profile-section .drop-copy strong {
+  font-size: 14px;
+}
+
+.resume-profile-section .drop-copy small,
+.resume-profile-section .mini-button {
+  font-size: 11px;
+}
+
 @media (max-width: 720px) {
   .resume-profile-section .profile-panel {
     margin-inline: 0;
+  }
+
+  .resume-profile-section .resume-mode-option {
+    grid-template-columns: 32px minmax(0, 1fr) 18px;
+    gap: 8px;
+    padding-inline: 9px;
+  }
+
+  .resume-mode-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .resume-mode-copy strong {
+    font-size: 13px;
+  }
+
+  .resume-mode-copy small {
+    font-size: 10px;
   }
 }

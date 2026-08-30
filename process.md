@@ -20,7 +20,6 @@
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
 | `INTERVIEW-005` | `/root`（只读协作：`real_flow_research`、`adaptive_engine_audit`、`phase_ui_audit`） | `in_progress` | 将面试改为可见、可跳过且按回答自适应的显式阶段流程；修复“不知道”继续追同项目；技术/技术综合/纯综合采用不同阶段计划 | `interview_skills/interviewer_core.json`, `app/db.py`, `app/interview_engine.py`, `app/main.py`, `app/prompt_engine.py`, `app/voice_session.py`, `public/interview.html`, `public/js/interview.js`, `public/assets/app.css`, `tests/test_interview_stage_flow.py`, `tests/test_interviewer_skill.py`, `tests/test_frontend_interview_controls.py`, `tests/test_frontend_audio_ui.py`, `tests/test_voice_session.py`, `references/REAL_INTERVIEW_STAGE_DESIGN.md`, `process.md` | 当前无业务文件冲突；子 Agent 只读。显式阶段状态不得用假回答污染报告，纯综合面不得包含八股或手撕 |
-| `HOME-002` | `/root` | `in_progress` | 美化首页“选择/上传简历”输入方式与已保存/上传入口，提升字号、图标、选中态和空间利用率 | `public/index.html`, `public/assets/home-profile.css`, `tests/test_frontend_home_ui.py`, `process.md` | 避开 `INTERVIEW-005` 占用的共享 `app.css`；不修改 PROFILE-004 文件 |
 
 登记模板：
 
@@ -40,6 +39,15 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### HOME-003 · 2026-08-30 · 首页简历选择与上传入口美化
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：将“选择或上传 / 粘贴文字”由小字号纯文字标签改为双列可视化选项卡，增加简历/文字图标、主副标题、圆形选中标记、悬停和键盘焦点状态；放大已保存简历下拉、管理按钮与上传区关键文字，同时压缩无效留白并补齐移动端比例。
+- 文件：`public/index.html`, `public/assets/home-profile.css`, `tests/test_frontend_home_ui.py`, `process.md`。
+- 验证：`git diff --check` 通过；`PYTHONPATH=.deps .venv/bin/python -m pytest -q tests/test_frontend_home_ui.py` → `5 passed`。并行 `INTERVIEW-005` 尚未收口时全量回归为 `249 passed, 4 failed`，失败均位于其正在修改的阶段流程/题序断言，与本任务文件和简历入口无关，未覆盖或修改该任务代码。
+- 风险/后续：当前环境无 Chromium，未做像素级真实浏览器截图；样式完全隔离在 `home-profile.css`，不覆盖共享面试页样式，静态资源版本已更新为 `resume-choice-v2`。
 
 ### PROFILE-004 · 2026-08-30 · 多简历逐份容错、项目归并与实习恢复
 
