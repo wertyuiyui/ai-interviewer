@@ -256,7 +256,6 @@ async def config() -> dict[str, Any]:
             {"id": "hr", "name": "综合面（HR 面）"},
             {"id": "technical_hr", "name": "技术 / 综合（HR）面"},
         ],
-        "daily_interview_limit": settings.daily_interview_limit,
     }
 
 
@@ -715,10 +714,6 @@ async def create_interview(
             "使用匿名 Profile 项目时需要校验当前浏览器密钥",
             status_code=403,
         )
-    # Check quotas before an optional, potentially paid project-analysis call.
-    # InterviewEngine.create checks again to close the race with concurrent
-    # session creation.
-    await interview_engine.ensure_budget_available(request.client_id)
     enriched = await enrich_interview_with_profile_project(request, profile_service)
     created = await interview_engine.create(enriched)
     if request.profile_project_id:

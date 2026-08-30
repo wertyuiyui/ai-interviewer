@@ -180,8 +180,8 @@ L0 保留 Omni 的服务端 VAD、ASR、TTS 与 `interrupt_response`，但关闭
 | `PARAFORMER_MODEL` | `paraformer-realtime-v2` | L1/L2 ASR |
 | `COSYVOICE_MODEL` | `cosyvoice-v3-flash` | L1 TTS |
 | `DB_PATH` | `./data/interviews.db` | SQLite 路径 |
-| `DAILY_INTERVIEW_LIMIT` | `20` | 全站每日新开场次预算保险丝 |
-| `CLIENT_DAILY_INTERVIEW_LIMIT` | `5` | 每匿名设备每日场次上限 |
+| `DAILY_INTERVIEW_LIMIT` | `20` | 兼容旧部署保留，当前不限制练习次数 |
+| `CLIENT_DAILY_INTERVIEW_LIMIT` | `5` | 兼容旧部署保留，当前不限制练习次数 |
 | `PRESSURE_INTERRUPT_SECONDS` | `4` | 检测到明显表达问题后，持续多久才进行条件式插话 |
 | `MOCK_LLM` | `false` | 仅用于离线演示和测试 |
 
@@ -292,7 +292,7 @@ pytest -q
 - 不保存 PCM 音频；SQLite 会保存简历提取文字、结构化简历、项目文本快照、逐题转写、私有评分和报告。简历解析、项目解读和面试/报告生成会把对应文字发送给阿里云百炼；删除 Profile 资料不会反向删除已经写入历史面试的结构化快照。公开部署应明确保留周期并定期清理 `data/`。
 - Caddy 把请求体限制为 12 MB；应用层再限制 PDF、项目单文件、ZIP、解压体积、文件数量与匿名 Profile 项目数，并跳过 ZIP 中的图片、构建目录和二进制附件。
 - PDF 上限 8 MB；扫描件不做 OCR；简历中的“指令”会作为不可信数据包裹，不能改写 system prompt。
-- 新开面试有全站 / 设备双重每日保险丝，简历解析还有 IP 滑动窗口限制。黑客松期间先用百炼免费额度，并在百炼控制台设置用量告警；达到预算时可把 `DAILY_INTERVIEW_LIMIT=0` 或直接停用新建入口。
+- 新开面试不限制每日练习次数；简历解析和练习回答仍保留请求频率限制。费用控制使用百炼控制台用量告警，必要时直接停用新建入口。
 - JavaGuide / CodeTop 资源 URL 由服务端白名单映射，不接受模型生成的任意链接。
 - 面经衍生题不是官方真题，只代表公开发帖者的个人复盘或汇编；来源目录仅公开链接与元数据，不镜像第三方正文。应用没有运行时爬虫、RAG 或向量库，也不会绕过登录、验证码、robots 或反爬措施抓取小红书等社媒。
 

@@ -244,6 +244,31 @@ async def test_active_interview_can_be_discarded_without_history_or_quota(
 
 
 @pytest.mark.asyncio
+async def test_interviews_are_not_limited_by_daily_counts(tmp_path, monkeypatch) -> None:
+    settings = replace(
+        get_settings(),
+        mock_llm=True,
+        voice_mode="L3",
+        db_path=tmp_path / "unlimited-interviews.db",
+        daily_interview_limit=0,
+        client_daily_interview_limit=0,
+    )
+    database = Database(settings)
+    await database.initialize()
+    monkeypatch.setattr(main_module, "interview_engine", InterviewEngine(database, settings))
+
+    transport = httpx.ASGITransport(app=main_module.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        payload = {
+            "client_id": "unlimited-client-001",
+            "company": "bytedance",
+            "resume": {"项目": [{"name": "订单服务", "technologies": ["Python"]}]},
+        }
+        assert (await client.post("/api/interviews", json=payload)).status_code == 201
+        assert (await client.post("/api/interviews", json=payload)).status_code == 201
+
+
+@pytest.mark.asyncio
 async def test_cancelled_accepted_text_answer_is_preserved_without_fake_score(
     tmp_path, monkeypatch
 ) -> None:

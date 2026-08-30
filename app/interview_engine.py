@@ -105,31 +105,12 @@ class InterviewEngine:
         self.settings = settings or get_settings()
         self.client = client or BailianChatClient(self.settings)
 
-    async def ensure_budget_available(self, client_id: str) -> None:
-        """Reject a new session before any optional project-analysis LLM call."""
-
-        global_count = await self.db.interview_count_today()
-        if global_count >= self.settings.daily_interview_limit:
-            raise AppError(
-                "DAILY_BUDGET_LIMIT",
-                "今日公开体验场次已用完，请明天再来。",
-                status_code=429,
-            )
-        client_count = await self.db.interview_count_today(client_id)
-        if client_count >= self.settings.client_daily_interview_limit:
-            raise AppError(
-                "CLIENT_DAILY_LIMIT",
-                "本设备今日练习场次已用完，请先复盘已有报告。",
-                status_code=429,
-            )
-
     async def create(
         self,
         request: InterviewCreate,
         *,
         weak_topics_override: list[str] | None = None,
     ) -> dict[str, Any]:
-        await self.ensure_budget_available(request.client_id)
         if weak_topics_override is not None:
             weak_topics = self._normalize_weak_topics(weak_topics_override)
         elif request.memory_enabled:

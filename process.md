@@ -39,6 +39,15 @@
 
 ## 变更日志
 
+### INTERVIEW-007 · 2026-08-30 · 取消每日练习次数限制
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：删除完整模拟面试创建入口和共享引擎中的全站/匿名设备每日场次检查，连续创建练习不再返回 `DAILY_BUDGET_LIMIT` 或 `CLIENT_DAILY_LIMIT`；公开配置不再下发每日上限。原环境变量仅作为旧部署兼容字段保留但不参与限制。简历解析、快速刷题回答和语音转写的请求频率保护保持不变。
+- 实际文件：`app/interview_engine.py`、`app/main.py`、`tests/test_api.py`、`README.md`、`process.md`。
+- 验证：`PYTHONPATH=.deps .venv/bin/python -m pytest -q tests/test_api.py` → `6 passed`；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `259 passed`；Python compileall 与 `git diff --check` 通过。回归覆盖旧额度配置均为 `0` 时同一设备仍可连续创建两场。
+- 风险或后续事项：练习次数不再承担费用保险丝，费用控制依赖百炼控制台用量告警或停用新建入口；保留的旧环境变量可在没有并行测试构造依赖后另行清理。
+
 ### DEPLOY-018 · 2026-08-30 · 面试退出不留档生产发布
 
 - Agent：`/root`。
