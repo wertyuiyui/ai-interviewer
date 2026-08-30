@@ -62,7 +62,6 @@ STAGE_LABELS = {
     "project_deep_dive": "项目深挖",
     "fundamentals": "基础与场景题",
     "coding": "手撕代码",
-    "behavioral": "综合交流",
     "hr_fit": "岗位匹配",
     "career_planning": "职业规划",
     "compensation": "薪酬沟通",
@@ -313,7 +312,7 @@ class InterviewEngine:
             ]
         elif stage_id == "coding":
             pool = [item for item in questions if item.get("kind") == "coding"]
-        elif stage_id == "behavioral" or stage_id in HR_STAGE_INDEX:
+        elif stage_id in HR_STAGE_INDEX:
             pool = [item for item in questions if item.get("kind") == "behavioral"]
         else:
             return (
@@ -327,14 +326,14 @@ class InterviewEngine:
                 interview, next_state, resume=resume
             )
         turn_count = int(state.get("turn_count") or 0)
-        # Fundamentals and behavioral sections use a reviewed opener followed
+        # Fundamentals and HR sections use a reviewed opener followed
         # by at most one answer-anchored follow-up. This keeps the interview
         # responsive without letting a generated question replace the bank.
         item_index = (
             HR_STAGE_INDEX[stage_id]
             if stage_id in HR_STAGE_INDEX
             else turn_count // 2
-            if stage_id in {"fundamentals", "behavioral"}
+            if stage_id == "fundamentals"
             else turn_count
         )
         item = pool[item_index % len(pool)]
@@ -773,14 +772,12 @@ class InterviewEngine:
             should_advance_stage = next_stage_state["turn_count"] >= 4
         elif current_stage == "coding":
             should_advance_stage = True
-        elif current_stage == "behavioral":
-            should_advance_stage = next_stage_state["turn_count"] >= 6
         elif current_stage in HR_STAGE_INDEX:
             should_advance_stage = next_stage_state["turn_count"] >= 2
 
         if (
             (explicit_unknown or unknown_control)
-            and current_stage in {"fundamentals", "behavioral", *HR_STAGE_INDEX}
+            and current_stage in {"fundamentals", *HR_STAGE_INDEX}
             and not should_advance_stage
             and next_stage_state["turn_count"] % 2 == 1
         ):
@@ -829,13 +826,13 @@ class InterviewEngine:
                     vague=vague_answer,
                 )
         elif (
-            current_stage in {"fundamentals", "behavioral", *HR_STAGE_INDEX}
+            current_stage in {"fundamentals", *HR_STAGE_INDEX}
             and next_stage_id == current_stage
             and next_stage_state["turn_count"] % 2 == 1
         ):
             stage_pool = (
                 [item for item in server_questions if item.get("kind") == "behavioral"]
-                if current_stage == "behavioral" or current_stage in HR_STAGE_INDEX
+                if current_stage in HR_STAGE_INDEX
                 else [
                     item
                     for item in server_questions
@@ -857,7 +854,7 @@ class InterviewEngine:
                     bank_item=bank_item,
                     track=(
                         "hr"
-                        if current_stage == "behavioral" or current_stage in HR_STAGE_INDEX
+                        if current_stage in HR_STAGE_INDEX
                         else "technical"
                     ),
                     vague=vague_answer,
@@ -955,13 +952,6 @@ class InterviewEngine:
             current_dimension = "coding_thought"
             current_topic = f"手撕思路·{(answered_bank_item or {}).get('topic') or '数据结构与算法'}"
             current_drill_dimension = "手撕思路"
-        elif current_stage == "behavioral":
-            item_index = int(stage_state.get("turn_count") or 0) // 2
-            answered_bank_item = hr_questions[item_index % len(hr_questions)] if hr_questions else None
-            current_dimension = "communication"
-            current_topic = f"综合面·{(answered_bank_item or {}).get('topic') or '综合交流'}"
-            current_drill_dimension = ""
-            current_drill_depth = int(stage_state.get("turn_count") or 0) % 2
         elif current_stage in HR_STAGE_INDEX:
             item_index = HR_STAGE_INDEX[current_stage]
             answered_bank_item = hr_questions[item_index % len(hr_questions)] if hr_questions else None
@@ -996,7 +986,7 @@ class InterviewEngine:
         elif next_stage_id != current_stage:
             pressure_action = "none"
         elif (
-            current_stage in {"fundamentals", "behavioral", *HR_STAGE_INDEX}
+            current_stage in {"fundamentals", *HR_STAGE_INDEX}
             and next_stage_state["turn_count"] % 2 == 0
         ):
             pressure_action = "none"

@@ -6,11 +6,12 @@ import pytest
 
 from app.config import get_settings
 from app.db import Database
-from app.interview_engine import InterviewEngine, interview_stage_plan
+from app.interview_engine import STAGE_LABELS, InterviewEngine, interview_stage_plan
 from app.schemas import InterviewCreate, Project, ResumeData
 
 
 def test_stage_plans_follow_interview_type_boundaries() -> None:
+    assert "behavioral" not in STAGE_LABELS
     assert interview_stage_plan("technical") == [
         "self_intro", "project_deep_dive", "fundamentals", "coding", "candidate_questions"
     ]

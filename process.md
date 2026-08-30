@@ -56,6 +56,15 @@
 - 验证：计时/API/前端专项 `16 passed`；共享工作区全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `264 passed`；`node --check public/js/interview.js`、Python compileall 与 `git diff --check` 通过。
 - 风险或后续事项：无；报告中的可信用时仍由服务端“题目出现到提交”计量，前端只负责同步展示。
 
+### INTERVIEW-011 · 2026-08-30 · 清空旧场次并移除旧阶段兼容
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：按用户明确要求永久删除生产环境全部旧面试场次；删除 `interviews` 主表记录并由外键级联清除关联问答和报告，不触碰简历、项目或账号资料。代码同时删除已无数据来源的旧 `behavioral` 阶段标签、选题、推进、报告 topic 和压力控制兼容分支；题库中的 `behavioral` 仍作为综合面题目类型保留，新场次只使用 `hr_fit`、`career_planning`、`compensation` 三个显式阶段。
+- 实际文件：`app/interview_engine.py`、`tests/test_interview_stage_flow.py`、`process.md`；生产数据 `/opt/ai-interviewer-mvp/data/interviews.db`。
+- 验证：清理前/后分别为面试 `8 → 0`、问答 `17 → 0`、报告 `5 → 0`；清理后服务恢复 `active`。代码全量 `264 passed`，JavaScript 语法、Python compileall 与 `git diff --check` 通过；测试明确断言运行时阶段标签不再包含 `behavioral`。
+- 回滚与风险：清理前数据库备份为 `/tmp/interviews-pre-purge-20260830.db`；恢复该备份会重新带回用户要求删除的旧场次，只用于误操作灾备。浏览器本地仍可能保存已失效的场次 ID，重新进入时应新建面试。
+
 ### DEPLOY-021 · 2026-08-30 · 面试阶段与计时交互生产发布
 
 - Agent：`/root`。
