@@ -139,7 +139,7 @@ class ReportEngine:
                 report.comparison = self._comparison(previous, report)
             else:
                 report.comparison = {}
-            await self.db.save_report(interview, report)
+            await self.db.save_report(interview, report, turns)
             return report
 
     async def _build(

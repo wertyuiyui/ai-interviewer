@@ -10,6 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 import app.main as main_module
+from app.coding_practice import CodingHintRequest, CodingPracticeService
 from app.config import get_settings
 from app.db import Database
 from app.errors import AppError, LLMError
@@ -24,6 +25,7 @@ from app.practice import (
     PracticeSkipCreate,
     load_real_question_bank,
 )
+from app.report_engine import ReportEngine
 from app.schemas import InterviewCreate, InterviewTurn, ResumeData
 
 
@@ -406,6 +408,284 @@ async def test_review_reuses_exact_interview_turn_and_checks_owner(tmp_path) -> 
     assert caught.value.code == "PRACTICE_FORBIDDEN"
     assert await service.owns_session(review["id"], "different-owner-001") is False
     assert await service.owns_session(review["id"], "review-owner-001") is True
+
+
+@pytest.mark.asyncio
+async def test_report_adds_interview_mistakes_and_finite_modules_prioritize_them(
+    tmp_path,
+) -> None:
+    question_dir = tmp_path / "questions"
+    write_bank(question_dir)
+    settings = replace(
+        get_settings(),
+        mock_llm=True,
+        voice_mode="L3",
+        db_path=tmp_path / "interview-mistakes.db",
+    )
+    database = Database(settings)
+    await database.initialize()
+    engine = InterviewEngine(database, settings)
+    interview = await engine.create(
+        InterviewCreate(
+            client_id="interview-mistake-client-001",
+            company="bytedance",
+            language_mode="zh",
+            interview_type="technical_hr",
+            resume=ResumeData.model_validate(
+                {
+                    "项目": [
+                        {"name": "交易平台", "role": "参与开发"},
+                        {"name": "校园交易平台", "role": "后端负责人"},
+                    ]
+                }
+            ),
+        )
+    )
+    turns = [
+        InterviewTurn(
+            ordinal=1,
+            question="请解释 Redis 缓存击穿的完整请求链路。",
+            answer="不知道。",
+            category="fundamentals",
+            topic="Redis",
+            score=2.5,
+            score_source="mock",
+            deductions=["没有说明请求链路"],
+            failed=True,
+        ),
+        InterviewTurn(
+            ordinal=2,
+            question="未来两年你会如何选择和验证自己的技术方向？",
+            answer="还没想好。",
+            category="communication",
+            topic="综合面·职业规划与选择",
+            score=4.0,
+            score_source="mock",
+            deductions=["缺少可验证行动"],
+        ),
+        InterviewTurn(
+            ordinal=3,
+            question="请说明两数之和的解法、复杂度和边界用例。",
+            answer="只会暴力枚举。",
+            category="coding_thought",
+            topic="手撕思路·数组",
+            score=5.0,
+            score_source="mock",
+            deductions=["没有说明目标复杂度"],
+        ),
+        InterviewTurn(
+            ordinal=4,
+            question="校园交易平台中，你如何定位并修复过一次一致性问题？",
+            answer="没有形成完整复盘。",
+            category="project_depth",
+            topic="项目深挖·问题定位",
+            score=6.0,
+            score_source="mock",
+            deductions=["缺少定位链路和验证结果"],
+        ),
+        InterviewTurn(
+            ordinal=5,
+            question="请解释 JVM 类加载的双亲委派。",
+            answer="回答存在关键错误。",
+            category="fundamentals",
+            topic="JVM",
+            score=7.5,
+            score_source="mock",
+            deductions=["核心结论错误"],
+            failed=True,
+        ),
+        InterviewTurn(
+            ordinal=6,
+            question="请说明一次已经验证的性能优化。",
+            answer="通过压测和监控验证了延迟下降。",
+            category="fundamentals",
+            topic="性能优化",
+            score=8.0,
+            score_source="mock",
+            deductions=["可以补充更多数据"],
+        ),
+        InterviewTurn(
+            ordinal=7,
+            question="本轮评分服务不可用。",
+            answer="这是一个有效回答。",
+            category="fundamentals",
+            topic="MySQL",
+            score=None,
+            scorable=False,
+            score_source="unavailable",
+            deductions=[],
+        ),
+        InterviewTurn(
+            ordinal=8,
+            question="你如何排序薪酬、成长空间和技术方向？",
+            answer="主要看薪酬。",
+            category="communication",
+            topic="综合面·薪酬沟通",
+            score=5.5,
+            score_source="mock",
+            deductions=["缺少排序依据和可协商边界"],
+        ),
+    ]
+    for turn in turns:
+        await database.append_turn(interview["id"], turn, "下一题")
+    await database.finish_interview(interview["id"], "manual")
+
+    reports = ReportEngine(database, settings)
+    await reports.generate(interview["id"])
+    await reports.generate(interview["id"])
+
+    def simulate_pre_feature_report(connection: sqlite3.Connection) -> None:
+        connection.execute("DELETE FROM practice_mistakes")
+        connection.execute(
+            "DELETE FROM schema_migrations WHERE name = 'interview_mistakes_v1'"
+        )
+        connection.commit()
+
+    await database._run(simulate_pre_feature_report)
+    await database.initialize()
+    service = PracticeService(database, settings, question_dir=question_dir)
+    await service.initialize()
+
+    mistakes = await service.mistakes("interview-mistake-client-001")
+    assert len(mistakes) == 6
+    assert {item["question"]["kind"] for item in mistakes} == {
+        "technical",
+        "behavioral",
+        "coding",
+        "project",
+    }
+    assert all(item["attempt_count"] == 1 for item in mistakes)
+    assert all(item["question"]["source_type"] == "interview" for item in mistakes)
+    assert all(item["latest_deductions"] for item in mistakes)
+    project_mistake = next(
+        item for item in mistakes if item["question"]["kind"] == "project"
+    )
+    assert project_mistake["question"]["project_name"] == "校园交易平台"
+    assert project_mistake["question"]["previous_better_answer"]
+    assert any(
+        item["latest_score"] == 7.5 and item["question"]["topic"] == "JVM"
+        for item in mistakes
+    )
+
+    technical = await service.create_session(
+        PracticeSessionCreate(
+            client_id="interview-mistake-client-001",
+            company="bytedance",
+            topic="Redis",
+            difficulty="medium",
+            interview_type="technical",
+            language_mode="zh",
+            count=1,
+        )
+    )
+    assert technical["current_question"]["from_mistake_book"] is True
+    assert technical["current_question"]["topic"] == "Redis"
+    assert technical["current_question"]["previous_score"] == 2.5
+
+    hr = await service.create_session(
+        PracticeSessionCreate(
+            client_id="interview-mistake-client-001",
+            company="bytedance",
+            interview_type="hr",
+            language_mode="zh",
+            count=1,
+        )
+    )
+    assert hr["current_question"]["kind"] == "behavioral"
+    assert hr["current_question"]["from_mistake_book"] is True
+
+    mixed = await service.create_session(
+        PracticeSessionCreate(
+            client_id="interview-mistake-client-001",
+            company="bytedance",
+            interview_type="technical_hr",
+            language_mode="zh",
+            count=4,
+        )
+    )
+    stored_mixed = await service._require_session(
+        mixed["id"], "interview-mistake-client-001"
+    )
+    assert sum(
+        item.get("kind") == "behavioral" for item in stored_mixed["questions"]
+    ) == 2
+    assert all(
+        item.get("kind") in {"technical", "behavioral"}
+        for item in stored_mixed["questions"]
+    )
+
+    coding = await service.create_session(
+        PracticeSessionCreate(
+            client_id="interview-mistake-client-001",
+            company="bytedance",
+            topic="数组",
+            interview_type="technical",
+            drill_type="coding",
+            language_mode="zh",
+            count=1,
+        )
+    )
+    assert coding["current_question"]["kind"] == "coding"
+    assert coding["current_question"]["from_mistake_book"] is True
+
+    coding_workbench = CodingPracticeService(settings, db=database)
+    coding_catalog = await coding_workbench.catalog("interview-mistake-client-001")
+    assert coding_catalog["mistake_count"] == 1
+    assert coding_catalog["questions"][0]["from_mistake_book"] is True
+    assert coding_catalog["questions"][0]["prompt"]["zh"] == turns[2].question
+    coding_hint = await coding_workbench.hint(
+        CodingHintRequest(
+            challenge_id=coding_catalog["questions"][0]["id"],
+            stage="approach",
+            client_id="interview-mistake-client-001",
+        )
+    )
+    assert coding_hint["hint"]
+
+    await service.submit_answer(
+        technical["id"],
+        PracticeAnswerCreate(
+            client_id="interview-mistake-client-001",
+            question_id=technical["current_question"]["id"],
+            answer="不知道。",
+        ),
+    )
+    refreshed = await service.mistakes("interview-mistake-client-001")
+    retried = next(
+        item
+        for item in refreshed
+        if item["question"]["id"] == technical["current_question"]["id"]
+    )
+    assert retried["attempt_count"] == 2
+
+    await service.delete_mistake(
+        project_mistake["id"], "interview-mistake-client-001"
+    )
+    await database.initialize()
+    assert all(
+        item["question"]["kind"] != "project"
+        for item in await service.mistakes("interview-mistake-client-001")
+    )
+
+    def corrupt_legacy_report(connection: sqlite3.Connection) -> None:
+        connection.execute(
+            "UPDATE reports SET report_json = '{' WHERE interview_id = ?",
+            (interview["id"],),
+        )
+        connection.execute(
+            "DELETE FROM schema_migrations WHERE name = 'interview_mistakes_v1'"
+        )
+        connection.commit()
+
+    await database._run(corrupt_legacy_report)
+    await database.initialize()
+
+    def migration_was_not_falsely_completed(connection: sqlite3.Connection) -> bool:
+        return connection.execute(
+            "SELECT 1 FROM schema_migrations WHERE name = 'interview_mistakes_v1'"
+        ).fetchone() is None
+
+    assert await database._run(migration_was_not_falsely_completed)
 
 
 class FailingClient:

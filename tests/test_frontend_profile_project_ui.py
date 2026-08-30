@@ -128,6 +128,7 @@ def test_standalone_profile_integrates_assets_mistakes_and_history() -> None:
     assert "'/api/profile/projects/github'" in script
     assert "'/api/profile/projects/links'" in script
     assert "/api/practice/mistakes?client_id=" in script
+    assert "模拟面试中低分或未通过的题" in script
     assert "/api/history?client_id=" in script
     assert "/api/practice/history?client_id=" in script
     assert "Promise.allSettled" in script
@@ -257,6 +258,11 @@ def test_project_interpretation_page_uses_profile_analysis_contract() -> None:
     assert "project_practice.v1" in script
     assert "完成回答" in script
     assert "formatSeconds(elapsedPracticeSeconds" in script
+    assert "projectMistakeQuestions()" in script
+    assert "/api/practice/mistakes?client_id=" in script
+    assert "面试官 · 错题优先" in script
+    assert "来自个人模拟面试复盘，并已匹配当前项目名称" in script
+    assert "!recordedName || recordedName !== selectedName" in script
     assert "@media (max-width: 720px)" in style
     assert ".project-progress-steps" in style
     assert ".project-flow-review" in style

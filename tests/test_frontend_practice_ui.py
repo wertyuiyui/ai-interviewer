@@ -46,6 +46,8 @@ def test_practice_page_supports_unlimited_skip_finish_and_mistake_book() -> None
     assert "/api/practice/mistakes" in script
     assert "method: 'DELETE'" in script
     assert "第 ${position} 题 · 无限模式" in script
+    assert "匹配类型的练习会优先抽取" in page
+    assert "模拟面试出现低分或未通过题" in script
 
 
 def test_practice_question_ui_renders_safe_public_provenance_and_origin_badges() -> None:

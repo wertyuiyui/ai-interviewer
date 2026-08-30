@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from .config import ROOT_DIR, Settings, get_settings
 from .content import COMPANIES, company_question_rank, load_interview_skill
-from .db import Database
+from .db import Database, interview_question_kind
 from .errors import AppError, LLMError
 from .llm import BailianChatClient
 from .schemas import InterviewType, normalize_interview_type
@@ -577,21 +577,6 @@ CREATE TABLE IF NOT EXISTS practice_attempts (
 CREATE INDEX IF NOT EXISTS idx_practice_attempts_session
     ON practice_attempts(session_id, created_at);
 
-CREATE TABLE IF NOT EXISTS practice_mistakes (
-    id TEXT PRIMARY KEY,
-    client_id TEXT NOT NULL,
-    question_key TEXT NOT NULL,
-    question_snapshot_json TEXT NOT NULL,
-    latest_score REAL NOT NULL,
-    latest_deductions_json TEXT NOT NULL DEFAULT '[]',
-    attempt_count INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    UNIQUE(client_id, question_key)
-);
-
-CREATE INDEX IF NOT EXISTS idx_practice_mistakes_client_updated
-    ON practice_mistakes(client_id, updated_at DESC);
 """
 
 
@@ -747,27 +732,45 @@ class PracticeService:
             questions = await self._review_questions(request)
         else:
             questions = self._quick_questions(request, session_id)
-            if request.infinite:
-                mistakes = await self._mistake_question_snapshots(
-                    request.client_id,
-                    request.language_mode,
-                    company=request.company,
-                    topic=request.topic,
-                    difficulty=request.difficulty,
-                    interview_type=request.interview_type,
-                    drill_type=request.drill_type,
+            mistakes = await self._mistake_question_snapshots(
+                request.client_id,
+                request.language_mode,
+                company=request.company,
+                topic=request.topic,
+                difficulty=request.difficulty,
+                interview_type=request.interview_type,
+                drill_type=request.drill_type,
+            )
+            seen = {
+                _canonical_question_key(str(item.get("id"))) for item in mistakes
+            }
+            combined = [
+                *mistakes,
+                *(
+                    item
+                    for item in questions
+                    if _canonical_question_key(str(item.get("id"))) not in seen
+                ),
+            ]
+            requested_count = request.count or 5
+            if request.interview_type == "technical_hr" and requested_count >= 2:
+                behavioral_target = max(1, round(requested_count * 0.4))
+                technical_target = requested_count - behavioral_target
+                technical = [item for item in combined if not _is_behavioral_question(item)]
+                behavioral = [item for item in combined if _is_behavioral_question(item)]
+                selected = [
+                    *technical[:technical_target],
+                    *behavioral[:behavioral_target],
+                ]
+                selected_ids = {str(item.get("id")) for item in selected}
+                selected.extend(
+                    item
+                    for item in combined
+                    if str(item.get("id")) not in selected_ids
                 )
-                seen = {
-                    _canonical_question_key(str(item.get("id"))) for item in mistakes
-                }
-                questions = [
-                    *mistakes,
-                    *(
-                        item
-                        for item in questions
-                        if _canonical_question_key(str(item.get("id"))) not in seen
-                    ),
-                ][: (request.count or 5)]
+                questions = selected[:requested_count]
+            else:
+                questions = combined[:requested_count]
         if not questions:
             message = (
                 "这场面试没有符合条件的低分题"
@@ -952,7 +955,8 @@ class PracticeService:
     ) -> list[dict[str, Any]]:
         def operation(connection: sqlite3.Connection) -> list[dict[str, Any]]:
             rows = connection.execute(
-                "SELECT question_snapshot_json FROM practice_mistakes "
+                "SELECT question_snapshot_json, latest_score, latest_deductions_json "
+                "FROM practice_mistakes "
                 "WHERE client_id = ? ORDER BY updated_at DESC",
                 (client_id,),
             ).fetchall()
@@ -968,6 +972,8 @@ class PracticeService:
                 kind = str(question.get("kind") or "technical")
                 if drill_type == "coding" and kind != "coding":
                     continue
+                if drill_type != "coding" and kind in {"coding", "project"}:
+                    continue
                 if interview_type == "technical" and kind == "behavioral":
                     continue
                 if interview_type == "hr" and kind != "behavioral":
@@ -978,8 +984,21 @@ class PracticeService:
                     f"{question.get('topic', '')} {question.get('category', '')}".casefold()
                 ):
                     continue
-                if difficulty and kind != "behavioral" and question.get("difficulty") != difficulty:
+                snapshot_difficulty = question.get("difficulty")
+                if (
+                    difficulty
+                    and kind != "behavioral"
+                    and snapshot_difficulty in {"easy", "medium", "hard", "discussion"}
+                    and snapshot_difficulty != difficulty
+                ):
                     continue
+                question["previous_score"] = row["latest_score"]
+                try:
+                    question["previous_deductions"] = json.loads(
+                        row["latest_deductions_json"] or "[]"
+                    )
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    question["previous_deductions"] = []
                 question["from_mistake_book"] = True
                 result.append(question)
             return result
@@ -1165,6 +1184,11 @@ class PracticeService:
             {
                 "id": f"review-{request.source_interview_id}-{turn.ordinal}",
                 "company": interview["company"],
+                "kind": interview_question_kind(
+                    str(interview.get("interview_type") or "technical"),
+                    turn.category,
+                    turn.topic,
+                ),
                 "category": turn.category,
                 "topic": turn.topic,
                 "question": turn.question,
@@ -1706,6 +1730,8 @@ class PracticeService:
             "recommended_answer_seconds",
             "previous_score",
             "previous_deductions",
+            "previous_better_answer",
+            "project_name",
             "origin",
             "origin_label",
             "badge",

@@ -38,6 +38,10 @@ def test_coding_page_uses_independent_interview_workflow_and_static_review() -> 
     assert "/api/coding/catalog" in script
     assert "/api/coding/hint" in script
     assert "/api/coding/review" in script
+    assert "getClientId" in script
+    assert "catalog.mistake_count" in script
+    assert "question.from_mistake_book ? '错题优先'" in script
+    assert "client_id: getClientId()" in script
     assert "/api/practice/sessions" not in script
     assert "localStorage" in script
     assert "function openPreviousQuestion()" in script

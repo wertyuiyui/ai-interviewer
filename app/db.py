@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sqlite3
 import time
@@ -96,11 +97,55 @@ CREATE TABLE IF NOT EXISTS reports (
 
 CREATE INDEX IF NOT EXISTS idx_reports_client_created
     ON reports(client_id, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS practice_mistakes (
+    id TEXT PRIMARY KEY,
+    client_id TEXT NOT NULL,
+    question_key TEXT NOT NULL,
+    question_snapshot_json TEXT NOT NULL,
+    latest_score REAL NOT NULL,
+    latest_deductions_json TEXT NOT NULL DEFAULT '[]',
+    attempt_count INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    UNIQUE(client_id, question_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_practice_mistakes_client_updated
+    ON practice_mistakes(client_id, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    name TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL
+);
+"""
+
+MISTAKE_INSERT_SQL = """
+INSERT INTO practice_mistakes (
+    id, client_id, question_key, question_snapshot_json,
+    latest_score, latest_deductions_json, attempt_count,
+    created_at, updated_at
+) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+ON CONFLICT(client_id, question_key) DO NOTHING
 """
 
 
 def _utc_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def interview_question_kind(
+    interview_type: str, category: str, topic: str
+) -> str:
+    category = category.strip().casefold()
+    topic = topic.strip().casefold()
+    if category == "coding_thought" or topic.startswith("手撕思路"):
+        return "coding"
+    if interview_type == "hr" or topic.startswith("综合面·"):
+        return "behavioral"
+    if category == "project_depth":
+        return "project"
+    return "technical"
 
 
 def _normalize_report_scoring(
@@ -332,6 +377,57 @@ class Database:
             connection.commit()
 
         await self._run(operation)
+        await self._backfill_interview_mistakes()
+
+    async def _backfill_interview_mistakes(self) -> None:
+        migration = "interview_mistakes_v1"
+
+        def pending(connection: sqlite3.Connection) -> list[str]:
+            if connection.execute(
+                "SELECT 1 FROM schema_migrations WHERE name = ?", (migration,)
+            ).fetchone():
+                return []
+            return [
+                str(row["interview_id"])
+                for row in connection.execute(
+                    "SELECT interview_id FROM reports ORDER BY created_at"
+                ).fetchall()
+            ]
+
+        interview_ids = await self._run(pending)
+        mistake_rows: list[tuple[Any, ...]] = []
+        migration_complete = True
+        for interview_id in interview_ids:
+            try:
+                interview = await self.get_interview(interview_id)
+                stored_report = await self.get_report(interview_id)
+                turns = [
+                    turn
+                    for turn in await self.list_turns(interview_id)
+                    if turn.answer.strip()
+                ]
+                if not interview or not stored_report:
+                    migration_complete = False
+                    continue
+                report = InterviewReport.model_validate(stored_report)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                migration_complete = False
+                continue
+            mistake_rows.extend(
+                self._interview_mistake_rows(interview, report, turns)
+            )
+
+        def finish(connection: sqlite3.Connection) -> None:
+            connection.executemany(MISTAKE_INSERT_SQL, mistake_rows)
+            if migration_complete:
+                connection.execute(
+                    "INSERT OR IGNORE INTO schema_migrations (name, applied_at) "
+                    "VALUES (?, ?)",
+                    (migration, _utc_iso()),
+                )
+            connection.commit()
+
+        await self._run(finish)
 
     async def create_interview(
         self,
@@ -861,9 +957,113 @@ class Database:
 
         return await self._run(operation)
 
+    @staticmethod
+    def _interview_mistake_rows(
+        interview: dict[str, Any],
+        report: InterviewReport,
+        turns: list[InterviewTurn],
+    ) -> list[tuple[Any, ...]]:
+        language = "en" if interview.get("language_mode") == "en" else "zh"
+        project_names = [
+            str(item.get("name") or "").strip()
+            for item in (
+                interview.get("resume", {}).get("项目")
+                or interview.get("resume", {}).get("projects")
+                or []
+            )
+            if isinstance(item, dict) and str(item.get("name") or "").strip()
+        ]
+        project_names.sort(key=len, reverse=True)
+        active_project_name = ""
+        mistake_rows: list[tuple[Any, ...]] = []
+        for index, turn in enumerate(turns):
+            kind = interview_question_kind(
+                str(interview.get("interview_type") or "technical"),
+                turn.category,
+                turn.topic,
+            )
+            if kind == "project":
+                active_project_name = next(
+                    (
+                        name
+                        for name in project_names
+                        if name.casefold() in turn.question.casefold()
+                    ),
+                    active_project_name or (project_names[0] if len(project_names) == 1 else ""),
+                )
+            if (
+                not turn.scorable
+                or turn.score is None
+                or (turn.score > 6.0 and not turn.failed)
+            ):
+                continue
+            category = {
+                "behavioral": "Behavioral" if language == "en" else "综合面",
+                "coding": "Coding" if language == "en" else "手撕代码",
+                "project": "Project deep dive" if language == "en" else "项目深挖",
+            }.get(kind, "Backend fundamentals" if language == "en" else "后端基础")
+            question_key = f"review-{interview['id']}-{turn.ordinal}"
+            feedback = (
+                report.question_feedback[index]
+                if index < len(report.question_feedback)
+                else None
+            )
+            deductions = (
+                feedback.deductions
+                if feedback is not None
+                else turn.deductions
+            )
+            snapshot = {
+                "id": question_key,
+                "company": interview["company"],
+                "kind": kind,
+                "category": category,
+                "topic": turn.topic,
+                "question": turn.question,
+                "followups": [],
+                "language": language,
+                "recommended_answer_seconds": turn.recommended_answer_seconds,
+                "previous_score": turn.score,
+                "previous_deductions": deductions,
+                "previous_better_answer": feedback.better_answer if feedback else "",
+                "origin": "interview",
+                "origin_label": "Interview mistake" if language == "en" else "面试错题",
+                "badge": "Interview mistake" if language == "en" else "面试错题",
+                "source": "Interview review" if language == "en" else "个人面试复盘",
+                "source_label": "Interview review" if language == "en" else "个人面试复盘",
+                "source_type": "interview",
+                "provenance": {
+                    "origin": "interview_turn",
+                    "interview_id": interview["id"],
+                    "ordinal": turn.ordinal,
+                },
+            }
+            if kind == "project" and active_project_name:
+                snapshot["project_name"] = active_project_name
+            mistake_rows.append(
+                (
+                    hashlib.sha256(
+                        f"{interview['client_id']}:{question_key}".encode("utf-8")
+                    ).hexdigest(),
+                    interview["client_id"],
+                    question_key,
+                    json.dumps(snapshot, ensure_ascii=False),
+                    turn.score,
+                    json.dumps(deductions, ensure_ascii=False),
+                    report.generated_at,
+                    report.generated_at,
+                )
+            )
+        return mistake_rows
+
     async def save_report(
-        self, interview: dict[str, Any], report: InterviewReport
+        self,
+        interview: dict[str, Any],
+        report: InterviewReport,
+        turns: list[InterviewTurn],
     ) -> None:
+        mistake_rows = self._interview_mistake_rows(interview, report, turns)
+
         def operation(connection: sqlite3.Connection) -> None:
             connection.execute(
                 """
@@ -887,6 +1087,7 @@ class Database:
                     report.generated_at,
                 ),
             )
+            connection.executemany(MISTAKE_INSERT_SQL, mistake_rows)
             connection.execute(
                 "UPDATE interviews SET status = 'reported' WHERE id = ?",
                 (interview["id"],),

@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from .config import ROOT_DIR, Settings, get_settings
+from .db import Database
 from .errors import AppError, LLMError
 from .llm import BailianChatClient
 
@@ -26,6 +27,9 @@ class CodingReviewRequest(BaseModel):
     code: str = Field(min_length=10, max_length=20000)
     complexity: str = Field(min_length=3, max_length=2000)
     test_cases: list[str] = Field(min_length=1, max_length=12)
+    client_id: str | None = Field(
+        default=None, pattern=r"^[A-Za-z0-9_-]{8,128}$"
+    )
 
     @field_validator("assumptions", "approach", "code", "complexity")
     @classmethod
@@ -50,6 +54,9 @@ class CodingHintRequest(BaseModel):
 
     challenge_id: str = Field(min_length=3, max_length=100)
     stage: CodingStage
+    client_id: str | None = Field(
+        default=None, pattern=r"^[A-Za-z0-9_-]{8,128}$"
+    )
 
 
 class CodingDimension(BaseModel):
@@ -91,11 +98,13 @@ class CodingPracticeService:
         settings: Settings | None = None,
         client: BailianChatClient | None = None,
         *,
+        db: Database | None = None,
         bank_path: Path | None = None,
         manifest_path: Path | None = None,
     ) -> None:
         self.settings = settings or get_settings()
         self.client = client or BailianChatClient(self.settings)
+        self.db = db
         self.bank_path = bank_path or ROOT_DIR / "questions" / "coding_practice_bank.json"
         self.manifest_path = manifest_path or ROOT_DIR / "resources" / "coding_source_manifest.json"
 
@@ -105,28 +114,131 @@ class CodingPracticeService:
             raise AppError("CODING_BANK_EMPTY", "手撕代码题库为空", status_code=503)
         return [item for item in questions if isinstance(item, dict) and item.get("id")]
 
-    def _challenge(self, challenge_id: str) -> dict[str, Any]:
+    async def _challenge(
+        self, challenge_id: str, client_id: str | None = None
+    ) -> dict[str, Any]:
         challenge = next(
-            (item for item in self._bank() if str(item.get("id")) == challenge_id),
+            (
+                item
+                for item in await self._mistake_challenges(client_id)
+                if str(item.get("id")) == challenge_id
+            ),
             None,
         )
         if challenge is None:
+            challenge = next(
+                (item for item in self._bank() if str(item.get("id")) == challenge_id),
+                None,
+            )
+        if challenge is None:
             raise AppError("CODING_CHALLENGE_NOT_FOUND", "手撕代码题目不存在", status_code=404)
         return challenge
+
+    @staticmethod
+    def _mistake_challenge(question: dict[str, Any]) -> dict[str, Any]:
+        prompt = str(question.get("question") or "").strip()
+        topic = str(question.get("topic") or "手撕代码").removeprefix("手撕思路·")
+        deductions = [
+            str(item).strip()
+            for item in (question.get("previous_deductions") or [])
+            if str(item).strip()
+        ][:4]
+        better_answer = str(question.get("previous_better_answer") or "").strip()
+        reference = better_answer if better_answer.count("\n") >= 3 else (
+            "function solve(input):\n"
+            "    clarify input, output, and edge cases\n"
+            "    choose a data structure and state the invariant\n"
+            "    implement the state transition\n"
+            "    return the verified result"
+        )
+        return {
+            "id": str(question.get("id") or ""),
+            "title": {"zh": f"错题重练：{topic}", "en": f"Mistake retry: {topic}"},
+            "topic": topic,
+            "patterns": ["错题优先", "完整重做"],
+            "difficulty": "medium",
+            "recommended_minutes": 30,
+            "prompt": {"zh": prompt, "en": prompt},
+            "constraints": [
+                *(f"上次扣分：{item}" for item in deductions),
+                "先澄清输入输出，再说明方案、不变量、复杂度和边界用例",
+            ],
+            "examples": [],
+            "signatures": {
+                "python": "def solve(input):",
+                "java": "Object solve(Object input)",
+                "go": "func solve(input any) any",
+                "javascript": "function solve(input)",
+            },
+            "rubric": {
+                "key_points": ["方案与关键不变量一致", "实现、复杂度和边界用例完整"],
+                "edge_cases": ["空输入", "最小输入", "极端或无解输入"],
+                "expected_complexity": "按题意给出并论证目标复杂度",
+            },
+            "reference_pseudocode": reference,
+            "hints": {
+                "clarify": "先列出输入、输出、无解行为和可修改性。",
+                "approach": "从上次扣分点反推缺失的不变量或状态转移。",
+                "code": "先写最小完整流程，再补边界分支。",
+                "test": "至少覆盖普通、最小、边界和反例。",
+            },
+            "source_ref": "interview",
+            "from_mistake_book": True,
+            "previous_score": question.get("previous_score"),
+            "previous_deductions": deductions,
+            "origin_label": question.get("origin_label") or "面试错题",
+        }
+
+    async def _mistake_challenges(
+        self, client_id: str | None
+    ) -> list[dict[str, Any]]:
+        if self.db is None or not client_id:
+            return []
+
+        def operation(connection: Any) -> list[dict[str, Any]]:
+            rows = connection.execute(
+                "SELECT question_snapshot_json, latest_score, latest_deductions_json "
+                "FROM practice_mistakes WHERE client_id = ? ORDER BY updated_at DESC",
+                (client_id,),
+            ).fetchall()
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                try:
+                    question = json.loads(row["question_snapshot_json"])
+                    deductions = json.loads(row["latest_deductions_json"] or "[]")
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                if str(question.get("kind") or "") != "coding":
+                    continue
+                question["previous_score"] = row["latest_score"]
+                question["previous_deductions"] = deductions
+                result.append(self._mistake_challenge(question))
+            return result
+
+        return await self.db._run(operation)
 
     @staticmethod
     def _public_challenge(challenge: dict[str, Any]) -> dict[str, Any]:
         allowed = {
             "id", "title", "topic", "patterns", "difficulty", "recommended_minutes",
             "prompt", "constraints", "examples", "signatures", "source_ref",
+            "from_mistake_book", "previous_score", "previous_deductions", "origin_label",
         }
         return {key: challenge[key] for key in allowed if key in challenge}
 
-    async def catalog(self) -> dict[str, Any]:
-        questions = self._bank()
+    async def catalog(self, client_id: str | None = None) -> dict[str, Any]:
+        curated = self._bank()
+        mistakes = await self._mistake_challenges(client_id)
+        mistake_ids = {str(item.get("id")) for item in mistakes}
+        questions = [
+            *mistakes,
+            *(item for item in curated if str(item.get("id")) not in mistake_ids),
+        ]
         manifest = _read_json(self.manifest_path)
         return {
             "question_count": len(questions),
+            "curated_question_count": len(curated),
+            "mistake_count": len(mistakes),
             "topics": sorted({str(item.get("topic")) for item in questions}),
             "difficulties": ["easy", "medium"],
             "languages": ["python", "java", "go", "javascript"],
@@ -138,14 +250,14 @@ class CodingPracticeService:
         }
 
     async def hint(self, request: CodingHintRequest) -> dict[str, str]:
-        challenge = self._challenge(request.challenge_id)
+        challenge = await self._challenge(request.challenge_id, request.client_id)
         hint = str((challenge.get("hints") or {}).get(request.stage) or "").strip()
         if request.stage == "code" and not hint:
             hint = "先把方案拆成少量职责清晰的步骤，再逐步翻译为代码。"
         return {"stage": request.stage, "hint": hint or "先用一个最小示例逐步推演。"}
 
     async def review(self, request: CodingReviewRequest) -> dict[str, Any]:
-        challenge = self._challenge(request.challenge_id)
+        challenge = await self._challenge(request.challenge_id, request.client_id)
         if self.settings.mock_llm:
             assessment = self._mock_review(challenge, request)
         else:
@@ -217,7 +329,7 @@ class CodingPracticeService:
         payload = {
             "challenge": challenge,
             "language": request.language,
-            "candidate": request.model_dump(exclude={"challenge_id"}),
+            "candidate": request.model_dump(exclude={"challenge_id", "client_id"}),
         }
         system = """
 你是代码面试复盘官。按 communication、problem_solving、technical_competency、testing 四维评分。

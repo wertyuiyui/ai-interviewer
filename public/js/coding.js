@@ -1,4 +1,4 @@
-import { $, apiFetch, formatSeconds, setButtonBusy, showToast, toArray } from './common.js?v=20260830-profile-bank-v2';
+import { $, apiFetch, formatSeconds, getClientId, setButtonBusy, showToast, toArray } from './common.js?v=20260830-profile-bank-v2';
 
 const elements = {
   landing: $('#codingLanding'), workbench: $('#codingWorkbench'), review: $('#codingReview'),
@@ -83,7 +83,12 @@ function renderQuestions() {
   questions.forEach((question) => {
     const button = document.createElement('button'); button.type = 'button'; button.className = 'coding-question';
     const meta = document.createElement('div'); meta.className = 'coding-question-meta';
-    meta.innerHTML = `<span>${question.topic}</span><span>${difficultyLabels[question.difficulty] || question.difficulty}</span>`;
+    [
+      question.from_mistake_book ? '错题优先' : question.topic,
+      difficultyLabels[question.difficulty] || question.difficulty,
+    ].forEach((value) => {
+      const item = document.createElement('span'); item.textContent = String(value || ''); meta.append(item);
+    });
     const title = document.createElement('h2'); title.textContent = question.title?.zh || question.id;
     const patterns = document.createElement('p'); patterns.textContent = toArray(question.patterns).join(' · ');
     const footer = document.createElement('footer'); footer.innerHTML = `<span>完整流程建议 ${question.recommended_minutes} 分钟</span><span>开始 →</span>`;
@@ -152,6 +157,7 @@ async function submitReview() {
       challenge_id: current.id, language: elements.language.value,
       assumptions: elements.assumptions.value, approach: elements.approach.value,
       code: elements.code.value, complexity: elements.complexity.value, test_cases: collectTests(),
+      client_id: getClientId(),
     } });
     renderReview(response.assessment || {}); clearInterval(timer);
     setVisible(elements.workbench, false); setVisible(elements.review, true); window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -179,15 +185,16 @@ function openPreviousQuestion() {
 }
 
 async function requestHint(stage, button) {
-  try { setButtonBusy(button, true, '读取中…'); const response = await apiFetch('/api/coding/hint', { method: 'POST', timeout: 15_000, json: { challenge_id: current.id, stage } }); showToast(response.hint || '先用最小示例推演。', 'info', 7000); }
+  try { setButtonBusy(button, true, '读取中…'); const response = await apiFetch('/api/coding/hint', { method: 'POST', timeout: 15_000, json: { challenge_id: current.id, stage, client_id: getClientId() } }); showToast(response.hint || '先用最小示例推演。', 'info', 7000); }
   catch (error) { showToast(error?.message || '暂时无法获取提示。', 'error'); } finally { setButtonBusy(button, false); }
 }
 
 async function initialize() {
   try {
-    catalog = await apiFetch('/api/coding/catalog', { timeout: 15_000 });
+    catalog = await apiFetch(`/api/coding/catalog?client_id=${encodeURIComponent(getClientId())}`, { timeout: 15_000 });
     toArray(catalog.topics).forEach((topic) => { const option = document.createElement('option'); option.value = topic; option.textContent = topic; elements.topic.append(option); });
-    elements.bankStatus.textContent = `${Number(catalog.question_count) || 0} 道公开策展真题 · 静态复盘`;
+    const mistakeCount = Number(catalog.mistake_count) || 0;
+    elements.bankStatus.textContent = `${Number(catalog.curated_question_count) || 0} 道公开策展真题${mistakeCount ? ` · ${mistakeCount} 道面试错题优先` : ''} · 静态复盘`;
     renderQuestions();
   } catch (error) { elements.bankStatus.textContent = '题库读取失败'; showToast(error?.message || '暂时无法读取手撕代码题库。', 'error'); }
 }

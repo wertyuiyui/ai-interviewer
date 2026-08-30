@@ -60,6 +60,7 @@ let selectedProject = null;
 let querySelectionHandled = false;
 let currentAnalysis = null;
 let currentQuestions = [];
+let projectMistakes = [];
 let questionsBusy = false;
 const projectPracticeTimers = new Map();
 const projectPracticeTicker = window.setInterval(() => {
@@ -342,8 +343,13 @@ async function clearProjectSelection() {
 async function loadProfile({ preferredProjectId = '' } = {}) {
   updateStatus('正在同步匿名 Profile…');
   try {
-    const payload = await apiFetch('/api/profile', { timeout: 15_000 });
+    const [payload, mistakePayload] = await Promise.all([
+      apiFetch('/api/profile', { timeout: 15_000 }),
+      apiFetch(`/api/practice/mistakes?client_id=${encodeURIComponent(getClientId())}&limit=100`, { timeout: 15_000 })
+        .catch(() => ({ items: [] })),
+    ]);
     profile = normalizeProfile(payload);
+    projectMistakes = toArray(mistakePayload?.items);
     const selectedId = profile.selected_project_id;
     const nextProject = profile.projects.find((item) => itemId(item) === selectedId)
       || profile.projects.find((item) => item?.selected === true)
@@ -367,6 +373,7 @@ async function loadProfile({ preferredProjectId = '' } = {}) {
     selectedProject = null;
     currentAnalysis = null;
     currentQuestions = [];
+    projectMistakes = [];
     renderProjects();
     renderReady();
     updateStatus('同步失败，可稍后重试');
@@ -723,6 +730,29 @@ function questionFingerprint(value) {
   return textFromValue(value).toLocaleLowerCase().replace(/[\s，。！？；：,.!?;:'"“”‘’（）()、]/g, '');
 }
 
+function projectMistakeQuestions() {
+  const selectedName = questionFingerprint(itemName(selectedProject, ''));
+  if (!selectedName) return [];
+  return projectMistakes.flatMap((mistake) => {
+    const question = mistake?.question && typeof mistake.question === 'object' ? mistake.question : {};
+    if (String(question.kind || '') !== 'project') return [];
+    const recordedName = questionFingerprint(question.project_name || '');
+    const prompt = textFromValue(question.question);
+    if (!recordedName || recordedName !== selectedName) return [];
+    const deductions = toArray(mistake.latest_deductions || question.previous_deductions)
+      .map(textFromValue).filter(Boolean);
+    return [{
+      question: prompt,
+      focus: deductions.length ? `优先修正上次扣分点：${deductions.join('；')}` : '重新讲清本人职责、技术取舍、实现证据与结果。',
+      responsibility_relevance: '来自这段项目经历的模拟面试错题，请按真实负责范围重答。',
+      evidence: ['个人模拟面试复盘'],
+      suggested_answer: textFromValue(question.previous_better_answer)
+        || '我会先说明项目背景和本人职责，再讲清关键决策、落地过程、真实结果与复盘；没有实际测量的数据不会补写。',
+      from_mistake_book: true,
+    }];
+  });
+}
+
 function normalizeProjectQuestions(values) {
   const seen = new Set();
   return toArray(values).reduce((items, question) => {
@@ -780,7 +810,8 @@ function renderQuestions(values, { append = false } = {}) {
   persistVisiblePracticeEntries();
   projectPracticeTimers.clear();
   elements.questions.replaceChildren();
-  const questions = normalizeProjectQuestions(append ? [...currentQuestions, ...toArray(values)] : values);
+  const source = append ? [...currentQuestions, ...toArray(values)] : toArray(values);
+  const questions = normalizeProjectQuestions([...projectMistakeQuestions(), ...source]);
   currentQuestions = questions;
   if (!questions.length) {
     const empty = document.createElement('p');
@@ -804,7 +835,7 @@ function renderQuestions(values, { append = false } = {}) {
     const copy = document.createElement('div');
     const interviewer = document.createElement('small');
     interviewer.className = 'project-interviewer-label';
-    interviewer.textContent = '面试官 · 项目深挖';
+    interviewer.textContent = source.from_mistake_book ? '面试官 · 错题优先' : '面试官 · 项目深挖';
     const title = document.createElement('h4');
     title.textContent = textFromValue(source.question || source.prompt || source.title) || `项目追问 ${index + 1}`;
     const focus = document.createElement('p');
@@ -820,7 +851,9 @@ function renderQuestions(values, { append = false } = {}) {
       : '请明确区分本人工作、团队成果和仍待核实的部分。';
     const evidence = document.createElement('p');
     evidence.className = 'project-question-evidence';
-    evidence.textContent = '已基于当前项目材料核对';
+    evidence.textContent = source.from_mistake_book
+      ? '来自个人模拟面试复盘，并已匹配当前项目名称'
+      : '已基于当前项目材料核对';
     copy.append(interviewer, title, focus, relevance, evidence);
     heading.append(number, copy);
 

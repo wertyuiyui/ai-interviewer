@@ -642,7 +642,7 @@ function renderMistakes() {
   const list = $('#profileMistakeList');
   list.replaceChildren();
   if (!state.mistakes.length) {
-    list.append(element('div', 'profile-empty-state', '还没有错题。快速刷题中已评分且不高于 6 分的题会自动收录。'));
+    list.append(element('div', 'profile-empty-state', '还没有错题。模拟面试中低分或未通过的题，以及快速刷题中不高于 6 分的题会自动收录。'));
     return;
   }
   state.mistakes.forEach((mistake) => {

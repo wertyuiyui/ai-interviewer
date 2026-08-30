@@ -72,7 +72,7 @@ resume_parser = ResumeParser(settings)
 interview_engine = InterviewEngine(db, settings)
 report_engine = ReportEngine(db, settings)
 practice_service = PracticeService(db, settings)
-coding_practice_service = CodingPracticeService(settings)
+coding_practice_service = CodingPracticeService(settings, db=db)
 profile_service = ProfileService(db, settings, resume_parser=resume_parser)
 background_tasks: set[asyncio.Task[Any]] = set()
 session_locks: dict[str, asyncio.Lock] = {}
@@ -400,8 +400,15 @@ async def practice_catalog() -> dict[str, Any]:
 
 
 @app.get("/api/coding/catalog")
-async def coding_catalog() -> dict[str, Any]:
-    return await coding_practice_service.catalog()
+async def coding_catalog(
+    client_id: str | None = Query(
+        default=None,
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    ),
+) -> dict[str, Any]:
+    return await coding_practice_service.catalog(client_id)
 
 
 @app.post("/api/coding/hint")

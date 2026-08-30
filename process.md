@@ -39,6 +39,14 @@
 
 ## 变更日志
 
+### PRACTICE-106 · 2026-08-30 · 面试错题自动入本与对应单项优先练习
+
+- Agent：`/root`；只读审计：`/root/mistake_flow_audit`、`/root/mistake_diff_review`、`/root/final_mistake_review`；状态：`completed`。
+- 摘要：在报告冻结并保存的同一事务中，将可评分且不高于 6 分、或已判定未通过的面试题写入既有 `practice_mistakes`；高分正常题与不可评分题不会污染错题本。新增一次性幂等历史回填，部署前已有报告也会补录；单条旧报告损坏时应用仍可启动，迁移不会被错误标记完成，后续启动可继续重试。有限/无限快速刷题都优先匹配错题并保留技术+HR 配比；八股/HR、手撕、项目错题按真实首页入口分流。`/coding` 以当前匿名 `client_id` 读取原面试手撕题并置顶为完整重做挑战；`/project` 仅在规范化项目名精确一致时置顶项目错题，多项目包含关系先匹配最长名称，避免串项目。最新分数、扣分点和报告改写示范随错题快照复用，手动移除在重启后保持有效。
+- 实际文件：`app/db.py`、`app/report_engine.py`、`app/practice.py`、`app/coding_practice.py`、`app/main.py`、`public/practice.html`、`public/js/practice.js`、`public/js/profile.js`、`public/js/coding.js`、`public/js/project.js`、`tests/test_practice.py`、`tests/test_frontend_practice_ui.py`、`tests/test_frontend_coding_ui.py`、`tests/test_frontend_profile_project_ui.py`、`process.md`。
+- 验证：面试报告低分/未通过自动入本、高分与不可评分排除、历史回填、损坏报告容错、重复报告幂等、手动删除持久、有限/无限优先、技术+HR 配比、语言/公司/主题/难度过滤、手撕原题工作台、项目精确归属与三个页面文案均有回归；专项 `34 passed`，最终全量 `275 passed`；Python `py_compile`、四份前端脚本 `node --check`、`git diff --check` 和敏感密钥模式扫描均通过。
+- 风险或后续事项：面试 turn 不保存完整算法函数签名与样例，因此手撕错题工作台保留原题、上次扣分点和通用完整作答流程，并要求候选人重新澄清输入输出；不会伪造原题未给出的约束。多项目场次无法可靠确定项目名的错题仍保留在个人错题本，但不会猜测性插入某个项目页。损坏且无法解析的旧报告不会阻断服务，也不会被静默视为已完成迁移。
+
 ### DEPLOY-036 · 2026-08-30 · 分阶段智能追问与真实回放工具生产发布
 
 - Agent：`/root`；状态：`completed`。

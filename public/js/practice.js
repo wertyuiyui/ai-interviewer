@@ -728,7 +728,7 @@ function renderMistakes(items) {
   if (!mistakes.length) {
     const empty = document.createElement('li');
     empty.className = 'practice-mistake-empty';
-    empty.textContent = '还没有错题。完成刷题后，低分题会自动出现在这里。';
+    empty.textContent = '还没有错题。模拟面试出现低分或未通过题、或快速刷题出现低分题后，会自动收录到这里。';
     elements.mistakeList.append(empty);
     return;
   }
