@@ -44,7 +44,21 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
     ) as client:
         config = await client.get("/api/config")
         assert config.status_code == 200
-        assert config.json()["voice_mode"] == "L3"
+        config_payload = config.json()
+        assert config_payload["voice_mode"] == "L3"
+        assert "AI 工程后端 / LLM Infra" in config_payload["specializations"]
+        assert config_payload["custom_duration"] == {
+            "min": 1,
+            "max": 180,
+            "unlimited": True,
+        }
+        assert [item["level"] for item in config_payload["stress_levels"]] == [
+            0,
+            1,
+            2,
+            3,
+        ]
+        assert config_payload["references"][0]["name"] == "ARIS-in-AI-Offer"
         assert config.headers["cache-control"] == "no-store"
 
         parsed = await client.post(
@@ -59,6 +73,33 @@ async def test_l3_rest_flow_resume_interview_report_and_history(
         assert parsed.status_code == 200
         resume = parsed.json()["resume"]
         assert set(resume) == {"教育", "实习经历", "项目", "技能"}
+
+        unlimited = await client.post(
+            "/api/interviews",
+            json={
+                "client_id": "api-unlimited-001",
+                "resume": resume,
+                "company": "meituan",
+                "role": "backend",
+                "specialization": "Go 微服务",
+                "stress_level": 1,
+                "duration_minutes": None,
+            },
+        )
+        assert unlimited.status_code == 201
+        unlimited_payload = unlimited.json()
+        assert unlimited_payload["specialization"] == "Go 微服务"
+        assert unlimited_payload["stress"] is True
+        assert unlimited_payload["stress_level"] == 1
+        assert unlimited_payload["duration_minutes"] is None
+        await database.start_interview(unlimited_payload["id"])
+        unlimited_state = await client.get(
+            f"/api/interviews/{unlimited_payload['id']}"
+        )
+        assert unlimited_state.status_code == 200
+        assert unlimited_state.json()["deadline_at"] is None
+        assert unlimited_state.json()["remaining_seconds"] is None
+        await database.finish_interview(unlimited_payload["id"], "manual")
 
         invalid = await client.post(
             "/api/interviews",
