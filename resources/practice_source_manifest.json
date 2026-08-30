@@ -1,0 +1,67 @@
+{
+  "schema_version": "1.0",
+  "generated_at": "2026-08-30",
+  "policy": {
+    "allowed_authenticity": "licensed_bank",
+    "content_rule": "Only short, reviewed prompts distilled or translated from the pinned, permissively licensed sources below are included. Long upstream answers are not redistributed.",
+    "runtime_rule": "The application reads static reviewed JSON. It does not crawl, scrape, or fetch question content at runtime."
+  },
+  "sources": [
+    {
+      "id": "javaguide",
+      "title": "JavaGuide",
+      "repository": "https://github.com/Snailclimb/JavaGuide",
+      "revision": "82bb2b64bbd5dc3feed3051a22609786d0d1ae0b",
+      "license": "Apache-2.0",
+      "license_copy": "references/licenses/Apache-2.0.txt",
+      "use": "Short interview prompts were selected, condensed, and translated from the cited documentation paths.",
+      "approved_path_prefixes": [
+        "docs/java/",
+        "docs/database/",
+        "docs/cs-basics/",
+        "docs/distributed-system/",
+        "docs/high-performance/"
+      ]
+    },
+    {
+      "id": "interview-go",
+      "title": "interview-go",
+      "repository": "https://github.com/lifei6671/interview-go",
+      "revision": "ac017e269c91983889f4dbd392c6318435f4239f",
+      "license": "Apache-2.0",
+      "license_copy": "references/licenses/Apache-2.0.txt",
+      "use": "Short Go interview prompts were selected, condensed, and translated from the cited Markdown question paths.",
+      "approved_path_prefixes": [
+        "base/",
+        "question/",
+        "mysql/",
+        "redis/",
+        "architecture/"
+      ]
+    },
+    {
+      "id": "tech-interview-handbook",
+      "title": "Tech Interview Handbook",
+      "repository": "https://github.com/yangshun/tech-interview-handbook",
+      "revision": "e1d28e8886c0b6ff3e50da991ce0e895134ddc59",
+      "license": "MIT",
+      "license_copy": "references/licenses/tech-interview-handbook-MIT.txt",
+      "use": "Short English behavioral prompts were selected from the cited handbook page and translated into Chinese.",
+      "approved_path_prefixes": [
+        "apps/website/contents/"
+      ]
+    },
+    {
+      "id": "aris-in-ai-offer",
+      "title": "ARIS-in-AI-Offer",
+      "repository": "https://github.com/wanshuiyin/ARIS-in-AI-Offer",
+      "revision": "6f60d728ae290982f7bddd88d9816073dd64d045",
+      "license": "MIT",
+      "license_copy": "references/licenses/ARIS-in-AI-Offer-MIT.txt",
+      "use": "Short AI engineering prompts were condensed from the cited bilingual tutorials; upstream long-form answers are not copied.",
+      "approved_path_prefixes": [
+        "docs/tutorials/"
+      ]
+    }
+  ]
+}
