@@ -1,0 +1,34 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        INSTALL_VOICE: "true"
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - interview-data:/app/data
+    expose:
+      - "8000"
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?请在 .env 中设置已解析到服务器的域名}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile.docker:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  interview-data:
+  caddy-data:
+  caddy-config:
