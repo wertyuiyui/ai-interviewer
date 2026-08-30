@@ -688,11 +688,29 @@ class InterviewEngine:
             for turn in turns
             if self._explicit_project_ownership_correction(turn.answer)
         ]
-        rejected_questions = [turn.question for turn in prior_project_corrections]
+        rejected_questions = [
+            turn.question
+            for turn in turns
+            if self._explicit_project_ownership_correction(turn.answer)
+            or (
+                turn.topic.startswith("项目深挖")
+                and self._explicit_unknown(turn.answer)
+            )
+        ]
         if project_ownership_correction:
+            rejected_questions.append(str(interview.get("last_question") or ""))
+        if (
+            current_stage == "project_deep_dive"
+            and (explicit_unknown or unknown_control)
+        ):
             rejected_questions.append(str(interview.get("last_question") or ""))
         drill_resume = self._resume_without_rejected_projects(
             resume, rejected_questions
+        )
+        switch_project_after_unknown = (
+            current_stage == "project_deep_dive"
+            and (explicit_unknown or unknown_control)
+            and bool(drill_resume.projects or drill_resume.internships)
         )
         anchor = decision.anchor_keyword.strip()
         if not anchor or anchor.lower() not in answer.lower():
@@ -789,6 +807,8 @@ class InterviewEngine:
         }
         if project_ownership_correction:
             next_stage_state["turn_count"] = 0
+        elif switch_project_after_unknown:
+            next_stage_state["turn_count"] = 0
         if (
             (explicit_unknown or unknown_control)
             and current_stage in {"fundamentals", *HR_STAGE_INDEX}
@@ -808,8 +828,7 @@ class InterviewEngine:
             should_advance_stage = not intro_experience_missing
         elif current_stage == "project_deep_dive":
             should_advance_stage = (
-                explicit_unknown
-                or unknown_control
+                ((explicit_unknown or unknown_control) and not switch_project_after_unknown)
                 or (
                     next_stage_state["turn_count"] >= 2
                     and (vague_answer or decision.assessment.failed)
@@ -1072,7 +1091,12 @@ class InterviewEngine:
         elif explicit_unknown:
             pressure_action = "none"
             transition = (
-                "Understood. Let's move on. "
+                "Understood. Let's discuss another project. "
+                if switch_project_after_unknown
+                and interview.get("language_mode") == "en"
+                else "明白，我们换一个项目。"
+                if switch_project_after_unknown
+                else "Understood. Let's move on. "
                 if interview.get("language_mode") == "en"
                 else "明白，我们换一道。"
             )
@@ -1855,6 +1879,7 @@ class InterviewEngine:
             return resume
         normalized_questions = " ".join(rejected_questions).casefold()
         remaining = []
+        remaining_internships = []
         matched = False
         for project in resume.projects:
             raw_name = str(project.name or "").strip()
@@ -1863,13 +1888,21 @@ class InterviewEngine:
                 matched = True
                 continue
             remaining.append(project)
+        for experience in resume.internships:
+            name = str(experience.company or experience.role or "").strip()
+            if name and name.casefold() in normalized_questions:
+                matched = True
+                continue
+            remaining_internships.append(experience)
         if not matched:
             remaining = [
                 project
                 for project in remaining
                 if not str(project.name or "").strip().startswith("[匿名 Profile 项目]")
             ]
-        return resume.model_copy(update={"projects": remaining})
+        return resume.model_copy(
+            update={"projects": remaining, "internships": remaining_internships}
+        )
 
     @staticmethod
     def _explicit_unknown(answer: str) -> bool:

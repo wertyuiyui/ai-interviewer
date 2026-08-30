@@ -25,7 +25,7 @@ def test_stage_plans_follow_interview_type_boundaries() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unknown_closes_project_stage_and_clears_anchor(tmp_path) -> None:
+async def test_unknown_switches_projects_before_closing_stage(tmp_path) -> None:
     settings = replace(get_settings(), mock_llm=True, db_path=tmp_path / "unknown-stage.db")
     database = Database(settings)
     await database.initialize()
@@ -37,7 +37,10 @@ async def test_unknown_closes_project_stage_and_clears_anchor(tmp_path) -> None:
             interview_type="technical",
             language_mode="zh",
             resume=ResumeData(
-                项目=[Project(name="订单系统", role="后端开发", technologies=["Redis"])]
+                项目=[
+                    Project(name="订单系统", role="后端开发", technologies=["Redis"]),
+                    Project(name="库存系统", role="接口开发", technologies=["MySQL"]),
+                ]
             ),
         )
     )
@@ -48,15 +51,24 @@ async def test_unknown_closes_project_stage_and_clears_anchor(tmp_path) -> None:
     assert opened.stage["current"]["id"] == "project_deep_dive"
     assert "订单系统" in opened.question
 
-    skipped = await engine.answer(
+    switched = await engine.answer(
         created["id"],
         "我不知道，请继续下一题",
         control_intent="unknown",
     )
 
-    assert skipped.stage["current"]["id"] == "fundamentals"
-    assert "订单系统" not in skipped.question
+    assert switched.stage["current"]["id"] == "project_deep_dive"
+    assert "库存系统" in switched.question
+    assert "订单系统" not in switched.question
+    assert "换一个项目" in switched.question
     assert (await database.list_turns(created["id"]))[-1].anchor_keyword == ""
+
+    skipped = await engine.answer(
+        created["id"], "我不知道，请继续下一题", control_intent="unknown"
+    )
+
+    assert skipped.stage["current"]["id"] == "fundamentals"
+    assert "库存系统" not in skipped.question
 
 
 @pytest.mark.asyncio
