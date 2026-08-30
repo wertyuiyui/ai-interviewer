@@ -62,7 +62,7 @@ def test_home_and_report_link_to_quick_and_bad_question_practice() -> None:
     report_page = (PUBLIC / "report.html").read_text(encoding="utf-8")
     report_script = (PUBLIC / "js" / "report.js").read_text(encoding="utf-8")
 
-    assert 'href="/practice">快速刷题' in home
+    assert 'href="/practice"' in home and "<strong>快速刷题</strong>" in home
     assert 'id="retryQuestionsButton"' in report_page
     assert "/practice?review=" in report_script
     assert "ordinal=" in report_script
@@ -81,5 +81,5 @@ def test_quick_practice_is_an_interview_knowledge_drill_not_the_coding_workbench
     assert "requestedDrillType" not in script
     assert "drill_type: drillType" not in script
     assert "is-coding-session" not in style
-    assert 'href="/coding">手撕代码' in home
+    assert 'href="/coding"' in home and "<strong>手撕代码</strong>" in home
     assert "/practice?drill=coding" not in home

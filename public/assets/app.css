@@ -282,6 +282,8 @@ svg { display: block; fill: none; stroke: currentColor; stroke-linecap: round; s
 
 /* Report */
 .report-page { min-height: 100vh; }.report-header { position: sticky; top: 0; z-index: 20; background: rgba(246,244,239,.9); backdrop-filter: blur(16px); }
+.report-view-tabs { margin: -30px 0 28px; display: flex; align-items: center; gap: 24px; border-bottom: 1px solid #e1e2df; }
+.report-view-tabs .report-tab { padding: 13px 3px 11px; }
 .report-tab { padding: 29px 3px 25px; border-bottom: 2px solid transparent; color: #7e8793; background: transparent; font-size: 11px; cursor: pointer; }.report-tab.is-active { color: var(--ink); border-bottom-color: var(--blue); font-weight: 700; }
 .primary-link { min-height: 35px; padding: 0 14px; display: inline-flex; align-items: center; justify-content: center; gap: 9px; border-radius: 9px; color: white; background: var(--ink); font-size: 10px; font-weight: 700; }.primary-link:hover { background: #1d3352; }.primary-link.large { min-height: 43px; padding: 0 17px; font-size: 11px; }
 .report-shell { width: min(1120px, calc(100% - 64px)); margin: 0 auto; padding: 55px 0 90px; }

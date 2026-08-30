@@ -201,3 +201,12 @@
 - 文件：GitHub `main` 至 `b8e88cf`；生产 `/opt/ai-interviewer-mvp/app/profile.py`；`process.md`。
 - 验证：`ai-interviewer-3000.service` 为 `active`，主进程 PID `585880`；本机 8000 健康端点正常；用正式域名 SNI 与证书分别直连本机 Caddy 443、HTTPS 3000，均返回 `{"status":"ok"}`；生产 `/project` 已包含职责输入、链路核验、面试介绍、更多题目和重新生成控件，生产脚本已包含 NDJSON 流式分析；生产模块确认 `PROJECT_ANALYSIS_SCHEMA_VERSION = "3"`。
 - 风险或后续事项：服务器自身通过公网地址回环访问时 TLS 被网络路径提前断开，但 Caddy 服务正常、443/3000 均在监听，使用相同正式域名和证书直连本机 Caddy 验证成功；未执行付费的真实项目重新分析，避免为健康检查消耗百炼额度。
+
+### NAV-001 · 2026-08-30 · 顶部三入口导航整合迁移
+
+- Agent：`/root`
+- 状态：`completed`
+- 摘要：首页、八股快速刷题、项目解读、独立手撕代码和报告五个主页面的顶部导航统一为“首页 / 个人档案 / 历史报告”三个入口；快速刷题、项目解读和手撕代码仍通过首页正文模块进入。个人档案入口复用现有匿名 Profile 面板并通过 hash 自动展开/定位，不新增数据流；报告页原“本次报告 / 历史记录”切换从顶部迁移到报告正文，保留原按钮 ID 与脚本契约。活动面试页继续保留公司、连接状态和计时运行栏，未删除会话功能。
+- 文件：`public/index.html`、`public/practice.html`、`public/project.html`、`public/coding.html`、`public/report.html`、`public/js/home.js`、`public/assets/app.css`、`tests/test_frontend_navigation.py`、`tests/test_frontend_practice_ui.py`、`process.md`。
+- 验证：新增导航契约测试 `3 passed`；全部前端测试 `32 passed`；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `213 passed`；`node --check public/js/home.js public/js/report.js` 分别通过；`git diff --check` 通过。
+- 风险或后续事项：只迁移入口位置与报告视图按钮，不改 API、Profile 持久化、练习流程或报告切换逻辑；未进行真实浏览器视觉回归。按用户先前指示仅创建本地提交，不推送、不部署。

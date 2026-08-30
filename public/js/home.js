@@ -130,6 +130,14 @@ function updateProfileStatus(message = '') {
   profileStatus.textContent = message || `${profile.resumes.length} 份简历 · ${profile.projects.length} 个项目 · 当前设备`;
 }
 
+function openProfileFromHash() {
+  if (!profilePanel || !['#profilePanel', '#profile'].includes(window.location.hash)) return;
+  profilePanel.open = true;
+  window.requestAnimationFrame(() => {
+    profilePanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+}
+
 function updateProfileProjectProgress(state, message) {
   if (!profileProjectProgress) return;
   profileProjectProgress.dataset.state = state;
@@ -933,6 +941,7 @@ $('#openProfileButton')?.addEventListener('click', () => {
   profilePanel.scrollIntoView({ behavior: 'smooth', block: 'center' });
   setTimeout(() => profileResumeFiles?.focus(), 320);
 });
+window.addEventListener('hashchange', openProfileFromHash);
 form.addEventListener('submit', startInterview);
 window.addEventListener('pagehide', () => hardwareTest?.dispose());
 
@@ -945,3 +954,4 @@ syncDurationControl();
 updateCompanySelection({ applyDefault: !stressTouched });
 selectedResumeId = readSelectedResumeId();
 Promise.allSettled([loadConfig(), loadWeakness(), loadProfile()]);
+openProfileFromHash();
