@@ -222,6 +222,8 @@ def test_project_interpretation_page_uses_profile_analysis_contract() -> None:
     assert "apiFetch('/api/profile/projects/links'" in script
     assert 'id="projectType"' in page and "arXiv" in page
     assert "默认视为负责整个项目" in page
+    assert "本次新增项目中，我仅负责部分内容" in page
+    assert page.count("我只负责其中一部分") == 1
     assert "method: 'PATCH'" in script and "responsibility" in script
     assert "/analysis/stream`" in script
     assert "response.body.getReader()" in script
