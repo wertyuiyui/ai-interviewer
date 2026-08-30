@@ -19,6 +19,7 @@
 
 | 任务 ID | Agent | 状态 | 目标 | 预计修改文件 | 依赖/冲突 |
 |---|---|---|---|---|---|
+| `PROFILE-003` | `/root` | `in_progress` | 支持简历重命名；修正姓名与项目/项目介绍边界识别；档案页补充实习经历信息栏；美化论文/项目编辑弹窗的部分负责控件 | `analysis_skills/resume-reader/SKILL.md`, `app/resume.py`, `app/profile.py`, `app/profile_routes.py`, `public/profile.html`, `public/js/profile.js`, `public/assets/profile.css`, `tests/test_api.py`, `tests/test_core.py`, `tests/test_profile.py`, `tests/test_profile_api.py`, `tests/test_frontend_profile_project_ui.py`, `process.md` | `PROJECT-009` 已完成并形成独立提交；基于其结果接续，不改写项目题目证据隔离语义 |
 
 登记模板：
 
@@ -37,6 +38,15 @@
 - 部署目录：`/opt/ai-interviewer-mvp`；Caddy 配置备份：`/etc/caddy/Caddyfile.pre-941100b`
 
 ## 变更日志
+
+### PROJECT-009 · 2026-08-30 · 首页 Profile 整合与真实项目深挖练习
+
+- Agent：`/root`。
+- 状态：`completed`。
+- 摘要：首页 Profile 快捷编辑移入“简历与个人 Profile”第一步，使本场简历选择、上传和项目资料编辑处于同一流程区；新增独立首页 Profile 样式，避免继续挤压全站样式。项目深挖题的候选人可见题面、考察点和答案不再暴露文件路径、符号或行号，证据定位只保留在内部 `evidence`；模型题不合格时回退为本人职责、端到端链路、取舍、故障、测试指标、扩容和重构等真实面试式追问。练习区将“参考思路”升级为可直接展开/收起的第一人称参考答案，同时继续要求未知指标由候选人按真实经历补充。分析缓存 schema 升至 v6。
+- 实际文件：`app/profile.py`、`public/index.html`、`public/assets/home-profile.css`、`public/js/project.js`、`tests/test_profile.py`、`tests/test_frontend_profile_project_ui.py`、`references/PROJECT_DEEP_DIVE_DESIGN.md`、`process.md`。
+- 验证：Profile/Profile API/项目前端专项 `53 passed`；全量 `PYTHONPATH=.deps .venv/bin/python -m pytest -q` → `234 passed`；`node --check public/js/project.js`、`git diff --check` 均通过。
+- 风险或后续事项：内部 `evidence` 仍保存路径用于真实性校验，但不会写入候选人题面；静态分析不执行用户代码。首页结构未做真实 Chromium 视觉回归，已通过 DOM 契约与响应式独立样式检查。
 
 ### INTERVIEW-003 · 2026-08-30 · 不知道跳题、两级实质提示与报告面经建议
 

@@ -22,6 +22,13 @@ def test_anonymous_profile_supports_multiple_resume_and_project_assets() -> None
     script = (PUBLIC / "js" / "home.js").read_text(encoding="utf-8")
     common = (PUBLIC / "js" / "common.js").read_text(encoding="utf-8")
 
+    setup_start = page.index('<form id="setupForm"')
+    setup_end = page.index("</form>", setup_start)
+    profile_position = page.index('id="profilePanel"')
+    assert setup_start < profile_position < setup_end
+    assert "简历与个人 Profile" in page
+    assert "/assets/home-profile.css" in page
+
     for element_id in (
         "profilePanel",
         "profileStatus",
@@ -220,7 +227,10 @@ def test_project_interpretation_page_uses_profile_analysis_contract() -> None:
     assert "project-question-evidence" in script
     assert "isSkillRuleText" in script
     assert "source.suggested_answer" in script
-    assert "展开参考思路" in script
+    assert "直接查看答案" in script
+    assert "收起参考答案" in script
+    assert "参考答案" in script
+    assert "source.evidence.slice" not in script
     assert "不使用项目" in script
     assert "|| profile.projects[0]" not in script
     assert "selected: false" in script

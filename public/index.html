@@ -7,6 +7,7 @@
     <meta name="description" content="面向中国本科生的大厂后端实习一面 AI 陪练。">
     <title>砺面 · AI 技术面试陪练</title>
     <link rel="stylesheet" href="/assets/app.css?v=20260830-profile-edit-v1">
+    <link rel="stylesheet" href="/assets/home-profile.css?v=20260830-resume-profile-v1">
     <link rel="stylesheet" href="/assets/home-hardware.css?v=20260830-interview-flow">
   </head>
   <body class="home-page">
@@ -88,14 +89,18 @@
           <span class="privacy-note" title="报告会以匿名设备编号保存，不需要账号"><span aria-hidden="true">⌁</span> 无需登录</span>
         </div>
 
-        <details class="profile-panel" id="profilePanel">
+        <form id="setupForm" novalidate>
+          <fieldset class="form-section resume-profile-section">
+            <legend><span>1</span> 简历与个人 Profile</legend>
+
+            <details class="profile-panel" id="profilePanel">
           <summary>
             <span class="profile-summary-icon" aria-hidden="true">人</span>
             <span><strong>匿名个人 Profile · 模拟面试快捷编辑</strong><small id="profileStatus" role="status" aria-live="polite">正在同步当前设备资料…</small></span>
-            <span class="profile-summary-action">选择资料 <i aria-hidden="true"></i></span>
+            <span class="profile-summary-action">展开编辑 <i aria-hidden="true"></i></span>
           </summary>
           <div class="profile-body">
-            <p class="profile-privacy"><span aria-hidden="true">⌁</span> 在这里快捷选择、上传本场使用的资料；<a href="/profile">前往完整个人档案</a>可查看结构化经历、项目链接、错题本和历史。资料保存在本服务的 SQLite，解析和项目解读时会发送给阿里云百炼。</p>
+            <p class="profile-privacy"><span aria-hidden="true">⌁</span> 在上传或选择本场简历时，可同步快速编辑简历库与论文/项目资料；<a href="/profile">前往完整个人档案</a>可查看结构化经历、错题本和历史。资料保存在本服务的 SQLite，解析和项目解读时会发送给阿里云百炼。</p>
             <div class="profile-grid">
               <section class="profile-library" aria-labelledby="resumeLibraryTitle">
                 <header><div><span>简历库</span><h3 id="resumeLibraryTitle">选择开面简历</h3></div><label class="profile-upload-button" for="profileResumeFiles">添加 PDF<input id="profileResumeFiles" type="file" accept="application/pdf,.pdf" multiple></label></header>
@@ -120,11 +125,8 @@
               </section>
             </div>
           </div>
-        </details>
+            </details>
 
-        <form id="setupForm" novalidate>
-          <fieldset class="form-section">
-            <legend><span>1</span> 简历</legend>
             <div class="tab-switch" role="tablist" aria-label="简历输入方式">
               <button type="button" class="tab-button" role="tab" aria-selected="false" aria-controls="savedPanel" id="savedTab" data-resume-tab="saved">已保存</button>
               <button type="button" class="tab-button is-active" role="tab" aria-selected="true" aria-controls="pdfPanel" id="pdfTab" data-resume-tab="pdf">上传 PDF</button>

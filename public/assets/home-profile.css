@@ -1,0 +1,17 @@
+.resume-profile-section .profile-panel {
+  margin: 0 0 18px;
+}
+
+.resume-profile-section .profile-body {
+  padding-bottom: 14px;
+}
+
+.resume-profile-section > .tab-switch {
+  margin-top: 4px;
+}
+
+@media (max-width: 720px) {
+  .resume-profile-section .profile-panel {
+    margin-inline: 0;
+  }
+}

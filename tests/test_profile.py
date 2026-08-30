@@ -29,6 +29,7 @@ from app.profile import (
     ProfileProjectSelection,
     ProfileProjectUpdate,
     ProjectAnalysis,
+    ProjectInterviewQuestion,
     ProfileResumeCreate,
     ProfileResumeProjectAssociation,
     ProfileService,
@@ -689,9 +690,9 @@ def test_path_only_request_flow_evidence_stays_partial_and_filters_meta_rules() 
             "risks": [],
             "interview_questions": [
                 {
-                    "question": "你在入口链路里具体怎样使用 hello 函数处理请求？",
-                    "focus": "个人实现与函数边界。",
-                    "suggested_answer": "结合 hello 的真实实现说明，不补写不存在的逻辑。",
+                    "question": "请讲清入口链路如何处理一次请求，以及这个边界为什么这样设计？",
+                    "focus": "个人实现与模块边界。",
+                    "suggested_answer": "我会沿真实入口说明输入、处理和输出，不补写不存在的逻辑。",
                     "evidence": ["main.py:hello"],
                     "responsibility_relevance": "对应候选人填写的入口链路职责。",
                 }
@@ -745,6 +746,38 @@ def test_fallback_questions_prioritize_project_mainline_over_dockerfile(
     assert all("Dockerfile" not in item.evidence for item in questions[:2])
     assert expected_terms[0] in questions[0].question
     assert expected_terms[1] in questions[1].question
+    assert all(
+        "main.py" not in f"{item.question} {item.focus} {item.suggested_answer}"
+        and "order_service.py" not in f"{item.question} {item.focus} {item.suggested_answer}"
+        for item in questions
+    )
+
+
+def test_grounded_project_questions_reject_candidate_copy_with_file_locator() -> None:
+    questions = ProfileService._ground_project_questions(
+        [
+            ProjectInterviewQuestion(
+                question="请说明 app/main.py 的入口设计。",
+                focus="入口边界。",
+                suggested_answer="结合源码回答。",
+                evidence=["app/main.py#handle_request"],
+            ),
+            ProjectInterviewQuestion(
+                question="请从一次典型请求进入系统开始，讲到最终结果。",
+                focus="端到端链路和失败边界。",
+                suggested_answer="我会依次说明输入、核心处理、下游依赖和异常分支。",
+                evidence=["app/main.py#handle_request"],
+            ),
+        ],
+        implementation_paths={"app/main.py"},
+        excluded_questions=(),
+        content_by_path={"app/main.py": "def handle_request():\n    return 200\n"},
+    )
+
+    assert [item.question for item in questions] == [
+        "请从一次典型请求进入系统开始，讲到最终结果。"
+    ]
+    assert questions[0].evidence == ["app/main.py#handle_request"]
 
 
 def test_interview_intro_is_candidate_facing_without_review_rules() -> None:
@@ -946,7 +979,7 @@ async def test_project_analysis_uses_qwen_plus_structured_schema_and_cache(
             ).fetchall()
         ]
     )
-    assert cache_versions == [PROJECT_ANALYSIS_SCHEMA_VERSION] == ["5"]
+    assert cache_versions == [PROJECT_ANALYSIS_SCHEMA_VERSION] == ["6"]
 
 
 @pytest.mark.asyncio
@@ -992,7 +1025,7 @@ async def test_project_analysis_v2_cache_is_not_reused_after_grounding_upgrade(
             ).fetchall()
         }
     )
-    assert versions == {"2", PROJECT_ANALYSIS_SCHEMA_VERSION} == {"2", "5"}
+    assert versions == {"2", PROJECT_ANALYSIS_SCHEMA_VERSION} == {"2", "6"}
 
 
 class _LinkedGitHubSnapshot:

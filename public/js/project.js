@@ -820,7 +820,7 @@ function renderQuestions(values, { append = false } = {}) {
       : '请明确区分本人工作、团队成果和仍待核实的部分。';
     const evidence = document.createElement('p');
     evidence.className = 'project-question-evidence';
-    evidence.textContent = `项目依据：${source.evidence.slice(0, 3).join('；')}`;
+    evidence.textContent = '已基于当前项目材料核对';
     copy.append(interviewer, title, focus, relevance, evidence);
     heading.append(number, copy);
 
@@ -855,10 +855,10 @@ function renderQuestions(values, { append = false } = {}) {
     const actions = document.createElement('div');
     actions.className = 'project-question-actions';
     const hint = document.createElement('small');
-    hint.textContent = '参考思路不会自动替你作答';
+    hint.textContent = '可直接查看参考答案，不会自动填入你的回答';
     const reveal = document.createElement('button');
     reveal.type = 'button';
-    reveal.textContent = '展开参考思路';
+    reveal.textContent = '直接查看答案';
     const finish = document.createElement('button');
     finish.type = 'button';
     finish.textContent = '完成回答';
@@ -873,23 +873,23 @@ function renderQuestions(values, { append = false } = {}) {
       persistPracticeEntry(practiceEntry);
       updatePracticeTimer(practiceEntry);
       hint.textContent = `已保存 · 用时 ${formatSeconds(practiceEntry.elapsedBase)}`;
-      showToast('本题回答已保存，可展开参考思路对照。', 'success');
+      showToast('本题回答已保存，可直接查看参考答案对照。', 'success');
     });
     actions.append(hint, finish, reveal);
 
     const suggested = document.createElement('div');
     suggested.className = 'project-suggested-answer is-hidden';
     const suggestedTitle = document.createElement('strong');
-    suggestedTitle.textContent = '参考思路';
+    suggestedTitle.textContent = '参考答案';
     const suggestedCopy = document.createElement('p');
     const suggestedText = textFromValue(source.suggested_answer || source.answer || source.key_points);
     suggestedCopy.textContent = suggestedText && !isSkillRuleText(suggestedText)
       ? suggestedText
-      : '结合项目依据，按背景、本人职责、技术取舍、落地过程、量化结果和复盘改进组织。';
+      : '我会先说明项目背景和本人职责，再讲清关键决策、落地过程、真实结果与复盘；没有实际测量的数据不会补写。';
     suggested.append(suggestedTitle, suggestedCopy);
     reveal.addEventListener('click', () => {
       const hidden = suggested.classList.toggle('is-hidden');
-      reveal.textContent = hidden ? '展开参考思路' : '收起参考思路';
+      reveal.textContent = hidden ? '直接查看答案' : '收起参考答案';
       reveal.setAttribute('aria-expanded', String(!hidden));
     });
 
