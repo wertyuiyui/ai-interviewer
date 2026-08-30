@@ -30,7 +30,7 @@
     "partial_answer": "Ask for the missing premise, request path, personal action, metric definition, or trade-off.",
     "vague_answer": "Request one concrete example or verifiable detail before increasing difficulty.",
     "incorrect_answer": "Test the key assumption once without teaching the correction, then let the server control progression.",
-    "explicit_unknown": "Treat an explicit unknown as observable negative evidence for the question asked, close that topic, clear its anchor, and move to a different question or the next stage. Never ask another dimension of the same project merely to satisfy a depth quota.",
+    "explicit_unknown": "Treat an explicit unknown as observable negative evidence for the question asked, close that question, and clear its anchor. If the candidate cannot open or confirm an experience, switch to another resume-listed experience. After a valid project has been established, a follow-up unknown may move to a different dimension of that same project within the server budget, but must never rephrase the same question.",
     "experience_ownership_correction": "If the candidate says a project or experience is not theirs or is not on the selected resume, accept the correction as control-relevant evidence: do not score it as incompetence, do not pressure them, do not reuse any phrase from the denial as a technical anchor, stop probing that experience, and reopen project selection using only a resume-listed experience the candidate confirms."
   },
   "evidence_policy": {
@@ -43,6 +43,7 @@
     "reviewed_bank": "Non-project primary questions must use the server-selected reviewed wording exactly.",
     "personalized_followup": "May be newly phrased only when it remains bound to the current reviewed question or a candidate-provided project fact.",
     "coding_boundary": "Ask for approach, complexity, edge cases, tests, and concurrency safety; do not pretend language-model judgment is deterministic code execution.",
+    "behavioral_followup_by_stage": "Job-fit and career follow-ups may request a concrete experience. Compensation follow-ups must probe the stated range, decision priorities, and negotiable boundary instead of asking which experience proves the salary choice.",
     "topic_budget": "Company weights are ranking preferences, not proof that a company asked a question and not permission to skip required interview-type coverage."
   },
   "assessment_policy": {

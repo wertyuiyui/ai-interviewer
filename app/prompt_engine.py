@@ -1178,15 +1178,15 @@ def project_followup(
             f"我们单独聊“{project_name}”这个项目{role_copy}。"
             "先讲清它解决的真实问题、使用场景，以及你的负责范围如何落到具体实现。"
         )
-    elif internship_name:
-        experience_opening = (
-            f"我们单独聊一段经历。就从你在“{internship_name}”的实习开始，"
-            "先讲清它要解决的问题和你负责的部分。"
-        )
     elif project_name:
         experience_opening = (
             f"我们单独聊一段经历。就从“{project_name}”这个项目开始{role_copy}。"
             "先讲清它要解决的问题，以及这项负责范围如何落到具体实现。"
+        )
+    elif internship_name:
+        experience_opening = (
+            f"我们单独聊一段经历。就从你在“{internship_name}”的实习开始，"
+            "先讲清它要解决的问题和你负责的部分。"
         )
     else:
         experience_opening = (

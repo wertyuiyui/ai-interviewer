@@ -1034,6 +1034,7 @@ class InterviewEngine:
                     answer=answer,
                     anchor=response_anchor,
                     bank_item=bank_item,
+                    stage=current_stage,
                     track=(
                         "hr"
                         if current_stage in HR_STAGE_INDEX
@@ -1378,6 +1379,7 @@ class InterviewEngine:
         track: str,
         vague: bool,
         language_mode: str,
+        stage: str = "",
     ) -> str:
         """Keep a generated follow-up only when it is demonstrably anchored.
 
@@ -1421,6 +1423,17 @@ class InterviewEngine:
                 "no concrete evidence",
             )
         clean_anchor = clean_anchor[:64]
+
+        if stage == "compensation":
+            if english:
+                return (
+                    f'You mentioned "{clean_anchor}". If compensation and role growth '
+                    "cannot both meet your expectations, how would you rank them, and what is negotiable?"
+                )
+            return (
+                f"你提到“{clean_anchor}”。如果薪酬和岗位成长不能同时满足预期，"
+                "你会如何排序，哪些条件可以协商？"
+            )
 
         topic = " ".join(str(bank_item.get("topic") or "").split()).strip()
         category = " ".join(str(bank_item.get("category") or "").split()).strip()
@@ -2035,7 +2048,25 @@ class InterviewEngine:
     @staticmethod
     def _explicit_unknown(answer: str) -> bool:
         normalized = " ".join(str(answer or "").casefold().split()).strip()
+        polite_unknown = any(
+            marker in normalized
+            for marker in (
+                "不能准确回答",
+                "无法准确回答",
+                "回答不了",
+                "不想凭印象猜",
+                "没有把握回答",
+                "没有形成可靠答案",
+                "不能把猜测当结论",
+            )
+        ) and any(
+            marker in normalized
+            for marker in ("换下一", "换一道", "知识缺口", "记录为", "不想凭印象猜")
+        )
+        polite_unknown = polite_unknown or "不能继续回答" in normalized
         return bool(
+            polite_unknown
+            or
             re.fullmatch(
                 r"(?:这个|这题|这个问题)?\s*(?:我)?\s*(?:确实|真的|目前|暂时)?\s*"
                 r"(?:不知道|不会|不清楚|不太清楚|没学过|不了解)"

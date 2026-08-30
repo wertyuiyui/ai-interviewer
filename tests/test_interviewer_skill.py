@@ -13,8 +13,9 @@ from app.prompt_engine import (
     build_system_prompt,
     is_obvious_placeholder_answer,
     is_vague_answer,
+    project_followup,
 )
-from app.schemas import InterviewCreate, Project, ResumeData
+from app.schemas import Experience, InterviewCreate, Project, ResumeData
 
 
 def test_core_interviewer_skill_has_auditable_runtime_contract() -> None:
@@ -31,6 +32,52 @@ def test_core_interviewer_skill_has_auditable_runtime_contract() -> None:
     assert "do not reuse any phrase from the denial" in core["adaptive_policy"][
         "experience_ownership_correction"
     ]
+    assert "different dimension" in core["adaptive_policy"]["explicit_unknown"]
+    assert "Compensation follow-ups" in core["question_policy"][
+        "behavioral_followup_by_stage"
+    ]
+
+
+def test_polite_unknown_and_compensation_followup_are_stage_aware() -> None:
+    assert InterviewEngine._explicit_unknown(
+        "这道题涉及的具体机制我目前不能准确回答，我不想凭印象猜测。"
+        "可以先记录为我的知识缺口，我们换下一道。"
+    )
+    assert InterviewEngine._explicit_unknown(
+        "这个知识点我目前没有形成可靠答案，请先记为知识缺口并换下一题。"
+    )
+    assert InterviewEngine._explicit_unknown("这部分我没有做过验证，所以不能继续回答。")
+    assert InterviewEngine._explicit_unknown(
+        "这个推理优化点我只做过概念调研，不能把猜测当结论。"
+        "请先记为知识缺口并换下一题。"
+    )
+    question = InterviewEngine._anchored_bank_followup(
+        "哪段经历最能说明你的薪酬选择？",
+        answer="我更关注岗位内容，也尊重公司的标准范围。",
+        anchor="标准范围",
+        bank_item={"question": "你的实习薪酬期望是什么？", "topic": "薪酬沟通"},
+        stage="compensation",
+        track="hr",
+        vague=False,
+        language_mode="zh",
+    )
+    assert "如何排序" in question
+    assert "哪些条件可以协商" in question
+    assert "哪段具体经历" not in question
+
+
+def test_project_stage_prefers_a_resume_project_before_an_internship() -> None:
+    question, _ = project_followup(
+        1,
+        "",
+        ResumeData(
+            项目=[Project(name="校园二手交易平台", role="核心开发")],
+            实习经历=[Experience(company="示例科技", role="后端实习生")],
+        ),
+        language_mode="zh",
+    )
+    assert "校园二手交易平台" in question
+    assert "示例科技" not in question
 def test_obvious_placeholder_answer_requires_clarification() -> None:
     assert is_obvious_placeholder_answer("我叫xxxxx") is True
     assert is_obvious_placeholder_answer("My name is <name>") is True
@@ -60,12 +107,12 @@ async def test_incomplete_self_intro_stays_until_answered_or_skipped(tmp_path) -
     )
     await database.start_interview(created["id"])
 
-    greeting = await engine.answer(created["id"], "hello")
+    placeholder = await engine.answer(created["id"], "我叫xxxxx")
     greeting_again = await engine.answer(created["id"], "你好")
 
-    assert greeting.stage["current"]["id"] == "self_intro"
+    assert placeholder.stage["current"]["id"] == "self_intro"
+    assert "学习进度" in placeholder.question
     assert greeting_again.stage["current"]["id"] == "self_intro"
-    assert "学习进度" in greeting.question
     assert "校园二手交易平台" not in greeting_again.question
     row = await database.get_interview(created["id"])
     assert row is not None
