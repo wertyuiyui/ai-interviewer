@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .config import ROOT_DIR, Settings, get_settings
-from .content import COMPANIES, load_style_card
+from .content import COMPANIES, SPECIALIZATIONS, load_style_card
 from .db import Database
 from .errors import AppError
 from .interview_engine import InterviewEngine
@@ -186,7 +186,23 @@ async def config() -> dict[str, Any]:
         "llm_configured": settings.has_api_key or settings.mock_llm,
         "mock_mode": settings.mock_llm,
         "companies": companies,
+        "specializations": SPECIALIZATIONS,
         "durations": [10, 15, 25],
+        "custom_duration": {"min": 1, "max": 180, "unlimited": True},
+        "stress_levels": [
+            {"level": 0, "name": "关闭"},
+            {"level": 1, "name": "温和"},
+            {"level": 2, "name": "标准"},
+            {"level": 3, "name": "高压"},
+        ],
+        "references": [
+            {
+                "name": "ARIS-in-AI-Offer",
+                "url": "https://wanshuiyin.github.io/ARIS-in-AI-Offer/",
+                "license": "MIT",
+                "scope": "AI 工程后端 / LLM Infra 精选题",
+            }
+        ],
         "daily_interview_limit": settings.daily_interview_limit,
     }
 
@@ -389,13 +405,15 @@ async def interview_socket(websocket: WebSocket, interview_id: str) -> None:
             interview = await db.get_interview(interview_id)
             if not interview or interview["status"] in {"ended", "reporting", "reported"}:
                 return
-            remaining = int(interview.get("remaining_seconds") or 0)
+            remaining = interview.get("remaining_seconds")
             await send(
                 "timer.sync",
                 remaining_seconds=remaining,
                 ends_at=interview.get("deadline_at"),
             )
-            if remaining <= 0:
+            if interview.get("deadline_at") is not None and (
+                remaining is None or int(remaining) <= 0
+            ):
                 await terminate("time")
                 return
             try:
@@ -665,7 +683,9 @@ def _public_interview(interview: dict[str, Any]) -> dict[str, Any]:
             "id",
             "company",
             "role",
+            "specialization",
             "stress",
+            "stress_level",
             "duration_minutes",
             "voice_mode",
             "status",
@@ -686,7 +706,7 @@ def _validate_client_id(client_id: str) -> None:
 
 
 PUBLIC_DIR = ROOT_DIR / "public"
-for directory in ("assets", "js", "worklets"):
+for directory in ("assets", "js", "worklets", "sample-resumes"):
     path = PUBLIC_DIR / directory
     path.mkdir(parents=True, exist_ok=True)
     app.mount(f"/{directory}", StaticFiles(directory=path), name=directory)

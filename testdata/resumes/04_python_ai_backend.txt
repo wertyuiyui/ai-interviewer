@@ -1,0 +1,19 @@
+完全虚构的测试简历，姓名、学校、公司、项目和联系方式均不对应真实个人，仅用于 AI 模拟面试官功能测试。
+许嘉宁
+Python / AI 工程后端实习生
+138-0000-0004｜xu.jianing@example.com｜上海
+教育经历
+江南示例科技大学｜人工智能｜本科｜2022.09—2026.06
+课程：机器学习、深度学习、数据库、计算机网络、软件工程。
+项目经历
+课程问答模型服务平台｜后端与推理服务｜2025.03—2025.11
+• 使用 FastAPI、PostgreSQL、Redis 和 Celery 实现模型版本、异步评测与流式生成接口。
+• 设计请求状态机：鉴权、排队、prefill、decode、SSE 回传；记录 TTFT、TPOT、取消率与 GPU 队列长度。
+• 按模型和模板哈希复用前缀缓存，设置租户隔离；压测中重复系统提示词场景 TTFT 中位数下降 31%。
+• 对 500 条合成题做离线评测，区分 exact match、人工偏好和失败原因；未将测试集用于提示词调优。
+实习经历
+启明智能（虚构）｜AI 平台实习生｜2025.07—2025.10
+• 封装统一模型网关，支持超时、重试、熔断和 token 预算；避免对非幂等生成请求盲目重试。
+• 调研 continuous batching、PagedAttention、KV cache 量化与 speculative decoding，完成概念验证和限制说明。
+技能
+Python、FastAPI、PyTorch、PostgreSQL、Redis、Docker；理解 tokenizer、KV cache、批处理调度与模型评测基础。

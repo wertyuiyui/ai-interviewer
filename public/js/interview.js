@@ -14,6 +14,8 @@ const elements = {
   connection: $('#connectionState'),
   endButton: $('#endButton'),
   endDialog: $('#endDialog'),
+  endDialogMessage: $('#endDialogMessage'),
+  endDialogTitle: $('#endDialogTitle'),
   endMessage: $('#endMessage'),
   endOverlay: $('#endOverlay'),
   endTitle: $('#endTitle'),
@@ -31,6 +33,7 @@ const elements = {
   stageHint: $('#stageHint'),
   stageTitle: $('#stageTitle'),
   stress: $('#stressChip'),
+  stressLabel: $('#stressLabel'),
   timer: $('#timer'),
   transcript: $('#transcriptList'),
   transcriptPlaceholder: $('#transcriptPlaceholder'),
@@ -49,6 +52,10 @@ let reconnectTimer = 0;
 let heartbeatTimer = 0;
 let timerInterval = 0;
 let deadline = 0;
+let unlimitedDuration = Boolean(
+  storedSession?.unlimited === true
+  || (storedSession && Object.hasOwn(storedSession, 'duration_minutes') && storedSession.duration_minutes === null)
+);
 let localFinishSent = false;
 let inputLevel = 0;
 let outputLevel = 0;
@@ -92,7 +99,37 @@ function setMode(mode, notify = false) {
   if (notify && previous !== voiceMode) showToast(`服务已切换为 ${modeLabel(voiceMode)}`, 'info', 4500);
 }
 
+function updateDurationMode(payload = {}) {
+  const source = payload?.session && typeof payload.session === 'object' ? payload.session : payload;
+  if (source?.unlimited === true || source?.duration_mode === 'infinite') {
+    unlimitedDuration = true;
+    return;
+  }
+  if (source && Object.hasOwn(source, 'duration_minutes')) {
+    unlimitedDuration = source.duration_minutes === null;
+    return;
+  }
+  if (interview && Object.hasOwn(interview, 'duration_minutes')) {
+    unlimitedDuration = interview.duration_minutes === null;
+  }
+}
+
+function getStressLevel() {
+  const raw = interview?.stress_level ?? storedSession?.stress_level;
+  if (raw !== undefined && raw !== null && raw !== '') {
+    const level = Number(raw);
+    if (Number.isFinite(level)) return Math.min(3, Math.max(0, Math.round(level)));
+  }
+  return Boolean(interview?.stress ?? storedSession?.stress) ? 2 : 0;
+}
+
 function syncTimer(payload = {}) {
+  updateDurationMode(payload);
+  if (unlimitedDuration) {
+    deadline = 0;
+    renderTimer();
+    return;
+  }
   const remainingValue = payload.remaining_seconds ?? payload.remaining ?? interview?.remaining_seconds;
   const remaining = remainingValue === null || remainingValue === '' || remainingValue === undefined ? Number.NaN : Number(remainingValue);
   if (Number.isFinite(remaining)) deadline = Date.now() + Math.max(0, remaining) * 1000;
@@ -106,16 +143,42 @@ function syncTimer(payload = {}) {
     }
   }
   if (!Number.isFinite(deadline) || deadline <= 0) {
-    const duration = Number(interview?.duration_minutes || storedSession?.duration_minutes || 15);
-    deadline = Date.now() + duration * 60_000;
+    const rawDuration = interview?.duration_minutes ?? storedSession?.duration_minutes ?? 15;
+    const duration = Number(rawDuration);
+    const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 15;
+    if (phase !== 'live') {
+      deadline = 0;
+      $('small', elements.timer).textContent = '时长';
+      $('strong', elements.timer).textContent = `${safeDuration} 分钟`;
+      elements.timer.classList.remove('is-low', 'is-unlimited');
+      elements.timer.removeAttribute('datetime');
+      return;
+    }
+    deadline = Date.now() + safeDuration * 60_000;
   }
   renderTimer();
 }
 
 function renderTimer() {
+  if (unlimitedDuration) {
+    $('small', elements.timer).textContent = '时长';
+    $('strong', elements.timer).textContent = '无限·手动结束';
+    elements.endButton.textContent = '手动结束面试';
+    elements.endDialogTitle.textContent = '确定手动结束吗？';
+    elements.endDialogMessage.textContent = '结束后将基于当前已完成的问答生成报告，本场面试不能继续。';
+    elements.timer.classList.remove('is-low');
+    elements.timer.classList.add('is-unlimited');
+    elements.timer.removeAttribute('datetime');
+    return;
+  }
   if (!deadline) return;
   const remaining = Math.max(0, (deadline - Date.now()) / 1000);
+  $('small', elements.timer).textContent = '剩余';
   $('strong', elements.timer).textContent = formatSeconds(remaining);
+  elements.endButton.textContent = '提前结束面试';
+  elements.endDialogTitle.textContent = '确定提前结束吗？';
+  elements.endDialogMessage.textContent = '结束后将基于当前已完成的问答生成报告，本场面试不能继续。';
+  elements.timer.classList.remove('is-unlimited');
   elements.timer.classList.toggle('is-low', remaining <= 60);
   elements.timer.dateTime = `PT${Math.ceil(remaining)}S`;
   if (remaining <= 0 && phase === 'live' && !localFinishSent) finishInterview('time');
@@ -325,7 +388,7 @@ function handleServerEvent(event) {
       answerPending = false;
       if (event.mode || event.voice_mode) setMode(event.mode || event.voice_mode, true);
       if (event.session && typeof event.session === 'object') interview = { ...interview, ...event.session };
-      if (event.remaining_seconds !== undefined || event.ends_at || event.session?.remaining_seconds !== undefined) syncTimer(event.session || event);
+      syncTimer(event.session || event);
       setLive();
       break;
     case 'candidate.transcript.partial':
@@ -645,8 +708,12 @@ async function initialize() {
   }
 
   const company = interview?.company || storedSession?.company || 'bytedance';
-  elements.company.textContent = `${companyLabel(company)} · 后端一面`;
-  elements.stress.classList.toggle('is-hidden', !Boolean(interview?.stress ?? storedSession?.stress));
+  const specialization = String(interview?.specialization || storedSession?.specialization || '通用后端').trim();
+  const stressLevel = getStressLevel();
+  const stressLabels = { 1: '压力 · 温和', 2: '压力 · 标准', 3: '压力 · 高压' };
+  elements.company.textContent = `${companyLabel(company)} · ${specialization}一面`;
+  elements.stress.classList.toggle('is-hidden', stressLevel === 0);
+  elements.stressLabel.textContent = stressLabels[stressLevel] || '';
   setMode(interview?.voice_mode || serverConfig?.voice_mode || serverConfig?.mode || storedSession?.voice_mode || 'L3');
   syncTimer(interview || {});
   const status = String(interview?.status || interview?.state || '').toLowerCase();

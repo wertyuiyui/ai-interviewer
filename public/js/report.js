@@ -1,7 +1,7 @@
 import {
   $, $$, apiFetch, cacheReport, clamp, clearCachedReports, companyLabel,
-  firstValue, formatDate, getCachedReports, getClientId, normalizeHistoryPayload,
-  removeCachedReport, score10, showToast, toArray,
+  firstValue, formatDate, getCachedReports, getClientId, getCurrentSession,
+  normalizeHistoryPayload, removeCachedReport, score10, showToast, toArray,
 } from './common.js';
 
 const query = new URLSearchParams(location.search);
@@ -131,13 +131,26 @@ function normalizeReport(raw, metadata = {}) {
   const overallRaw = firstValue(report, ['overall_score', 'total_score', 'score', '综合得分'], null);
   const weighted = rubric.reduce((sum, item) => sum + item.score * item.weight / 100, 0);
   const id = reportId(report) || reportId(metadata) || sessionId;
+  const durationRaw = Object.hasOwn(report, 'duration_minutes')
+    ? report.duration_minutes
+    : (Object.hasOwn(report, 'duration')
+      ? report.duration
+      : (Object.hasOwn(metadata, 'duration_minutes') ? metadata.duration_minutes : 0));
+  const stressLevelRaw = firstValue(report, ['stress_level'], firstValue(metadata, ['stress_level'], null));
+  const legacyStress = Boolean(firstValue(report, ['stress'], firstValue(metadata, ['stress'], false)));
+  const stressLevel = stressLevelRaw === null
+    ? (legacyStress ? 2 : 0)
+    : clamp(Math.round(Number(stressLevelRaw) || 0), 0, 3);
   return {
     raw: report,
     id,
     company: firstValue(report, ['company'], firstValue(metadata, ['company'], '')),
     role: firstValue(report, ['role'], firstValue(metadata, ['role'], 'backend')),
-    stress: Boolean(firstValue(report, ['stress'], firstValue(metadata, ['stress'], false))),
-    duration: Number(firstValue(report, ['duration_minutes', 'duration'], firstValue(metadata, ['duration_minutes'], 0))) || 0,
+    specialization: String(firstValue(report, ['specialization'], firstValue(metadata, ['specialization'], '通用后端')) || '通用后端'),
+    stress: stressLevel > 0,
+    stressLevel,
+    unlimited: durationRaw === null,
+    duration: durationRaw === null ? 0 : Number(durationRaw) || 0,
     endedAt: reportDate(report) || reportDate(metadata) || new Date().toISOString(),
     endReason: String(firstValue(report, ['end_reason', 'reason'], firstValue(metadata, ['end_reason'], '')) || ''),
     summary: String(firstValue(report, ['summary', 'overall_feedback', 'conclusion', '总结', '总体评价'], '本场报告已生成，请结合逐题扣分点安排下一次练习。')),
@@ -262,8 +275,10 @@ function renderPractice(report) {
 
 function renderCurrent(report) {
   currentReport = report;
-  $('#reportTitle').textContent = `${companyLabel(report.company)} · 后端一面报告`;
-  const tags = [formatDate(report.endedAt), report.duration ? `${report.duration} 分钟` : '', report.stress ? '压力面' : '标准面'].filter(Boolean);
+  $('#reportTitle').textContent = `${companyLabel(report.company)} · ${report.specialization}一面报告`;
+  const pressureLabels = ['无压力', '温和压力', '标准压力', '高压'];
+  const durationLabel = report.unlimited ? '不限时 · 手动结束' : (report.duration ? `${report.duration} 分钟` : '');
+  const tags = [formatDate(report.endedAt), durationLabel, pressureLabels[report.stressLevel]].filter(Boolean);
   $('#reportMeta').textContent = tags.join(' · ');
   $('#reportSummary').textContent = report.summary;
   $('#overallScore').textContent = report.overall.toFixed(1);
@@ -432,9 +447,10 @@ function renderHistoryList() {
     const item = createElement('article', 'history-item');
     const score = createElement('span', 'history-score', report.overall.toFixed(1));
     const copy = createElement('div', 'history-copy');
-    copy.append(createElement('strong', '', `${companyLabel(report.company)} · 后端一面`), createElement('small', '', `${formatDate(report.endedAt)}${report.duration ? ` · ${report.duration} 分钟` : ''}`));
+    const durationLabel = report.unlimited ? '不限时' : (report.duration ? `${report.duration} 分钟` : '');
+    copy.append(createElement('strong', '', `${companyLabel(report.company)} · ${report.specialization}一面`), createElement('small', '', `${formatDate(report.endedAt)}${durationLabel ? ` · ${durationLabel}` : ''}`));
     const tags = createElement('div', 'history-tags');
-    tags.append(createElement('span', '', report.stress ? '压力面' : '标准面'));
+    tags.append(createElement('span', '', ['无压力', '温和压力', '标准压力', '高压'][report.stressLevel]));
     if (report.endReason) tags.append(createElement('span', '', /poor|early|提前/i.test(report.endReason) ? '提前结束' : '已完成'));
     const actions = createElement('div', 'history-actions');
     const view = createElement('a', '', '查看');
@@ -450,7 +466,21 @@ function renderHistoryList() {
 
 function mergeHistory(remoteRows) {
   const records = [...remoteRows, ...getCachedReports()];
-  if (currentReport) records.unshift({ ...currentReport.raw, id: currentReport.id, session_id: currentReport.id, company: currentReport.company, ended_at: currentReport.endedAt });
+  if (currentReport) {
+    records.unshift({
+      ...currentReport.raw,
+      id: currentReport.id,
+      session_id: currentReport.id,
+      company: currentReport.company,
+      role: currentReport.role,
+      specialization: currentReport.specialization,
+      stress: currentReport.stress,
+      stress_level: currentReport.stressLevel,
+      duration_minutes: currentReport.unlimited ? null : currentReport.duration,
+      ended_at: currentReport.endedAt,
+      end_reason: currentReport.endReason,
+    });
+  }
   const byId = new Map();
   records.forEach((row, index) => {
     const source = row?.report && typeof row.report === 'object' ? { ...row, ...row.report } : unwrapReport(row) || row;
@@ -482,7 +512,10 @@ async function loadCurrentReport() {
     sessionMeta = await apiFetch(`/api/interviews/${encodeURIComponent(sessionId)}`, { timeout: 12_000 });
     sessionMeta = sessionMeta?.interview || sessionMeta?.session || sessionMeta;
   } catch {
-    sessionMeta = {};
+    const stored = getCurrentSession();
+    sessionMeta = stored && String(stored.id || stored.session_id) === String(sessionId)
+      ? stored
+      : {};
   }
 
   for (let attempt = 0; attempt < 75 && !reportPollStopped; attempt += 1) {
@@ -496,8 +529,10 @@ async function loadCurrentReport() {
         cacheReport({
           ...enriched,
           company: currentReport.company,
+          specialization: currentReport.specialization,
           stress: currentReport.stress,
-          duration_minutes: currentReport.duration,
+          stress_level: currentReport.stressLevel,
+          duration_minutes: currentReport.unlimited ? null : currentReport.duration,
           ended_at: currentReport.endedAt,
         }, sessionId);
         renderCurrent(currentReport);

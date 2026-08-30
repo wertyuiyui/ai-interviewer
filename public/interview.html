@@ -7,7 +7,7 @@
   <body class="interview-page">
     <header class="interview-header">
       <a class="brand brand-inverse" href="/" aria-label="返回砺面首页"><span class="brand-mark" aria-hidden="true">砺</span><span><strong>砺面</strong><small>AI 技术面试陪练</small></span></a>
-      <div class="interview-meta"><span class="company-chip" id="companyChip">加载中</span><span class="stress-chip is-hidden" id="stressChip"><i></i> 压力面</span></div>
+      <div class="interview-meta"><span class="company-chip" id="companyChip">加载中</span><span class="stress-chip is-hidden" id="stressChip"><i></i><span id="stressLabel">标准压力</span></span></div>
       <div class="header-session"><span class="connection-state" id="connectionState"><i></i><span>准备中</span></span><time class="timer" id="timer" datetime="PT15M"><small>剩余</small><strong>15:00</strong></time></div>
     </header>
     <main class="interview-shell">
@@ -34,7 +34,7 @@
     </main>
 
     <div class="interview-overlay is-hidden" id="endOverlay" role="status" aria-live="assertive"><div><span class="overlay-mark">✓</span><h2 id="endTitle">本场面试已结束</h2><p id="endMessage">正在整理逐题反馈报告…</p><span class="loading-line"><i></i></span></div></div>
-    <dialog class="confirm-dialog" id="endDialog"><form method="dialog"><span class="dialog-icon" aria-hidden="true">■</span><h2>确定提前结束吗？</h2><p>结束后将基于当前已完成的问答生成报告，本场面试不能继续。</p><div><button class="secondary-button" value="cancel">继续面试</button><button class="danger-button" id="confirmEnd" value="confirm">结束并生成报告</button></div></form></dialog>
+    <dialog class="confirm-dialog" id="endDialog"><form method="dialog"><span class="dialog-icon" aria-hidden="true">■</span><h2 id="endDialogTitle">确定提前结束吗？</h2><p id="endDialogMessage">结束后将基于当前已完成的问答生成报告，本场面试不能继续。</p><div><button class="secondary-button" value="cancel">继续面试</button><button class="danger-button" id="confirmEnd" value="confirm">结束并生成报告</button></div></form></dialog>
     <div class="toast-region toast-dark" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
     <script type="module" src="/js/interview.js"></script>
   </body>

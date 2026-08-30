@@ -58,6 +58,16 @@
                 <span class="drop-copy"><strong id="fileLabel">拖入 PDF，或点击选择</strong><small id="fileMeta">仅支持带文字层的 PDF，不超过 8 MB</small></span>
                 <span class="mini-button">选择文件</span>
               </label>
+              <details class="sample-resumes">
+                <summary>没有简历？下载 5 份完全虚构的测试简历</summary>
+                <div class="sample-resume-links">
+                  <a href="/sample-resumes/01_java_ecommerce_backend.pdf" download>Java 业务后端</a>
+                  <a href="/sample-resumes/02_go_high_concurrency_backend.pdf" download>Go 高并发</a>
+                  <a href="/sample-resumes/03_cloud_native_infrastructure.pdf" download>云原生基础架构</a>
+                  <a href="/sample-resumes/04_python_ai_backend.pdf" download>Python / AI 工程</a>
+                  <a href="/sample-resumes/05_weak_project_candidate.pdf" download>薄弱项目型（早停测试）</a>
+                </div>
+              </details>
             </div>
             <div class="resume-panel is-hidden" id="textPanel" role="tabpanel" aria-labelledby="textTab">
               <label class="sr-only" for="resumeText">粘贴简历文字</label>
@@ -78,14 +88,54 @@
 
           <fieldset class="form-section compact-section">
             <legend><span>3</span> 面试设置</legend>
-            <div class="setting-row"><div class="setting-copy"><strong>岗位</strong><small>本期仅覆盖后端开发实习一面</small></div><span class="fixed-value"><span aria-hidden="true">⌘</span> 后端开发</span></div>
-            <div class="setting-row"><div class="setting-copy"><strong>压力面</strong><small id="stressHint">启用质疑、打断、沉默与连续施压</small></div><label class="switch"><input type="checkbox" id="stressToggle" checked><span aria-hidden="true"></span><b class="sr-only">开启压力面</b></label></div>
-            <div class="setting-row duration-row">
-              <div class="setting-copy"><strong>面试时长</strong><small>短场也会保留完整反馈</small></div>
-              <div class="segmented" role="radiogroup" aria-label="面试时长">
-                <label><input type="radio" name="duration" value="10"><span>10 分钟</span></label><label><input type="radio" name="duration" value="15" checked><span>15 分钟</span></label><label><input type="radio" name="duration" value="25"><span>25 分钟</span></label>
+            <div class="setting-row setting-row-stacked">
+              <div class="setting-copy"><strong>岗位细分方向</strong><small>岗位固定为后端开发，可按目标技术栈定制追问</small></div>
+              <div class="setting-control specialization-control">
+                <label class="sr-only" for="specializationPreset">选择岗位细分方向</label>
+                <select id="specializationPreset">
+                  <option value="通用后端" selected>通用后端</option>
+                  <option value="Java 后端">Java 后端</option>
+                  <option value="Go 后端">Go 后端</option>
+                  <option value="C++ 后端">C++ 后端</option>
+                  <option value="Python 后端">Python 后端</option>
+                  <option value="基础架构">基础架构</option>
+                  <option value="云原生与微服务">云原生与微服务</option>
+                  <option value="数据库与存储">数据库与存储</option>
+                  <option value="消息队列与中间件">消息队列与中间件</option>
+                  <option value="分布式系统">分布式系统</option>
+                  <option value="AI 工程后端 / LLM Infra">AI 工程后端 / LLM Infra</option>
+                  <option value="custom">自定义方向…</option>
+                </select>
+                <label class="sr-only" for="specializationCustom">输入自定义岗位细分方向</label>
+                <input class="compact-input is-hidden" id="specializationCustom" type="text" maxlength="80" autocomplete="off" placeholder="例如：推荐系统后端">
+              </div>
+              <small class="specialization-reference">AI 工程方向会混入约 1/3 的模型服务题，精选改写自 <a href="https://wanshuiyin.github.io/ARIS-in-AI-Offer/" target="_blank" rel="noopener noreferrer">ARIS-in-AI-Offer</a>（MIT）。</small>
+            </div>
+            <div class="setting-row setting-row-stacked">
+              <div class="setting-copy"><strong>压力程度</strong><small id="stressHint">标准施压：质疑、打断、沉默与连续追问</small></div>
+              <div class="segmented level-segmented" role="radiogroup" aria-label="压力面程度">
+                <label><input type="radio" name="stress_level" value="0"><span>关闭</span></label>
+                <label><input type="radio" name="stress_level" value="1"><span>温和</span></label>
+                <label><input type="radio" name="stress_level" value="2" checked><span>标准</span></label>
+                <label><input type="radio" name="stress_level" value="3"><span>高压</span></label>
               </div>
             </div>
+            <div class="setting-row duration-row">
+              <div class="setting-copy"><strong>面试时长</strong><small id="durationHint">短场也会保留完整反馈</small></div>
+              <div class="setting-control duration-control">
+                <label class="sr-only" for="durationPreset">选择面试时长</label>
+                <select id="durationPreset">
+                  <option value="10">10 分钟</option>
+                  <option value="15" selected>15 分钟</option>
+                  <option value="25">25 分钟</option>
+                  <option value="custom">自定义分钟…</option>
+                  <option value="infinite">不限时（手动结束）</option>
+                </select>
+                <label class="sr-only" for="durationCustom">输入自定义面试分钟数</label>
+                <div class="number-input-wrap is-hidden" id="durationCustomWrap"><input class="compact-input" id="durationCustom" type="number" min="1" max="180" step="1" inputmode="numeric" value="20" aria-describedby="durationHint"><span>分钟</span></div>
+              </div>
+            </div>
+            <div class="inline-alert is-hidden" id="settingsAlert" role="alert"></div>
           </fieldset>
 
           <button class="primary-button start-button" id="startButton" type="submit"><span class="button-label">开始模拟面试</span><span class="button-arrow" aria-hidden="true">→</span></button>

@@ -9,8 +9,13 @@ const fileInput = $('#resumeFile');
 const textInput = $('#resumeText');
 const dropZone = $('#dropZone');
 const startButton = $('#startButton');
-const stressToggle = $('#stressToggle');
+const specializationPreset = $('#specializationPreset');
+const specializationCustom = $('#specializationCustom');
+const durationPreset = $('#durationPreset');
+const durationCustom = $('#durationCustom');
+const durationCustomWrap = $('#durationCustomWrap');
 const resumeAlert = $('#resumeAlert');
+const settingsAlert = $('#settingsAlert');
 const modePill = $('#modePill');
 
 let resumeMode = 'pdf';
@@ -18,7 +23,13 @@ let selectedFile = null;
 let stressTouched = false;
 let serverMode = 'L3';
 
-const stressDefaults = { bytedance: true, meituan: false, tencent: false };
+const stressDefaults = { bytedance: 2, meituan: 0, tencent: 0 };
+const stressHints = {
+  0: '关闭施压手法，仍会保留连续深挖',
+  1: '温和施压：适度质疑，并给你整理思路的空间',
+  2: '标准施压：质疑、打断、沉默与连续追问',
+  3: '高压模式：更频繁打断、否定与追问到底',
+};
 
 function setResumeMode(nextMode, focus = false) {
   resumeMode = nextMode === 'text' ? 'text' : 'pdf';
@@ -44,6 +55,16 @@ function showResumeAlert(message, success = false) {
   resumeAlert.textContent = message;
   resumeAlert.classList.remove('is-hidden');
   resumeAlert.classList.toggle('is-success', success);
+}
+
+function hideSettingsAlert() {
+  settingsAlert.classList.add('is-hidden');
+  settingsAlert.textContent = '';
+}
+
+function showSettingsAlert(message) {
+  settingsAlert.textContent = message;
+  settingsAlert.classList.remove('is-hidden');
 }
 
 function setFile(file) {
@@ -78,21 +99,93 @@ function updateCompanySelection({ applyDefault = true } = {}) {
   $$('.company-option').forEach((option) => {
     option.classList.toggle('is-selected', $('input', option)?.checked === true);
   });
-  if (applyDefault && !stressTouched) stressToggle.checked = stressDefaults[selected];
-  $('#stressHint').textContent = stressToggle.checked
-    ? '启用质疑、打断、沉默与连续施压'
-    : selected === 'tencent' ? '保持循循善诱的温和追问' : '关闭施压手法，保留连续深挖';
+  if (applyDefault && !stressTouched) setStressLevel(stressDefaults[selected]);
+  $('#stressHint').textContent = stressHints[getStressLevel()];
+}
+
+function getStressLevel() {
+  const value = Number($('input[name="stress_level"]:checked')?.value ?? 0);
+  return Number.isInteger(value) && value >= 0 && value <= 3 ? value : 0;
+}
+
+function setStressLevel(level) {
+  const normalized = Math.min(3, Math.max(0, Number(level) || 0));
+  const target = $(`input[name="stress_level"][value="${normalized}"]`);
+  if (target) target.checked = true;
+}
+
+function syncSpecializationControl({ focus = false } = {}) {
+  const custom = specializationPreset.value === 'custom';
+  specializationCustom.classList.toggle('is-hidden', !custom);
+  if (custom && focus) specializationCustom.focus();
+  hideSettingsAlert();
+}
+
+function setSpecialization(value) {
+  const normalized = String(value || '').trim();
+  const option = [...specializationPreset.options].find((item) => item.value !== 'custom' && item.value === normalized);
+  if (option) {
+    specializationPreset.value = option.value;
+    specializationCustom.value = '';
+  } else if (normalized) {
+    specializationPreset.value = 'custom';
+    specializationCustom.value = normalized;
+  }
+  syncSpecializationControl();
+}
+
+function getSpecialization() {
+  const value = specializationPreset.value === 'custom'
+    ? specializationCustom.value.trim()
+    : specializationPreset.value.trim();
+  if (!value) throw new Error('请输入自定义岗位细分方向。');
+  return value;
+}
+
+function syncDurationControl({ focus = false } = {}) {
+  const custom = durationPreset.value === 'custom';
+  const infinite = durationPreset.value === 'infinite';
+  durationCustomWrap.classList.toggle('is-hidden', !custom);
+  $('#durationHint').textContent = infinite
+    ? '不限时模式不会自动结束，请在面试页手动结束'
+    : custom ? '支持 1–180 分钟，结束后保留完整反馈' : '短场也会保留完整反馈';
+  if (custom && focus) durationCustom.focus();
+  hideSettingsAlert();
+}
+
+function setDuration(value) {
+  if (value === null) {
+    durationPreset.value = 'infinite';
+  } else {
+    const minutes = Number(value);
+    const preset = [...durationPreset.options].find((item) => ['10', '15', '25'].includes(item.value) && Number(item.value) === minutes);
+    if (preset) durationPreset.value = preset.value;
+    else if (Number.isInteger(minutes) && minutes > 0) {
+      durationPreset.value = 'custom';
+      durationCustom.value = String(minutes);
+    }
+  }
+  syncDurationControl();
+}
+
+function getDurationMinutes() {
+  if (durationPreset.value === 'infinite') return null;
+  const value = durationPreset.value === 'custom' ? Number(durationCustom.value) : Number(durationPreset.value);
+  if (!Number.isInteger(value) || value < 1 || value > 180) {
+    throw new Error('自定义面试时长请输入 1–180 之间的整数分钟。');
+  }
+  return value;
 }
 
 function restoreSetup() {
   const saved = getSavedSetup();
   if (!saved || typeof saved !== 'object') return;
   const company = $$('input[name="company"]').find((input) => input.value === String(saved.company || ''));
-  const duration = $(`input[name="duration"][value="${Number(saved.duration_minutes)}"]`);
   if (company) company.checked = true;
-  if (duration) duration.checked = true;
-  if (typeof saved.stress === 'boolean') {
-    stressToggle.checked = saved.stress;
+  if (Object.hasOwn(saved, 'duration_minutes')) setDuration(saved.duration_minutes);
+  if (saved.specialization) setSpecialization(saved.specialization);
+  if (saved.stress_level !== undefined || typeof saved.stress === 'boolean') {
+    setStressLevel(saved.stress_level ?? (saved.stress ? 2 : 0));
     stressTouched = true;
   }
   updateCompanySelection({ applyDefault: false });
@@ -171,16 +264,22 @@ async function parseResume() {
 async function startInterview(event) {
   event.preventDefault();
   hideResumeAlert();
+  hideSettingsAlert();
+  let specialization;
+  let durationMinutes;
   try {
     validateResume();
+    specialization = getSpecialization();
+    durationMinutes = getDurationMinutes();
   } catch (error) {
-    showResumeAlert(error.message);
+    if (/简历|PDF|文字/.test(error.message)) showResumeAlert(error.message);
+    else showSettingsAlert(error.message);
     return;
   }
 
   const company = $('input[name="company"]:checked')?.value || 'bytedance';
-  const durationMinutes = Number($('input[name="duration"]:checked')?.value || 15);
-  const stress = stressToggle.checked;
+  const stressLevel = getStressLevel();
+  const stress = stressLevel > 0;
   const clientId = getClientId();
 
   try {
@@ -197,6 +296,8 @@ async function startInterview(event) {
         resume,
         company,
         role: 'backend',
+        specialization,
+        stress_level: stressLevel,
         stress,
         duration_minutes: durationMinutes,
       },
@@ -209,13 +310,15 @@ async function startInterview(event) {
       client_id: clientId,
       company,
       role: 'backend',
+      specialization,
+      stress_level: stressLevel,
       stress,
       duration_minutes: durationMinutes,
       voice_mode: normalizeMode(session?.voice_mode || serverMode),
       created_at: session?.created_at || new Date().toISOString(),
     };
     setCurrentSession(current);
-    saveSetup({ company, stress, duration_minutes: durationMinutes });
+    saveSetup({ company, specialization, stress_level: stressLevel, stress, duration_minutes: durationMinutes });
     window.location.assign(`/interview?session=${encodeURIComponent(id)}`);
   } catch (error) {
     setButtonBusy(startButton, false);
@@ -256,15 +359,21 @@ textInput.addEventListener('input', () => {
 });
 
 $$('input[name="company"]').forEach((input) => input.addEventListener('change', () => {
-  stressTouched = false;
   updateCompanySelection();
 }));
-stressToggle.addEventListener('change', () => {
+$$('input[name="stress_level"]').forEach((input) => input.addEventListener('change', () => {
   stressTouched = true;
   updateCompanySelection({ applyDefault: false });
-});
+  hideSettingsAlert();
+}));
+specializationPreset.addEventListener('change', () => syncSpecializationControl({ focus: true }));
+specializationCustom.addEventListener('input', hideSettingsAlert);
+durationPreset.addEventListener('change', () => syncDurationControl({ focus: true }));
+durationCustom.addEventListener('input', hideSettingsAlert);
 form.addEventListener('submit', startInterview);
 
 restoreSetup();
+syncSpecializationControl();
+syncDurationControl();
 updateCompanySelection({ applyDefault: !stressTouched });
 Promise.allSettled([loadConfig(), loadWeakness()]);

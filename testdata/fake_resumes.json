@@ -1,0 +1,198 @@
+{
+  "disclaimer": "完全虚构的测试简历，姓名、学校、公司、项目和联系方式均不对应真实个人，仅用于 AI 模拟面试官功能测试。",
+  "resumes": [
+    {
+      "slug": "01_java_ecommerce_backend",
+      "name": "陈宇航",
+      "target": "Java 业务后端实习生",
+      "contact": "138-0000-0001｜chen.yuhang@example.com｜杭州",
+      "sections": [
+        {
+          "title": "教育经历",
+          "lines": [
+            "华东示例大学｜计算机科学与技术｜本科｜2023.09—2027.06",
+            "核心课程：数据结构、操作系统、计算机网络、数据库系统；专业前 20%。"
+          ]
+        },
+        {
+          "title": "项目经历",
+          "lines": [
+            "校园二手交易平台后端｜核心开发｜2025.03—2025.08",
+            "• 使用 Spring Boot、MySQL、Redis 和 RocketMQ 实现商品、订单、支付回调与库存模块。",
+            "• 为商品检索设计联合索引并重写分页查询；压测数据中 P95 从 420ms 降至 135ms，口径为 20 并发、10 万商品测试集。",
+            "• 使用 Redis Lua 实现库存预扣与幂等校验，MQ 异步创建超时取消任务；能够解释缓存与数据库一致性的失败窗口。",
+            "• 使用线程池异步聚合商品详情，设置核心线程 8、最大线程 16、队列 500，并补充拒绝策略和监控指标。"
+          ]
+        },
+        {
+          "title": "实习经历",
+          "lines": [
+            "星河互联（虚构）｜后端开发实习生｜2025.09—2025.12",
+            "• 参与营销券核销接口，补充唯一索引、事务边界和重复请求幂等测试。",
+            "• 为 Redis 热点 Key 增加本地缓存与随机过期时间；测试环境峰值 QPS 由 900 提升至 2100。"
+          ]
+        },
+        {
+          "title": "技能",
+          "lines": [
+            "Java、Spring Boot、MySQL、Redis、RocketMQ、JUC、Docker；可口述 LRU、限流器和线程安全单例。"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "02_go_high_concurrency_backend",
+      "name": "林若溪",
+      "target": "Go 高并发后端实习生",
+      "contact": "138-0000-0002｜lin.ruoxi@example.com｜成都",
+      "sections": [
+        {
+          "title": "教育经历",
+          "lines": [
+            "西南示例理工大学｜软件工程｜本科｜2022.09—2026.06",
+            "课程：操作系统、计算机网络、编译原理、分布式系统；校程序设计竞赛二等奖（虚构）。"
+          ]
+        },
+        {
+          "title": "项目经历",
+          "lines": [
+            "多人协作文档网关｜负责人｜2025.01—2025.07",
+            "• 使用 Go、Gin、gRPC、PostgreSQL、Kafka 构建连接网关和操作日志服务。",
+            "• 每个房间由单独 goroutine 管理状态，通过 channel 串行化写操作；能说明慢消费者、channel 堵塞和 goroutine 泄漏的处理。",
+            "• WebSocket 心跳 30 秒，离线判定 90 秒；在 4 核测试机维持 8000 条空闲连接和 1200 次/秒广播。",
+            "• Kafka 采用业务键分区保证同文档有序，消费者以操作 ID 去重；讨论过至少一次投递下的重复消费边界。"
+          ]
+        },
+        {
+          "title": "实习经历",
+          "lines": [
+            "云帆科技（虚构）｜Go 后端实习生｜2025.07—2025.10",
+            "• 为短链服务实现布隆过滤器和两级缓存，补充缓存穿透、热点 Key 和数据库回源保护。",
+            "• 使用 pprof 定位 JSON 编解码分配热点，将单请求分配量降低约 28%。"
+          ]
+        },
+        {
+          "title": "技能",
+          "lines": [
+            "Go、Gin、gRPC、PostgreSQL、Redis、Kafka、Linux、Docker；熟悉 GMP、context、sync 包与 TCP。"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "03_cloud_native_infrastructure",
+      "name": "周子墨",
+      "target": "云原生与基础架构后端实习生",
+      "contact": "138-0000-0003｜zhou.zimo@example.com｜北京",
+      "sections": [
+        {
+          "title": "教育经历",
+          "lines": [
+            "北方示例大学｜网络工程｜本科｜2023.09—2027.06",
+            "课程：Linux 系统编程、计算机网络、操作系统、云计算基础。"
+          ]
+        },
+        {
+          "title": "项目经历",
+          "lines": [
+            "实验室微服务可观测平台｜基础架构开发｜2025.02—2025.09",
+            "• 基于 Kubernetes、Prometheus、Grafana、OpenTelemetry 搭建指标、日志和链路追踪。",
+            "• 编写 Admission Webhook 自动注入采集配置，使用证书轮换和失败放行策略避免阻塞业务发布。",
+            "• 为告警聚合服务设计滑动窗口与去重键，将一次模拟故障产生的 600 条告警压缩为 18 个事件。",
+            "• 通过 readinessProbe、PodDisruptionBudget 和滚动发布参数控制升级风险；能说明探针误配导致的故障案例。"
+          ]
+        },
+        {
+          "title": "开源实践",
+          "lines": [
+            "轻量配置中心｜个人项目｜2024.10—2025.01",
+            "• 使用 Raft 教学库实现三节点配置复制，重点完成 HTTP API、watch 长轮询与快照落盘。",
+            "• 做过网络分区和节点重启测试，但未自行实现 Raft 核心算法，会明确区分个人贡献与依赖能力。"
+          ]
+        },
+        {
+          "title": "技能",
+          "lines": [
+            "Linux、Docker、Kubernetes、Prometheus、OpenTelemetry、Go、Python、Nginx；熟悉发布、限流、熔断和容量评估。"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "04_python_ai_backend",
+      "name": "许嘉宁",
+      "target": "Python / AI 工程后端实习生",
+      "contact": "138-0000-0004｜xu.jianing@example.com｜上海",
+      "sections": [
+        {
+          "title": "教育经历",
+          "lines": [
+            "江南示例科技大学｜人工智能｜本科｜2022.09—2026.06",
+            "课程：机器学习、深度学习、数据库、计算机网络、软件工程。"
+          ]
+        },
+        {
+          "title": "项目经历",
+          "lines": [
+            "课程问答模型服务平台｜后端与推理服务｜2025.03—2025.11",
+            "• 使用 FastAPI、PostgreSQL、Redis 和 Celery 实现模型版本、异步评测与流式生成接口。",
+            "• 设计请求状态机：鉴权、排队、prefill、decode、SSE 回传；记录 TTFT、TPOT、取消率与 GPU 队列长度。",
+            "• 按模型和模板哈希复用前缀缓存，设置租户隔离；压测中重复系统提示词场景 TTFT 中位数下降 31%。",
+            "• 对 500 条合成题做离线评测，区分 exact match、人工偏好和失败原因；未将测试集用于提示词调优。"
+          ]
+        },
+        {
+          "title": "实习经历",
+          "lines": [
+            "启明智能（虚构）｜AI 平台实习生｜2025.07—2025.10",
+            "• 封装统一模型网关，支持超时、重试、熔断和 token 预算；避免对非幂等生成请求盲目重试。",
+            "• 调研 continuous batching、PagedAttention、KV cache 量化与 speculative decoding，完成概念验证和限制说明。"
+          ]
+        },
+        {
+          "title": "技能",
+          "lines": [
+            "Python、FastAPI、PyTorch、PostgreSQL、Redis、Docker；理解 tokenizer、KV cache、批处理调度与模型评测基础。"
+          ]
+        }
+      ]
+    },
+    {
+      "slug": "05_weak_project_candidate",
+      "name": "王浩然",
+      "target": "通用后端开发实习生（压力与早停测试）",
+      "contact": "138-0000-0005｜wang.haoran@example.com｜武汉",
+      "sections": [
+        {
+          "title": "教育经历",
+          "lines": [
+            "中部示例学院｜计算机科学与技术｜本科｜2023.09—2027.06",
+            "学习过 Java、数据库、计算机网络等课程。"
+          ]
+        },
+        {
+          "title": "项目经历",
+          "lines": [
+            "校园论坛｜成员｜2025.04—2025.06",
+            "• 使用 Spring Boot 和 MySQL 完成登录、发帖和评论功能。",
+            "• 项目使用了 Redis 缓存，但没有记录命中率、数据规模、压测方法或一致性方案。",
+            "• 简历中写有“性能提升很多”，无法提供基线、提升比例和测试环境，用于触发指标口径追问。",
+            "• 主要参考课程示例完成，个人负责范围和技术选型理由描述不清，用于测试连续答崩与提前结束。"
+          ]
+        },
+        {
+          "title": "其他经历",
+          "lines": [
+            "参加过一次校内编程活动；能够口述数组、链表和二叉树的基本概念。"
+          ]
+        },
+        {
+          "title": "技能",
+          "lines": [
+            "Java 基础、Spring Boot 入门、MySQL 基础、Git 基础。"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "items": [
+    {
+      "name": "陈宇航",
+      "target": "Java 业务后端实习生",
+      "file": "01_java_ecommerce_backend.pdf",
+      "url": "/sample-resumes/01_java_ecommerce_backend.pdf"
+    },
+    {
+      "name": "林若溪",
+      "target": "Go 高并发后端实习生",
+      "file": "02_go_high_concurrency_backend.pdf",
+      "url": "/sample-resumes/02_go_high_concurrency_backend.pdf"
+    },
+    {
+      "name": "周子墨",
+      "target": "云原生与基础架构后端实习生",
+      "file": "03_cloud_native_infrastructure.pdf",
+      "url": "/sample-resumes/03_cloud_native_infrastructure.pdf"
+    },
+    {
+      "name": "许嘉宁",
+      "target": "Python / AI 工程后端实习生",
+      "file": "04_python_ai_backend.pdf",
+      "url": "/sample-resumes/04_python_ai_backend.pdf"
+    },
+    {
+      "name": "王浩然",
+      "target": "通用后端开发实习生（压力与早停测试）",
+      "file": "05_weak_project_candidate.pdf",
+      "url": "/sample-resumes/05_weak_project_candidate.pdf"
+    }
+  ]
+}
