@@ -3,7 +3,7 @@ import {
   firstValue, formatDate, getCachedReports, getClientId, getCurrentSession,
   normalizeHistoryPayload, removeCachedReport, score10, setButtonBusy,
   setCurrentSession, showToast, toArray,
-} from './common.js?v=20260830-hide-internals';
+} from './common.js?v=20260830-profile-bank-v2';
 
 const query = new URLSearchParams(location.search);
 const sessionId = query.get('session') || '';
@@ -357,7 +357,7 @@ function normalizeReport(raw, metadata = {}) {
     : clamp(Math.round(Number(stressLevelRaw) || 0), 0, 3);
   const radarRoot = firstValue(report, ['radar', 'radar_dimensions', 'holistic_radar', '能力雷达'], {});
   const radar = Array.isArray(radarRoot) && radarRoot.length
-    ? radarRoot.slice(0, 12).map((entry, index) => ({
+    ? radarRoot.slice(0, 14).map((entry, index) => ({
       key: String(firstValue(entry, ['key', 'name'], `dimension_${index + 1}`)),
       label: String(firstValue(entry, ['label', 'name'], `维度 ${index + 1}`)),
       ...normalizeScoredEntry(entry),
@@ -377,8 +377,10 @@ function normalizeReport(raw, metadata = {}) {
     id,
     company: firstValue(report, ['company'], firstValue(metadata, ['company'], '')),
     role: firstValue(report, ['role'], firstValue(metadata, ['role'], 'backend')),
-    interviewType: firstValue(report, ['interview_type'], firstValue(metadata, ['interview_type'], 'technical')) === 'technical_hr'
-      ? 'technical_hr'
+    interviewType: ['technical', 'hr', 'technical_hr'].includes(
+      firstValue(report, ['interview_type'], firstValue(metadata, ['interview_type'], 'technical')),
+    )
+      ? firstValue(report, ['interview_type'], firstValue(metadata, ['interview_type'], 'technical'))
       : 'technical',
     specialization: String(firstValue(report, ['specialization'], firstValue(metadata, ['specialization'], '通用后端')) || '通用后端'),
     languageMode: ['zh', 'bilingual', 'en'].includes(

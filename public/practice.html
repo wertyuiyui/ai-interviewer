@@ -4,9 +4,9 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#f6f4ef">
-    <meta name="description" content="面向后端实习面试的真实题库快速练习，支持语音与文字单题作答。">
+    <meta name="description" content="面向后端实习面试的快速练习，支持技术面、综合面以及语音与文字单题作答。">
     <title>快速刷题 · 砺面</title>
-    <link rel="stylesheet" href="/assets/app.css?v=20260830-practice">
+    <link rel="stylesheet" href="/assets/app.css?v=20260830-profile-bank-v2">
   </head>
   <body class="practice-page">
     <header class="site-header practice-header">
@@ -16,6 +16,7 @@
       </a>
       <nav class="header-actions" aria-label="刷题导航">
         <a class="text-link" href="/">完整模拟</a>
+        <a class="text-link" href="/project">项目解读</a>
         <a class="text-link" href="/report?view=history">历史报告 <span aria-hidden="true">↗</span></a>
       </nav>
     </header>
@@ -25,10 +26,10 @@
         <div class="practice-intro">
           <span class="eyebrow"><span></span> REAL QUESTION DRILL</span>
           <h1 id="practiceTitle">一次只练好一道题。</h1>
-          <p>从真实公开题库中按公司、方向和难度选题。答完立即看扣分点，也可以从面试报告回来重答薄弱题。</p>
+          <p>按公司、面试类型、方向和难度快速选题。答完立即看扣分点，也可以从面试报告回来重答薄弱题。</p>
           <div class="practice-proof-grid" aria-label="刷题特点">
             <article><strong>单题闭环</strong><small>作答、评分、改写、再练</small></article>
-            <article><strong>语音或文字</strong><small>实时转写后仍可手动修正</small></article>
+            <article><strong>语音或文字</strong><small id="practiceVoiceProof">正在检查实时转写能力</small></article>
             <article><strong>三种语言</strong><small>中文、中英双语、纯英文</small></article>
           </div>
         </div>
@@ -36,7 +37,7 @@
         <form class="practice-form" id="practiceForm">
           <div class="practice-form-heading">
             <div><span>创建练习</span><h2 id="practiceFormTitle">快速刷题</h2></div>
-            <span class="practice-bank-badge" id="practiceBankBadge">正在读取题库</span>
+            <span class="practice-bank-badge" id="practiceBankBadge">正在准备练习</span>
           </div>
 
           <div class="practice-review-notice is-hidden" id="reviewNotice">
@@ -83,6 +84,15 @@
             </select>
           </label>
 
+          <fieldset class="practice-choice practice-interview-type">
+            <legend>面试类型</legend>
+            <div class="segmented" role="radiogroup" aria-label="快速刷题面试类型">
+              <label><input type="radio" name="practice_interview_type" value="technical" checked><span>技术面</span></label>
+              <label><input type="radio" name="practice_interview_type" value="hr"><span>综合面（HR面）</span></label>
+              <label><input type="radio" name="practice_interview_type" value="technical_hr"><span>技术+综合面</span></label>
+            </div>
+          </fieldset>
+
           <fieldset class="practice-choice">
             <legend>题目语言</legend>
             <div class="segmented" role="radiogroup" aria-label="题目语言">
@@ -99,8 +109,8 @@
             </div>
           </fieldset>
 
-          <button class="primary-button practice-start-button" id="practiceStart" type="submit"><span class="button-label">开始刷题</span><span aria-hidden="true">→</span></button>
-          <p class="practice-form-note">每道题都可用语音或文字作答，提交后立即查看具体扣分点。</p>
+          <button class="primary-button practice-start-button" id="practiceStart" type="submit" disabled><span class="button-label">开始刷题</span><span aria-hidden="true">→</span></button>
+          <p class="practice-form-note" id="practiceFormNote">每道题都可用语音或文字作答，语音转写可在提交前修正。</p>
         </form>
       </section>
 
@@ -135,7 +145,7 @@
           </div>
 
           <label class="practice-answer-input" for="practiceAnswer">
-            <span>回答文字 <small>语音转写可在提交前修正</small></span>
+            <span>回答文字 <small>提交前可手动修正</small></span>
             <textarea id="practiceAnswer" rows="8" maxlength="10000" placeholder="点击开始语音回答，或切换到文字输入…"></textarea>
           </label>
           <div class="practice-answer-footer">
@@ -168,6 +178,6 @@
       </section>
     </main>
     <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
-    <script type="module" src="/js/practice.js?v=20260830-practice"></script>
+    <script type="module" src="/js/practice.js?v=20260830-profile-bank-v2"></script>
   </body>
 </html>

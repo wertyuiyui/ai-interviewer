@@ -92,5 +92,5 @@ def test_interviewer_voice_playback_toggle_is_local_only() -> None:
 
 def test_interview_script_cache_busts_answer_controls() -> None:
     html = (ROOT / "public" / "interview.html").read_text(encoding="utf-8")
-    assert "/js/interview.js?v=20260830-answer-controls" in html
-    assert "/assets/app.css?v=20260830-answer-controls" in html
+    assert "/js/interview.js?v=20260830-profile-bank-v2" in html
+    assert "/assets/app.css?v=20260830-profile-bank-v2" in html

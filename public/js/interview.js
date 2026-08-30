@@ -1,7 +1,7 @@
 import {
   $, apiFetch, base64ToArrayBuffer, companyLabel, formatSeconds,
   getClientId, getCurrentSession, modeLabel, normalizeMode, setButtonBusy, showToast,
-} from './common.js?v=20260830-hide-internals';
+} from './common.js?v=20260830-profile-bank-v2';
 import { AudioSession } from './audio-session.js?v=20260830-mic-release';
 
 const query = new URLSearchParams(location.search);

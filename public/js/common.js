@@ -154,6 +154,12 @@ export async function apiFetch(url, options = {}) {
   const controller = new AbortController();
   const timer = timeout > 0 ? setTimeout(() => controller.abort(), timeout) : null;
   const headers = new Headers(customHeaders);
+  // The same anonymous secret also proves ownership when an interview asks
+  // the server to attach a selected Profile project.  Keep it on same-origin
+  // API paths only so it is never forwarded to an arbitrary absolute URL.
+  if (String(url).startsWith('/api/')) {
+    headers.set('X-Profile-Key', getClientId());
+  }
   let body = fetchOptions.body;
 
   if (json !== undefined) {

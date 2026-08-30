@@ -36,7 +36,7 @@ def test_microphone_close_lifecycle_contract() -> None:
     interview_html = (ROOT / "public" / "interview.html").read_text(encoding="utf-8")
     interview_js = (ROOT / "public" / "js" / "interview.js").read_text(encoding="utf-8")
 
-    assert "/js/interview.js?v=20260830-answer-controls" in interview_html
+    assert "/js/interview.js?v=20260830-profile-bank-v2" in interview_html
     assert "./audio-session.js?v=20260830-mic-release" in interview_js
     assert "let microphoneExplicitlyDisabled = false" in interview_js
     assert "type: 'microphone.state', enabled: nextState" in interview_js

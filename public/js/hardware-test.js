@@ -1,5 +1,5 @@
 import { AudioSession } from './audio-session.js?v=20260830-mic-release';
-import { clamp, getClientId } from './common.js?v=20260830-hide-internals';
+import { clamp, getClientId } from './common.js?v=20260830-profile-bank-v2';
 
 const TEST_SECONDS = 30;
 const STOP_ACK_TIMEOUT_MS = 5_000;

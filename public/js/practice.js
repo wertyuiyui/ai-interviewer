@@ -1,6 +1,6 @@
 import {
-  $, apiFetch, companyLabel, formatSeconds, getClientId, setButtonBusy, showToast, toArray,
-} from './common.js?v=20260830-company-skills';
+  $, apiFetch, companyLabel, formatSeconds, getClientId, normalizeMode, setButtonBusy, showToast, toArray,
+} from './common.js?v=20260830-profile-bank-v2';
 import { AudioSession } from './audio-session.js?v=20260830-mic-release';
 
 const query = new URLSearchParams(location.search);
@@ -17,6 +17,8 @@ const elements = {
   topic: $('#practiceTopic'),
   difficulty: $('#practiceDifficulty'),
   count: $('#practiceCount'),
+  formNote: $('#practiceFormNote'),
+  voiceProof: $('#practiceVoiceProof'),
   start: $('#practiceStart'),
   session: $('#practiceSession'),
   progress: $('#practiceProgress'),
@@ -76,6 +78,7 @@ let stopTimer = 0;
 let providerTranscript = '';
 let transcriptManuallyEdited = false;
 let attempts = [];
+let voiceTranscriptionAvailable = true;
 
 function selectedValue(name, fallback) {
   return $(`input[name="${name}"]:checked`)?.value || fallback;
@@ -121,8 +124,12 @@ function renderSessionElapsed() {
   elements.elapsed.textContent = formatSeconds((Date.now() - sessionStartedAt) / 1000);
 }
 
-function setAnswerMode(nextMode, { focus = true } = {}) {
-  const next = nextMode === 'text' ? 'text' : 'voice';
+function setAnswerMode(nextMode, { focus = true, quiet = false } = {}) {
+  const requested = nextMode === 'text' ? 'text' : 'voice';
+  const next = requested === 'voice' && !voiceTranscriptionAvailable ? 'text' : requested;
+  if (requested === 'voice' && next === 'text' && !quiet) {
+    showToast('当前服务模式不提供实时转写，已切换为文字作答。', 'info');
+  }
   if ((recording || sealingRecording) && next !== answerMode) {
     showToast('请先停止当前语音回答，再切换作答方式。', 'info');
     return;
@@ -136,6 +143,40 @@ function setAnswerMode(nextMode, { focus = true } = {}) {
     : '在这里输入本题回答…';
   elements.answerStatus.textContent = next === 'voice' ? '准备好后开始录音' : '开始输入后计时';
   if (focus && next === 'text') elements.answer.focus();
+}
+
+function configureVoiceAvailability(available, { notify = false } = {}) {
+  voiceTranscriptionAvailable = Boolean(available);
+  const setupVoice = $('input[name="answer_mode"][value="voice"]');
+  const setupText = $('input[name="answer_mode"][value="text"]');
+  if (setupVoice) setupVoice.disabled = !voiceTranscriptionAvailable;
+  elements.voiceMode.disabled = !voiceTranscriptionAvailable;
+  if (!voiceTranscriptionAvailable) {
+    if (setupText) setupText.checked = true;
+    if (elements.formNote) elements.formNote.textContent = '当前为纯文字模式：不请求麦克风，不会显示实时转写状态。';
+    if (elements.voiceProof) elements.voiceProof.textContent = '当前部署仅提供文字作答';
+    setAnswerMode('text', { focus: false, quiet: true });
+    if (notify) showToast('实时转写不可用，已切换为文字作答。', 'info', 5200);
+  } else if (elements.formNote) {
+    elements.formNote.textContent = '每道题都可用语音或文字作答，语音转写可在提交前修正。';
+    if (elements.voiceProof) elements.voiceProof.textContent = '实时转写后仍可手动修正';
+  }
+}
+
+function syncPracticeFilters() {
+  if (reviewInterviewId) return;
+  const interviewType = selectedValue('practice_interview_type', 'technical');
+  const behavioralTopic = elements.topic.value === 'English behavioral';
+  if (interviewType === 'hr') {
+    elements.topic.value = '';
+    elements.difficulty.value = '';
+    elements.topic.disabled = true;
+    elements.difficulty.disabled = true;
+    return;
+  }
+  elements.topic.disabled = false;
+  elements.difficulty.disabled = false;
+  if (behavioralTopic) elements.topic.value = '';
 }
 
 function currentQuestionNumber() {
@@ -229,6 +270,11 @@ function stopRecording() {
 function handlePracticeEvent(event) {
   const type = String(event?.type || '');
   if (type === 'practice.ready') {
+    if (event.transcription_available === false) {
+      finishRecordingState();
+      configureVoiceAvailability(false, { notify: true });
+      return;
+    }
     socketReady = true;
     recording = true;
     sealingRecording = false;
@@ -264,10 +310,15 @@ function handlePracticeEvent(event) {
   if (type === 'practice.error') {
     showToast(event.message || '实时转写暂时不可用，请改用文字作答。', 'error', 5200);
     finishRecordingState();
+    configureVoiceAvailability(false);
   }
 }
 
 async function startRecording() {
+  if (!voiceTranscriptionAvailable) {
+    setAnswerMode('text');
+    return;
+  }
   if (recording) {
     await stopRecording();
     return;
@@ -277,6 +328,8 @@ async function startRecording() {
   $('span', elements.record).textContent = '正在启用麦克风…';
   transcriptManuallyEdited = false;
   providerTranscript = '';
+  answerStartedAt = 0;
+  elements.answer.value = '';
   try {
     if (!audio) audio = createAudioSession();
     let result = null;
@@ -302,6 +355,7 @@ async function startRecording() {
     socket.addEventListener('error', () => {
       showToast('无法连接实时转写，请检查网络或切换文字作答。', 'error');
       finishRecordingState();
+      configureVoiceAvailability(false);
     });
   } catch (error) {
     audio?.disableMicrophone();
@@ -429,16 +483,17 @@ async function createPracticeSession(event = null) {
   if (elements.start.disabled) return;
   const reviewMode = Boolean(reviewInterviewId);
   const languageMode = selectedValue('practice_language', 'bilingual');
+  const interviewType = selectedValue('practice_interview_type', 'technical');
   const payload = reviewMode
     ? {
       client_id: getClientId(), mode: 'review', source_interview_id: reviewInterviewId,
-      review_score_lte: 6, language_mode: languageMode,
+      review_score_lte: 6, language_mode: languageMode, interview_type: interviewType,
       ...(Number.isInteger(reviewOrdinal) && reviewOrdinal > 0 ? { review_ordinals: [reviewOrdinal] } : {}),
     }
     : {
       client_id: getClientId(), mode: 'quick', company: elements.company.value,
       topic: elements.topic.value || null, difficulty: elements.difficulty.value || null,
-      language_mode: languageMode, count: Number(elements.count.value) || 5,
+      language_mode: languageMode, interview_type: interviewType, count: Number(elements.count.value) || 5,
     };
   try {
     setButtonBusy(elements.start, true, reviewMode ? '正在读取错题…' : '正在选题…');
@@ -455,7 +510,7 @@ async function createPracticeSession(event = null) {
     setVisible(elements.setup, false);
     setVisible(elements.complete, false);
     setVisible(elements.session, true);
-    answerMode = selectedValue('answer_mode', 'voice');
+    answerMode = voiceTranscriptionAvailable ? selectedValue('answer_mode', 'voice') : 'text';
     renderQuestion(response.current_question);
     renderSessionElapsed();
   } catch (error) {
@@ -493,16 +548,22 @@ async function initialize() {
       apiFetch('/api/practice/catalog', { timeout: 12_000 }),
     ]);
     populateCompanies(catalog?.companies || config?.companies);
-    const count = Number(catalog?.approved_question_count || catalog?.question_count || catalog?.total_questions);
-    elements.bankBadge.textContent = Number.isFinite(count) && count > 0 ? `${count} 道已审核题` : '真实题库已就绪';
+    configureVoiceAvailability(normalizeMode(config?.voice_mode) !== 'L3');
+    syncPracticeFilters();
+    elements.bankBadge.textContent = '练习已就绪';
+    elements.start.disabled = false;
     if (reviewMode) await createPracticeSession();
   } catch (error) {
-    elements.bankBadge.textContent = '题库连接待恢复';
+    elements.bankBadge.textContent = '练习配置待恢复';
+    configureVoiceAvailability(false);
     showToast(error?.message || '暂时无法读取刷题配置。', 'error', 5200);
   }
 }
 
 elements.form.addEventListener('submit', createPracticeSession);
+document.querySelectorAll('input[name="practice_interview_type"]').forEach((input) => {
+  input.addEventListener('change', syncPracticeFilters);
+});
 elements.voiceMode.addEventListener('click', () => setAnswerMode('voice'));
 elements.textMode.addEventListener('click', () => setAnswerMode('text'));
 elements.record.addEventListener('click', startRecording);

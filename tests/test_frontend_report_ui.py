@@ -74,4 +74,4 @@ def test_public_pages_hide_internal_source_and_voice_tier_copy() -> None:
     assert "ARIS-in-AI-Offer" not in visible_source
     assert "L0 · 端到端语音" not in visible_source
     assert "实时语音" in visible_source
-    assert "?v=20260830-hide-internals" in visible_source
+    assert "?v=20260830-profile-bank-v2" in visible_source
