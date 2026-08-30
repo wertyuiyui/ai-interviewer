@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "company": "bytedance",
+  "display_name": "字节跳动",
+  "evidence_level": "high",
+  "flow": ["overview_and_study", "project_or_internship", "three_layer_drilldown", "fundamentals", "coding_thought", "behavioral_if_selected", "candidate_questions"],
+  "tone": "Direct and fast-paced, but coherent and professional; continue from a concrete word in the previous answer.",
+  "topic_weights": {"project": 0.45, "fundamentals": 0.32, "coding_thought": 0.23},
+  "difficulty_ladder": ["candidate_fact", "implementation_mechanism", "failure_boundary", "tenfold_scale_or_changed_constraint"],
+  "project_followup_rules": ["Chase metrics, component names, and causal claims to evidence.", "Require the candidate's own contribution and the complete request path.", "Always include a coding-thinking checkpoint with complexity and edge cases."],
+  "pressure_policy": {"primary": "deep_followup", "allowed": ["evidence_challenge", "changed_constraints"], "interrupt_only_on_expression_problem": true},
+  "hr_focus": ["prioritization under rapid change", "ownership and learning speed", "career choice evidence", "transparent compensation trade-offs"],
+  "language_profiles": {"zh": "Natural Mandarin with standard English technical terms.", "bilingual": "Mandarin-led with at least one short English follow-up.", "en": "Natural English only; never translate candidate-facing content back into Chinese."},
+  "source_refs": ["experience-bytedance-2026-06", "experience-bytedance-project-drill", "references/INTERVIEW_SKILL_DISTILLATION.md#bytedance"]
+}

@@ -26,7 +26,9 @@ let selectedFile = null;
 let stressTouched = false;
 let serverMode = 'L3';
 
-const stressDefaults = { bytedance: 2, meituan: 0, tencent: 0 };
+const stressDefaults = {
+  bytedance: 2, meituan: 0, tencent: 0, alibaba: 0, baidu: 0, huawei: 0,
+};
 const stressHints = {
   0: '关闭施压手法，仍会保留连续深挖',
   1: '温和施压：适度质疑，并给你整理思路的空间',
@@ -36,6 +38,11 @@ const stressHints = {
 const interviewTypeHints = {
   technical: '聚焦项目、实习、技术基础与口述解题思路',
   technical_hr: '技术考察后继续聊价值观、职业选择、规划与薪酬期待',
+};
+const languageModeHints = {
+  zh: '全程使用中文，常见英文技术术语会保留原文',
+  bilingual: '中英双语会保留常用英文术语，并可能追问英文表达',
+  en: '面试官的开场、技术追问、综合题与结束语都只使用英文',
 };
 
 function setResumeMode(nextMode, focus = false) {
@@ -122,13 +129,15 @@ function setStressLevel(level) {
 }
 
 function getLanguageMode() {
-  return $('input[name="language_mode"]:checked')?.value === 'zh' ? 'zh' : 'bilingual';
+  const value = $('input[name="language_mode"]:checked')?.value;
+  return ['zh', 'bilingual', 'en'].includes(value) ? value : 'bilingual';
 }
 
 function setLanguageMode(mode) {
-  const normalized = mode === 'zh' ? 'zh' : 'bilingual';
+  const normalized = ['zh', 'bilingual', 'en'].includes(mode) ? mode : 'bilingual';
   const target = $(`input[name="language_mode"][value="${normalized}"]`);
   if (target) target.checked = true;
+  $('#languageHint').textContent = languageModeHints[normalized];
 }
 
 function getInterviewType() {
@@ -427,7 +436,10 @@ $$('input[name="stress_level"]').forEach((input) => input.addEventListener('chan
   updateCompanySelection({ applyDefault: false });
   hideSettingsAlert();
 }));
-$$('input[name="language_mode"]').forEach((input) => input.addEventListener('change', hideSettingsAlert));
+$$('input[name="language_mode"]').forEach((input) => input.addEventListener('change', () => {
+  setLanguageMode(getLanguageMode());
+  hideSettingsAlert();
+}));
 $$('input[name="interview_type"]').forEach((input) => input.addEventListener('change', () => {
   setInterviewType(getInterviewType());
   hideSettingsAlert();
@@ -444,6 +456,7 @@ form.addEventListener('submit', startInterview);
 window.addEventListener('pagehide', () => hardwareTest?.dispose());
 
 restoreSetup();
+setLanguageMode(getLanguageMode());
 setInterviewType(getInterviewType());
 syncMemoryControl();
 syncSpecializationControl();

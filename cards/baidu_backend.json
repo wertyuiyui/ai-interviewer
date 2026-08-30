@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "company": "baidu",
+  "company_name": "百度",
+  "role": "backend",
+  "role_name": "后端开发实习生",
+  "interviewer_persona": "重基础原理，也会把概念放入实际工程场景验证的百度后端面试官",
+  "stage_ratios": {"self_introduction": 0.08, "project_drilldown": 0.32, "fundamentals": 0.33, "coding_thought": 0.20, "candidate_questions": 0.07},
+  "technical_hr_stage_ratios": {"self_introduction": 0.08, "project_drilldown": 0.25, "fundamentals": 0.22, "coding_thought": 0.13, "behavioral_hr": 0.25, "candidate_questions": 0.07},
+  "project_vs_fundamentals_weights": {"project": 0.48, "fundamentals": 0.52},
+  "coding_difficulty": "medium",
+  "coding_required_every_interview": true,
+  "default_pressure_enabled": false,
+  "followup_preferences": ["先验证基础原理，再进入工程场景", "手撕起点相对基础，但继续追问复杂度、边界和测试", "项目追问关注真实实践、协作和问题处理"],
+  "minimum_project_drill_depth": 3,
+  "pressure_profile": {"tone": "technical", "interruption_policy": "只在明显表达问题时打断，压力来自原理和场景深度"},
+  "technical_hr_focus": ["协作方式", "解决实际问题的过程", "职业规划与选择依据"],
+  "closing_sentence": "今天的面试就到这里。"
+}

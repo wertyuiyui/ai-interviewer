@@ -61,6 +61,14 @@ def _spoken_control_prompt(
 ) -> str:
     """Build a verbatim bilingual announcement instruction for Omni TTS."""
 
+    if language_mode == "en":
+        context = "session opening" if startup else "interview flow control"
+        return (
+            f"This is a {context} message, not the candidate's answer. Read the following "
+            "text verbatim in natural, professional English. Preserve technical names, "
+            "abbreviations, version numbers, and code terms exactly. Do not translate, "
+            f"paraphrase, explain, add, or remove anything. Output only this text:\n{text}"
+        )
     context = "会话启动" if startup else "面试流程控制"
     language_instruction = (
         "允许自然地中英混读，"
@@ -95,6 +103,10 @@ def fallback_chain(requested: str, enabled: bool = True) -> list[str]:
     if not enabled:
         return [requested]
     return modes[modes.index(requested) :]
+
+
+def _edge_tts_for_language(language_mode: str) -> EdgeTTS:
+    return EdgeTTS(voice="en-US-GuyNeural") if language_mode == "en" else EdgeTTS()
 
 
 class BrowserVoiceSession:
@@ -292,11 +304,18 @@ class BrowserVoiceSession:
 
     async def _start_pipeline(self, mode: str, initial_question: str) -> None:
         language_mode = str(self.interview.get("language_mode") or "bilingual")
-        language_hints = ["zh", "en"] if language_mode == "bilingual" else ["zh"]
+        language_hints = {
+            "bilingual": ["zh", "en"],
+            "en": ["en"],
+        }.get(language_mode, ["zh"])
         self.asr = ParaformerClient(language_hints=language_hints)
         await self.asr.start()
         self.vad = SileroVAD(sample_rate=16000)
-        self.tts = CosyVoiceTTS() if mode == "L1" else EdgeTTS()
+        self.tts = (
+            CosyVoiceTTS()
+            if mode == "L1"
+            else _edge_tts_for_language(language_mode)
+        )
         self.actual_mode = mode
         await self.send("vad.status", **self.vad.status)
         self.provider_task = asyncio.create_task(
@@ -1507,7 +1526,9 @@ class BrowserVoiceSession:
             if not self._omni_release_allowed(response_id, generation):
                 return
             try:
-                fallback_tts = EdgeTTS()
+                fallback_tts = _edge_tts_for_language(
+                    str(self.interview.get("language_mode") or "bilingual")
+                )
                 audio, mime_type = await fallback_tts.synthesize(expected)
                 if not self._omni_release_allowed(response_id, generation):
                     return
@@ -1841,7 +1862,9 @@ class BrowserVoiceSession:
                 audio, mime_type = await self.tts.synthesize(text)
             except Exception as exc:
                 if self.actual_mode == "L1":
-                    self.tts = EdgeTTS()
+                    self.tts = _edge_tts_for_language(
+                        str(self.interview.get("language_mode") or "bilingual")
+                    )
                     self.actual_mode = "L2"
                     await self.db.set_voice_mode(self.interview_id, "L2")
                     await self.send(
@@ -2087,12 +2110,20 @@ class BrowserVoiceSession:
                 return
             self._deliberate_interrupt_firing = True
             self._deliberate_interrupt_ordinals.add(ordinal)
-            text = (
-                "我先打断一下，你这段有点绕。先用一句话说清结论，"
-                "再按做法、依据和结果展开。"
-                if reason == "rambling"
-                else "先停一下，你还没有进入有效回答。先明确要回答的核心结论。"
-            )
+            if self.interview.get("language_mode") == "en":
+                text = (
+                    "I am going to pause you because the explanation is becoming circular. "
+                    "State the conclusion in one sentence, then explain the approach, evidence, and result."
+                    if reason == "rambling"
+                    else "Let me pause you. You have not reached an answer yet; start with the core conclusion."
+                )
+            else:
+                text = (
+                    "我先打断一下，你这段有点绕。先用一句话说清结论，"
+                    "再按做法、依据和结果展开。"
+                    if reason == "rambling"
+                    else "先停一下，你还没有进入有效回答。先明确要回答的核心结论。"
+                )
             await self.send(
                 "pressure.interrupt", text=text, ordinal=ordinal
             )

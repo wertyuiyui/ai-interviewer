@@ -970,8 +970,9 @@ class Database:
             else "technical"
         )
         data["specialization"] = str(data.get("specialization") or "通用后端")
+        language_mode = str(data.get("language_mode") or "bilingual")
         data["language_mode"] = (
-            "zh" if data.get("language_mode") == "zh" else "bilingual"
+            language_mode if language_mode in {"zh", "bilingual", "en"} else "bilingual"
         )
         data["memory_enabled"] = bool(data.get("memory_enabled", 1))
         duration = data.get("duration_minutes")

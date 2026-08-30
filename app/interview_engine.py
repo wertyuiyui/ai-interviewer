@@ -102,7 +102,7 @@ class InterviewEngine:
             weak_topics=weak_topics,
             selection_seed=interview_id,
         )
-        first_question = initial_question(request.company)
+        first_question = initial_question(request.company, request.language_mode)
         await self.db.create_interview(
             interview_id=interview_id,
             client_id=request.client_id,
@@ -157,7 +157,9 @@ class InterviewEngine:
             interview_id,
             ordinal=ordinal,
             question=question,
-            hint=self._build_hint(question),
+            hint=self._build_hint(
+                question, str(interview.get("language_mode") or "bilingual")
+            ),
         )
         if not event:
             raise AppError("INTERVIEW_NOT_FOUND", "面试不存在", status_code=404)
@@ -195,10 +197,35 @@ class InterviewEngine:
         return created
 
     @staticmethod
-    def _build_hint(question: str) -> str:
+    def _build_hint(question: str, language_mode: str = "bilingual") -> str:
         """Return an answer scaffold, never a factual or complete answer."""
 
         lowered = question.lower()
+        if language_mode == "en":
+            if any(marker in lowered for marker in ("compensation", "salary", "pay")):
+                return (
+                    "State a realistic expectation or range, explain the information behind it, "
+                    "then rank compensation, mentorship, and role fit. Finish with what is negotiable."
+                )
+            if any(marker in lowered for marker in ("career", "two to three years", "internship now")):
+                return (
+                    "Use this structure: current choice, evidence behind the choice, a measurable "
+                    "two-to-three-year goal, and the action you are taking this semester."
+                )
+            if any(marker in lowered for marker in ("algorithm", "complexity", "lru", "implement", "coding")):
+                return (
+                    "Clarify inputs, outputs, and constraints; state a simple baseline; improve it "
+                    "with the key data structure; then cover complexity, edge cases, and tests."
+                )
+            if any(marker in lowered for marker in ("project", "request", "traffic", "failure", "metric")):
+                return (
+                    "Lead with the conclusion, then cover the request path, your own contribution, "
+                    "one measurable result, and the main boundary or trade-off."
+                )
+            return (
+                "Answer in three parts: your conclusion, the mechanism or evidence, and one boundary "
+                "or counterexample. Keep each part tied to the question."
+            )
         if "薪酬" in question:
             return (
                 "先坦诚给出你的预期或可接受范围，再说明参考信息；"
@@ -354,6 +381,7 @@ class InterviewEngine:
             resume=resume,
             vague=vague_answer,
             max_depth=drill_target,
+            language_mode=str(interview.get("language_mode") or "bilingual"),
         )
         if not forced_depth and (
             interview["company"] == "bytedance"
@@ -361,17 +389,26 @@ class InterviewEngine:
         ):
             # 字节风格卡要求每场都有手撕思路。把它放在项目深挖之后
             # 的第一个切换点，避免短场面被普通八股挤掉。
-            coding_question = next(
-                (
-                    item["question"]
-                    for item in load_question_bank("bytedance")
-                    if item.get("category") == "手撕思路"
-                ),
-                "请口述一个 O(1) LRU Cache 的数据结构、操作和边界。",
-            )
+            if interview.get("language_mode") == "en":
+                coding_question = (
+                    "Design an O(1) LRU cache verbally. Explain the data structures, "
+                    "the get and put operations, complexity, and edge cases."
+                )
+            else:
+                coding_question = next(
+                    (
+                        item["question"]
+                        for item in load_question_bank("bytedance")
+                        if item.get("category") == "手撕思路"
+                    ),
+                    "请口述一个 O(1) LRU Cache 的数据结构、操作和边界。",
+                )
             question = str(coding_question)
         hr_questions = (
-            load_hr_question_bank(interview["company"])
+            load_hr_question_bank(
+                interview["company"],
+                str(interview.get("language_mode") or "bilingual"),
+            )
             if interview_type == "technical_hr"
             else []
         )
@@ -382,7 +419,11 @@ class InterviewEngine:
         next_hr_index = completed_turns - (drill_target + 2)
         if 0 <= next_hr_index < len(hr_questions):
             question = str(hr_questions[next_hr_index]["question"])
-        question = self._sanitize_question(question, interview["company"])
+        question = self._sanitize_question(
+            question,
+            interview["company"],
+            language_mode=str(interview.get("language_mode") or "bilingual"),
+        )
 
         # A row represents the question that was just answered, not the next
         # question generated above. Normalize server-forced phases accordingly
@@ -434,7 +475,10 @@ class InterviewEngine:
                 ),
             )
         question = self._apply_pressure_copy(
-            question, pressure_action, ordinal=completed_turns
+            question,
+            pressure_action,
+            ordinal=completed_turns,
+            language_mode=str(interview.get("language_mode") or "bilingual"),
         )
         recommended_seconds = self.recommended_answer_seconds(question)
         current_recommended_seconds = self.recommended_answer_seconds(
@@ -476,7 +520,11 @@ class InterviewEngine:
         end_reason: str | None = None
         if ended:
             end_reason = "poor_performance"
-            question = "今天的面试就到这里，感谢你的时间。"
+            question = (
+                "That concludes today's interview. Thank you for your time."
+                if interview.get("language_mode") == "en"
+                else "今天的面试就到这里，感谢你的时间。"
+            )
             recommended_seconds = 0
             await self.db.finish_interview(interview_id, end_reason)
 
@@ -683,6 +731,11 @@ class InterviewEngine:
                 "没看过",
                 "未读过",
                 "跳过",
+                "i don't know",
+                "i dont know",
+                "not sure",
+                "no idea",
+                "skip",
             )
         )
         research_gap = (vague or obvious_error) and self._is_current_research_question(
@@ -692,6 +745,7 @@ class InterviewEngine:
         failed = (vague or obvious_error) and not research_gap
         score = 3.5 if research_gap else (2.5 if failed else (6.5 if len(answer) < 80 else 7.5))
         fallback = self._fallback_decision(interview, resume, turns, answer)
+        english = interview.get("language_mode") == "en"
         fallback.assessment = TurnAssessment(
             score=score,
             scorable=True,
@@ -700,9 +754,9 @@ class InterviewEngine:
             dimension=fallback.assessment.dimension,
             topic=fallback.assessment.topic,
             deductions=(
-                ["未形成对该前沿方向的判断；可从相关工程经验、验证指标与取舍展开"]
+                (["No clear view was formed; connect relevant engineering experience, validation metrics, and trade-offs."] if english else ["未形成对该前沿方向的判断；可从相关工程经验、验证指标与取舍展开"])
                 if research_gap
-                else (["未说明原理、证据或边界条件"] if failed else [])
+                else ((["The answer did not explain the mechanism, evidence, or boundary conditions."] if english else ["未说明原理、证据或边界条件"]) if failed else [])
             ),
         )
         return fallback
@@ -722,6 +776,8 @@ class InterviewEngine:
             interview["duration_minutes"],
             interview["specialization"],
             selection_seed=interview["id"],
+            language_mode=str(interview.get("language_mode") or "bilingual"),
+            interview_type=str(interview.get("interview_type") or "technical"),
         )
         if ordinal <= 4:
             question = ""
@@ -730,15 +786,30 @@ class InterviewEngine:
         else:
             item = questions[(ordinal - 5) % max(1, len(questions))] if questions else {}
             question = str(item.get("question") or "请说说你会如何排查一次接口超时。")
+            if interview.get("language_mode") == "en" and re.search(
+                r"[\u4e00-\u9fff]", question
+            ):
+                question = (
+                    "An API's tail latency suddenly increased in production. "
+                    "How would you investigate it and narrow down the root cause?"
+                )
             category = str(item.get("category", "基础知识"))
-            dimension = "coding_thought" if category == "手撕思路" else "fundamentals"
+            dimension = (
+                "coding_thought"
+                if category == "手撕思路" or "coding" in category.lower()
+                else "fundamentals"
+            )
             topic = str(item.get("topic") or category)
         # A malformed/failed scoring call is operational missing data, not
         # evidence of average performance.  Keep the interview moving while
         # explicitly marking this turn unavailable for numeric aggregation.
         fallback_score = None
         fallback_failed = False
-        deductions = ["本轮评分服务不可用；保留问答原文，但不计入数值评分"]
+        deductions = (
+            ["Scoring was unavailable for this turn; the transcript is retained without a numeric score."]
+            if interview.get("language_mode") == "en"
+            else ["本轮评分服务不可用；保留问答原文，但不计入数值评分"]
+        )
         return TurnDecision(
             next_question=question,
             assessment=TurnAssessment(
@@ -816,8 +887,34 @@ class InterviewEngine:
         return 2 if stress_level >= 2 else 3
 
     @staticmethod
-    def _sanitize_question(question: str, company: str) -> str:
+    def _sanitize_question(
+        question: str, company: str, *, language_mode: str = "bilingual"
+    ) -> str:
         question = re.sub(r"```.*?```", "", question, flags=re.S)
+        if language_mode == "en":
+            question = re.sub(
+                r"^(?:(?:okay|great|very good|thank you(?: for sharing)?|"
+                r"let(?:'s| us) (?:continue|dive deeper))[,.!\s]*)+",
+                "",
+                question.strip(),
+                flags=re.I,
+            )
+            question = re.sub(
+                r"(?:your score|score|deductions?|correct answer|reference answer)\s*[:：]?.*",
+                "",
+                question,
+                flags=re.I,
+            ).strip()
+            if not question or re.search(r"[\u4e00-\u9fff]", question):
+                question = (
+                    "Explain the underlying mechanism of this design and the boundary "
+                    "conditions under which it would stop working."
+                )
+            if len(question) > 360:
+                question = question[:357].rstrip() + "?"
+            if not question.endswith(("?", ".")):
+                question += "?"
+            return question
         question = re.sub(
             r"^(?:(?:好的|很好|非常好|明白了|感谢(?:你的)?分享|"
             r"让我们(?:继续|深入)(?:聊聊|探讨)?)[，,。.!！\s]*)+",
@@ -838,7 +935,29 @@ class InterviewEngine:
         return question
 
     @staticmethod
-    def _apply_pressure_copy(question: str, action: str, *, ordinal: int = 0) -> str:
+    def _apply_pressure_copy(
+        question: str,
+        action: str,
+        *,
+        ordinal: int = 0,
+        language_mode: str = "bilingual",
+    ) -> str:
+        if language_mode == "en":
+            if action == "chain":
+                transitions = (
+                    "Let's take that one level deeper. ",
+                    "Following your implementation, I want to tighten the constraint. ",
+                    "Let's examine the boundary of that approach. ",
+                )
+                return f"{transitions[ordinal % len(transitions)]}{question}"
+            if action == "challenge":
+                return f"That conclusion still needs evidence. {question}"
+            if action == "interrupt":
+                return (
+                    "I am going to pause you because the explanation is becoming circular. "
+                    f"Give me the conclusion in one sentence, then answer this: {question}"
+                )
+            return question
         if action == "chain":
             transitions = (
                 "这个点我再往下追一步。",
@@ -855,12 +974,14 @@ class InterviewEngine:
     @staticmethod
     def recommended_answer_seconds(question: str) -> int:
         lowered = question.lower()
-        if "自我介绍" in question:
+        if "自我介绍" in question or any(
+            marker in lowered for marker in ("brief introduction", "academic background")
+        ):
             return 60
-        if any(marker in lowered for marker in ("手撕", "算法", "lru", "复杂度", "实现")):
+        if any(marker in lowered for marker in ("手撕", "算法", "lru", "复杂度", "实现", "algorithm", "complexity", "design an")):
             return 180
-        if any(marker in question for marker in ("项目", "链路", "故障", "取舍", "指标口径")):
+        if any(marker in lowered for marker in ("项目", "链路", "故障", "取舍", "指标口径", "project", "request", "failure", "trade-off", "metric")):
             return 90
-        if any(marker in question for marker in ("前沿", "怎么看", "研究", "论文", "趋势")):
+        if any(marker in lowered for marker in ("前沿", "怎么看", "研究", "论文", "趋势", "research", "paper", "trend")):
             return 120
         return 60

@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from .config import ROOT_DIR, Settings, get_settings
-from .content import COMPANIES, load_topic_links
+from .content import COMPANIES, load_style_card, load_topic_links
 from .db import Database
 from .errors import AppError, LLMError
 from .llm import BailianChatClient
@@ -39,12 +39,27 @@ RUBRIC_WEIGHTS = {
     "communication": 0.1,
 }
 
+ENGLISH_TOPIC_LABELS = {
+    "Java并发": "Java concurrency",
+    "计网": "computer networking",
+    "手撕思路": "coding thought process",
+    "项目深度": "project depth",
+    "表达逻辑": "communication structure",
+    "综合基础": "backend fundamentals",
+}
+
 
 REPORT_SYSTEM_PROMPT = """你是严格但建设性的技术面试复盘官。面试已经结束，现在才允许点评。
 根据完整逐题转写输出结构化 JSON 报告。每道题必须有具体扣分点和一段可直接学习的改写示范；不得笼统说“需要加强”。
 评分 rubric 固定：项目深度40%、基础八股30%、手撕思路20%、表达逻辑10%。
 不要编造候选人未说过的项目事实。没有观测证据的维度必须标记不可评分，不得填写5分或其他中间值。
 不要生成题库来源、帖子标题或 URL；大厂真实面经引用由服务端可信资料覆盖。"""
+
+REPORT_SYSTEM_PROMPT_EN = """You are a rigorous but constructive technical interview reviewer. The interview is over, so feedback is now allowed.
+Return a structured JSON report in natural professional English. For every question, provide evidence-based deductions and a concrete improved answer that the candidate can study. Do not use vague advice such as 'needs improvement'.
+Use the fixed rubric: project depth 40%, backend fundamentals 30%, coding thought process 20%, and communication 10%.
+Do not invent project facts the candidate never stated. Any dimension without observed evidence must be marked unscorable and must never receive a default midpoint such as 5.
+Do not generate question-bank sources, post titles, or URLs; trusted company interview citations are attached by the server."""
 
 
 class ReportEngine:
@@ -140,23 +155,22 @@ class ReportEngine:
             "interview_type": interview.get("interview_type") or "technical",
             "ended_reason": interview["end_reason"],
             "specialization": interview.get("specialization"),
+            "language_mode": interview.get("language_mode") or "bilingual",
             "resume": interview.get("resume"),
             "transcript": transcript,
-            "required": (
-                "输出每题扣分点、改写示范、四维 rubric、知识点分数、下次必练清单，"
-                "并分析简历内容、时间把握、措辞与岗位契合度；没有语音证据时不要猜语速或流畅度。"
-                + (
-                    "本场是技术/综合（HR）面，还要基于对应问答分析价值观与公司契合、"
-                    "人生规划和选择逻辑、薪酬预期的依据与沟通方式；不得因薪酬数值本身扣分。"
-                    if interview.get("interview_type") == "technical_hr"
-                    else ""
-                )
-            ),
+            "required": self._report_requirements(interview),
         }
         try:
             raw = await self.client.chat_json(
                 [
-                    {"role": "system", "content": REPORT_SYSTEM_PROMPT},
+                    {
+                        "role": "system",
+                        "content": (
+                            REPORT_SYSTEM_PROMPT_EN
+                            if interview.get("language_mode") == "en"
+                            else REPORT_SYSTEM_PROMPT
+                        ),
+                    },
                     {
                         "role": "user",
                         "content": json.dumps(prompt, ensure_ascii=False),
@@ -179,14 +193,43 @@ class ReportEngine:
             candidate = self._deterministic_report(interview, turns, report_id)
         return self._normalize(candidate, interview, turns)
 
+    @staticmethod
+    def _report_requirements(interview: dict[str, Any]) -> str:
+        combined = interview.get("interview_type") == "technical_hr"
+        if interview.get("language_mode") == "en":
+            requirement = (
+                "Write every narrative field in English. Include per-question deductions, "
+                "improved answers, the four-dimensional rubric, topic scores, and a next-practice "
+                "list. Analyze resume content, answer timing, wording, fluency when voice evidence "
+                "exists, and role fit. Do not infer speech rate or fluency without voice evidence."
+            )
+            if combined:
+                requirement += (
+                    " This was a combined technical and behavioral interview. Also analyze values "
+                    "and company fit, career choices and planning, and the evidence and communication "
+                    "behind compensation expectations. Never deduct points for the compensation number itself."
+                )
+            return requirement
+        return (
+            "输出每题扣分点、改写示范、四维 rubric、知识点分数、下次必练清单，"
+            "并分析简历内容、时间把握、措辞与岗位契合度；没有语音证据时不要猜语速或流畅度。"
+            + (
+                "本场是技术/综合（HR）面，还要基于对应问答分析价值观与公司契合、"
+                "人生规划和选择逻辑、薪酬预期的依据与沟通方式；不得因薪酬数值本身扣分。"
+                if combined
+                else ""
+            )
+        )
+
     def _deterministic_report(
         self,
         interview: dict[str, Any],
         turns: list[InterviewTurn],
         report_id: str,
     ) -> InterviewReport:
+        english = interview.get("language_mode") == "en"
         scores = self._dimension_scores(turns)
-        rubric = self._rubric(scores, turns)
+        rubric = self._rubric(scores, turns, english=english)
         overall = self._overall(rubric)
         topic_scores = self._topic_scores(turns)
         feedback = [
@@ -202,17 +245,21 @@ class ReportEngine:
                     else "not_scorable"
                 ),
                 evidence=(
-                    [self._turn_evidence(turn)]
+                    [self._turn_evidence(turn, english=english)]
                     if turn.scorable and turn.score is not None
-                    else ["本轮评分服务不可用，问答原文保留但不据此生成数值分"]
+                    else (
+                        ["Scoring was unavailable for this turn; the transcript is retained without a numeric score."]
+                        if english
+                        else ["本轮评分服务不可用，问答原文保留但不据此生成数值分"]
+                    )
                 ),
                 deductions=turn.deductions
                 or (
-                    ["回答缺少一项可验证的数据、原理或边界说明"]
+                    (["The answer needs one verifiable metric, mechanism, or boundary condition."] if english else ["回答缺少一项可验证的数据、原理或边界说明"])
                     if turn.scorable
-                    else ["本轮不可评分，未据此扣分"]
+                    else (["This turn was unscorable and no points were deducted."] if english else ["本轮不可评分，未据此扣分"])
                 ),
-                better_answer=self._better_answer(turn),
+                better_answer=self._better_answer(turn, english=english),
                 recommended_answer_seconds=turn.recommended_answer_seconds,
                 answer_duration_seconds=turn.answer_duration_seconds,
                 input_mode=turn.input_mode,
@@ -221,18 +268,32 @@ class ReportEngine:
             )
             for turn in turns
         ]
-        practice = self._practice_items(topic_scores, turns)
+        practice = self._practice_items(
+            topic_scores,
+            turns,
+            language_mode=str(interview.get("language_mode") or "bilingual"),
+        )
         focus = [item.topic for item in practice]
         scorable = any(turn.scorable and turn.score is not None for turn in turns)
-        summary = (
-            f"本场完成 {len(turns)} 轮问答。"
-            f"当前最需要补强的是{'、'.join(focus)}。"
-            if scorable and focus
-            else (
-                f"本场保留了 {len(turns)} 轮有效问答，但评分服务没有返回可验证的数值证据；"
-                "本次不生成默认分，也不写入后续弱项记忆。"
+        if english:
+            summary = (
+                f"This interview covered {len(turns)} answered questions. The next priorities are {', '.join(focus)}."
+                if scorable and focus
+                else (
+                    f"This interview retained {len(turns)} answered questions, but scoring returned no verifiable numeric evidence. "
+                    "No default score or weak-topic memory was created."
+                )
             )
-        )
+        else:
+            summary = (
+                f"本场完成 {len(turns)} 轮问答。"
+                f"当前最需要补强的是{'、'.join(focus)}。"
+                if scorable and focus
+                else (
+                    f"本场保留了 {len(turns)} 轮有效问答，但评分服务没有返回可验证的数值证据；"
+                    "本次不生成默认分，也不写入后续弱项记忆。"
+                )
+            )
         report = InterviewReport(
             schema_version="2.0",
             report_id=report_id,
@@ -266,13 +327,18 @@ class ReportEngine:
             scored=False,
             score_status="insufficient_data",
             overall_score=0.0,
-            rubric=self._rubric(missing_scores, []),
+            rubric=self._rubric(
+                missing_scores,
+                [],
+                english=interview.get("language_mode") == "en",
+            ),
             question_feedback=[],
             topic_scores={},
             must_practice=[],
             summary=(
-                "本场没有有效回答或可用转写，评分数据不足，因此本次不计分，"
-                "也不会写入后续面试的弱项记忆。"
+                "There was no usable answer or transcript, so this interview is not scored and does not contribute weak-topic memory."
+                if interview.get("language_mode") == "en"
+                else "本场没有有效回答或可用转写，评分数据不足，因此本次不计分，也不会写入后续面试的弱项记忆。"
             ),
             next_focus=[],
             comparison={},
@@ -289,8 +355,9 @@ class ReportEngine:
         interview: dict[str, Any],
         turns: list[InterviewTurn],
     ) -> InterviewReport:
+        english = interview.get("language_mode") == "en"
         scores = self._dimension_scores(turns)
-        candidate.rubric = self._rubric(scores, turns)
+        candidate.rubric = self._rubric(scores, turns, english=english)
         candidate.overall_score = self._overall(candidate.rubric)
         candidate.report_id = candidate.report_id or uuid.uuid4().hex
         candidate.interview_id = interview["id"]
@@ -330,19 +397,23 @@ class ReportEngine:
                         generated.evidence
                         if generated and generated.evidence
                         else (
-                            [self._turn_evidence(turn)]
+                            [self._turn_evidence(turn, english=english)]
                             if turn.scorable and turn.score is not None
-                            else ["本轮评分服务不可用，未生成数值分"]
+                            else (
+                                ["Scoring was unavailable for this turn, so no numeric score was generated."]
+                                if english
+                                else ["本轮评分服务不可用，未生成数值分"]
+                            )
                         )
                     ),
                     deductions=(generated.deductions if generated else turn.deductions)
                     or (
-                        ["回答缺少可验证的关键细节"]
+                        (["The answer is missing verifiable technical detail."] if english else ["回答缺少可验证的关键细节"])
                         if turn.scorable
-                        else ["本轮不可评分，未据此扣分"]
+                        else (["This turn was unscorable and no points were deducted."] if english else ["本轮不可评分，未据此扣分"])
                     ),
                     better_answer=(generated.better_answer if generated else "")
-                    or self._better_answer(turn),
+                    or self._better_answer(turn, english=english),
                     recommended_answer_seconds=turn.recommended_answer_seconds,
                     answer_duration_seconds=turn.answer_duration_seconds,
                     input_mode=turn.input_mode,
@@ -352,12 +423,21 @@ class ReportEngine:
             )
         candidate.question_feedback = normalized_feedback
         candidate.topic_scores = self._topic_scores(turns)
-        candidate.must_practice = self._practice_items(candidate.topic_scores, turns)
+        candidate.must_practice = self._practice_items(
+            candidate.topic_scores,
+            turns,
+            language_mode=str(interview.get("language_mode") or "bilingual"),
+        )
         candidate.next_focus = [item.topic for item in candidate.must_practice]
         if not candidate.scored:
             candidate.summary = (
-                f"本场保留了 {len(turns)} 轮有效问答，但评分服务没有返回可验证的数值证据；"
-                "本次不生成默认分，也不写入后续弱项记忆。"
+                f"This interview retained {len(turns)} answered questions, but scoring returned no verifiable numeric evidence. "
+                "No default score or weak-topic memory was created."
+                if english
+                else (
+                    f"本场保留了 {len(turns)} 轮有效问答，但评分服务没有返回可验证的数值证据；"
+                    "本次不生成默认分，也不写入后续弱项记忆。"
+                )
             )
         return self._attach_extended_analysis(candidate, interview, turns)
 
@@ -383,7 +463,10 @@ class ReportEngine:
 
     @staticmethod
     def _rubric(
-        scores: dict[str, float | None], turns: list[InterviewTurn]
+        scores: dict[str, float | None],
+        turns: list[InterviewTurn],
+        *,
+        english: bool = False,
     ) -> Rubric:
         deductions_by_dimension: dict[str, list[str]] = defaultdict(list)
         evidence_by_dimension: dict[str, list[str]] = defaultdict(list)
@@ -391,7 +474,7 @@ class ReportEngine:
             if not turn.scorable or turn.score is None:
                 continue
             deductions_by_dimension[turn.category].extend(turn.deductions)
-            evidence = ReportEngine._turn_evidence(turn)
+            evidence = ReportEngine._turn_evidence(turn, english=english)
             evidence_by_dimension[turn.category].append(evidence)
             evidence_by_dimension["communication"].append(evidence)
 
@@ -457,17 +540,29 @@ class ReportEngine:
         }
 
     def _practice_items(
-        self, topic_scores: dict[str, float], turns: list[InterviewTurn]
+        self,
+        topic_scores: dict[str, float],
+        turns: list[InterviewTurn],
+        language_mode: str = "bilingual",
     ) -> list[PracticeItem]:
         links = load_topic_links()
         weakest = sorted(topic_scores.items(), key=lambda item: item[1])[:3]
         result: list[PracticeItem] = []
         for topic, score in weakest:
             resource = self._resource_for_topic(topic, links)
+            display_topic = (
+                ENGLISH_TOPIC_LABELS.get(topic, topic)
+                if language_mode == "en"
+                else topic
+            )
             result.append(
                 PracticeItem(
-                    topic=topic,
-                    reason=f"本场该知识点得分 {score:.1f}/10，需要优先补齐原理、证据和边界。",
+                    topic=display_topic,
+                    reason=(
+                        f"This topic scored {score:.1f}/10; prioritize the mechanism, evidence, and boundary conditions."
+                        if language_mode == "en"
+                        else f"本场该知识点得分 {score:.1f}/10，需要优先补齐原理、证据和边界。"
+                    ),
                     resource_title=resource["title"],  # type: ignore[arg-type]
                     resource_url=resource["url"],
                 )
@@ -489,8 +584,37 @@ class ReportEngine:
         )
 
     @staticmethod
-    def _better_answer(turn: InterviewTurn) -> str:
+    def _better_answer(turn: InterviewTurn, *, english: bool = False) -> str:
         anchor = turn.anchor_keyword or turn.topic
+        if english:
+            if any("\u3400" <= char <= "\u9fff" for char in anchor):
+                anchor = ENGLISH_TOPIC_LABELS.get(turn.topic, "the topic")
+            lowered = turn.topic.lower()
+            if "compensation" in lowered:
+                return (
+                    "I would state a realistic range and the evidence behind it, then rank compensation, "
+                    "mentorship, growth, and role fit, and finish with what is negotiable."
+                )
+            if "career" in lowered or "planning" in lowered:
+                return (
+                    "I would explain why backend engineering fits me now, name one or two measurable "
+                    "two-to-three-year goals, and support them with actions I have already started."
+                )
+            if "values" in lowered or "company fit" in lowered:
+                return (
+                    "I would use one real situation: the constraint, the evidence behind my decision, "
+                    "my communication and action, the outcome, and what I would change next time."
+                )
+            if "自我介绍" in turn.topic:
+                return (
+                    "In one minute, I would cover my university and year, relevant coursework, current "
+                    "learning focus, backend direction, and internship goal, leaving project details for the next question."
+                )
+            return (
+                f"I would establish the context and goal, explain my own work around {anchor}, walk through "
+                "the request path and mechanism, support the result with a baseline and measurement window, "
+                "and finish with failure modes, alternatives, and trade-offs."
+            )
         if "综合面·薪酬期待" in turn.topic:
             return (
                 "我会先坦诚说明预期范围和参考依据；再说明薪酬、成长空间、团队带教和方向匹配"
@@ -518,11 +642,15 @@ class ReportEngine:
         )
 
     @staticmethod
-    def _turn_evidence(turn: InterviewTurn) -> str:
+    def _turn_evidence(turn: InterviewTurn, *, english: bool = False) -> str:
         answer = " ".join(turn.answer.split())
         if len(answer) > 96:
             answer = answer[:93] + "…"
-        return f"第{turn.ordinal}题回答：{answer}"
+        return (
+            f"Answer to question {turn.ordinal}: {answer}"
+            if english
+            else f"第{turn.ordinal}题回答：{answer}"
+        )
 
     def _attach_extended_analysis(
         self,
@@ -804,6 +932,27 @@ class ReportEngine:
             item = (payload.get("companies") or {}).get(company) or {}
         except (OSError, ValueError, json.JSONDecodeError):
             item = {}
+        if not item:
+            card = load_style_card(company)
+            preferences = [
+                str(value) for value in (card.get("followup_preferences") or [])
+            ]
+            hr_focus = [
+                str(value) for value in (card.get("technical_hr_focus") or [])
+            ]
+            item = {
+                "display_name": COMPANIES.get(company, company),
+                "sample_caveat": (
+                    "当前资料只足以归纳练习侧重，尚无可在报告中逐帖引用的授权样本；"
+                    "以下建议不是该公司官方标准，不补造面经链接。"
+                ),
+                "trend_summary": preferences,
+                "report_advice": [
+                    "项目回答准备个人职责、完整请求链路、量化口径、故障边界和替代方案。",
+                    *[f"综合面额外准备：{focus}。" for focus in hr_focus[:3]],
+                ],
+                "sources": [],
+            }
         citations = [
             CompanyExperienceCitation(
                 title=str(source.get("title") or ""),

@@ -1,0 +1,19 @@
+{
+  "schema_version": "1.0",
+  "company": "huawei",
+  "company_name": "华为",
+  "role": "backend",
+  "role_name": "后端开发实习生",
+  "interviewer_persona": "流程正式、重技术问答、手撕思路和项目掌握程度的华为后端面试官",
+  "stage_ratios": {"self_introduction": 0.08, "project_drilldown": 0.34, "fundamentals": 0.29, "coding_thought": 0.22, "candidate_questions": 0.07},
+  "technical_hr_stage_ratios": {"self_introduction": 0.08, "project_drilldown": 0.25, "fundamentals": 0.19, "coding_thought": 0.14, "behavioral_hr": 0.27, "candidate_questions": 0.07},
+  "project_vs_fundamentals_weights": {"project": 0.55, "fundamentals": 0.45},
+  "coding_difficulty": "medium",
+  "coding_required_every_interview": true,
+  "default_pressure_enabled": false,
+  "followup_preferences": ["核实候选人能否解释简历项目中的每个组件", "技术问答后安排口述手撕并检查边界", "综合面关注挫折、批评、外派或地点约束和稳定性"],
+  "minimum_project_drill_depth": 3,
+  "pressure_profile": {"tone": "formal", "interruption_policy": "只在明显表达问题时打断，压力来自深度、责任和约束变化"},
+  "technical_hr_focus": ["面对挫折和批评", "稳定性和投入意愿", "地点或外派约束", "规划与薪酬期待"],
+  "closing_sentence": "今天的面试就到这里。"
+}

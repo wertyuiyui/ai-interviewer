@@ -1360,8 +1360,15 @@ class CosyVoiceTTS:
 class EdgeTTS:
     """Free TTS fallback using edge-tts, returned as one MP3 byte string."""
 
-    def __init__(self, *, communicate_factory: Callable[..., Any] | None = None) -> None:
-        self.voice = _env_first("EDGE_TTS_VOICE", default="zh-CN-YunxiNeural")
+    def __init__(
+        self,
+        *,
+        voice: str | None = None,
+        communicate_factory: Callable[..., Any] | None = None,
+    ) -> None:
+        self.voice = voice or _env_first(
+            "EDGE_TTS_VOICE", default="zh-CN-YunxiNeural"
+        )
         self.rate = _env_first("EDGE_TTS_RATE", default="+0%")
         self.volume = _env_first("EDGE_TTS_VOLUME", default="+0%")
         self.pitch = _env_first("EDGE_TTS_PITCH", default="+0Hz")

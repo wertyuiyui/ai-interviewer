@@ -10,6 +10,9 @@ export const COMPANY_LABELS = Object.freeze({
   bytedance: '字节跳动',
   meituan: '美团',
   tencent: '腾讯',
+  alibaba: '阿里巴巴',
+  baidu: '百度',
+  huawei: '华为',
 });
 
 export const MODE_LABELS = Object.freeze({

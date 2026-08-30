@@ -49,7 +49,7 @@ class ResumeData(BaseModel):
     skills: list[str] = Field(default_factory=list, alias="技能")
 
 
-Company = Literal["bytedance", "meituan", "tencent"]
+Company = str
 
 
 class InterviewCreate(BaseModel):
@@ -62,7 +62,7 @@ class InterviewCreate(BaseModel):
     # not a standalone recruiter screen.
     interview_type: Literal["technical", "technical_hr"] = "technical"
     specialization: str = Field(default="通用后端", min_length=1, max_length=80)
-    language_mode: Literal["zh", "bilingual"] = "bilingual"
+    language_mode: Literal["zh", "bilingual", "en"] = "bilingual"
     # ``stress`` is retained as a compatibility alias for older clients. New
     # clients should send stress_level; when both are present, stress_level wins.
     stress: bool = False
@@ -99,6 +99,18 @@ class InterviewCreate(BaseModel):
         if not value or any(char not in allowed for char in value):
             raise ValueError("client_id 格式不正确")
         return value
+
+    @field_validator("company")
+    @classmethod
+    def validate_company(cls, value: str) -> str:
+        # Import lazily to keep the data-only schema module free of an eager
+        # dependency cycle while still rejecting arbitrary filenames/slugs.
+        from .content import COMPANIES
+
+        normalized = str(value or "").strip().lower()
+        if normalized not in COMPANIES:
+            raise ValueError("暂不支持该公司")
+        return normalized
 
     @field_validator("specialization")
     @classmethod

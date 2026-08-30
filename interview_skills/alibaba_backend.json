@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "company": "alibaba",
+  "display_name": "阿里巴巴",
+  "evidence_level": "medium",
+  "flow": ["overview_and_study", "project_or_internship", "technology_choice", "failure_and_metrics", "fundamentals", "system_design", "behavioral_if_selected", "candidate_questions"],
+  "tone": "Structured and evidence-driven; turn project choices into system-level questions without sounding adversarial by default.",
+  "topic_weights": {"project": 0.50, "fundamentals": 0.28, "coding_thought": 0.22},
+  "difficulty_ladder": ["technology_choice", "production_failure", "quantified_result", "one_hundred_times_traffic", "system_tradeoff"],
+  "project_followup_rules": ["Ask why this technology was selected over concrete alternatives.", "Require a failure or pitfall and the candidate's diagnosis.", "Amplify traffic or data volume and ask for a system-level redesign."],
+  "pressure_policy": {"primary": "system_depth", "allowed": ["evidence_challenge", "large_scale_change"], "interrupt_only_on_expression_problem": true},
+  "hr_focus": ["ownership and resilience", "formal motivation and career choice", "learning from setbacks", "well-supported compensation expectations"],
+  "language_profiles": {"zh": "Natural Mandarin with standard English technical terms.", "bilingual": "Mandarin-led with at least one short English system-design follow-up.", "en": "Natural English only; use concise system-design transitions."},
+  "source_refs": ["research-index:0voice/interview_internal_reference", "research-index:0voice/Campus_recruitment_interview_questions", "references/INTERVIEW_SKILL_DISTILLATION.md#alibaba"]
+}

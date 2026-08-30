@@ -10,8 +10,10 @@ from .content import (
     COMPANIES,
     is_ai_specialization,
     load_current_research_question_bank,
+    load_english_question_bank,
     load_experience_question_bank,
     load_hr_question_bank,
+    load_interview_skill,
     load_project_question_bank,
     load_question_bank,
     load_specialization_question_bank,
@@ -39,6 +41,11 @@ VAGUE_ANSWERS = {
     "忘了",
     "没有",
     "跳过",
+    "i don't know",
+    "i dont know",
+    "not sure",
+    "no idea",
+    "skip",
 }
 
 
@@ -59,17 +66,45 @@ def select_questions(
     duration_minutes: int | None,
     specialization: str = "通用后端",
     selection_seed: str | None = None,
+    language_mode: str = "bilingual",
+    interview_type: str = "technical",
 ) -> list[dict[str, Any]]:
-    base_bank = load_question_bank(company)
+    english_bank = load_english_question_bank() if language_mode == "en" else []
+    if english_bank:
+        english_bank = [
+            item
+            for item in english_bank
+            if (
+                item.get("category") != "AI Engineering"
+                or is_ai_specialization(specialization)
+            )
+            and (
+                item.get("category") != "Behavioral"
+                or interview_type == "technical_hr"
+            )
+        ]
+    base_bank = english_bank or load_question_bank(company)
     experience_bank = [
         item
-        for item in load_experience_question_bank(company)
+        for item in (
+            [] if language_mode == "en" and english_bank
+            else load_experience_question_bank(company)
+        )
         if item.get("category") != "AI工程"
         or is_ai_specialization(specialization)
     ]
-    project_bank = load_project_question_bank(specialization)
-    specialization_bank = load_specialization_question_bank(specialization)
-    research_bank = load_current_research_question_bank(specialization)
+    project_bank = (
+        [] if language_mode == "en" and english_bank
+        else load_project_question_bank(specialization)
+    )
+    specialization_bank = (
+        [] if language_mode == "en" and english_bank
+        else load_specialization_question_bank(specialization)
+    )
+    research_bank = (
+        [] if language_mode == "en" and english_bank
+        else load_current_research_question_bank(specialization)
+    )
     bank = (
         base_bank
         + experience_bank
@@ -214,14 +249,26 @@ def select_questions(
             selected.append(item)
             seen.add(item_id)
             already_selected += 1
-    categories = [
+    preferred_categories = [
         "MySQL",
         "Redis",
         "Java并发",
         "并发",
         "计网",
         "手撕思路",
+        "Java",
+        "Go",
+        "Concurrency",
+        "Operating Systems",
+        "Networking",
+        "System Design",
+        "AI Engineering",
+        "Behavioral",
     ]
+    categories = [category for category in preferred_categories if category in by_category]
+    categories.extend(
+        category for category in sorted(by_category) if category not in categories
+    )
     cursor = 0
     while len(selected) < limit:
         added = False
@@ -287,15 +334,23 @@ def build_system_prompt(
         else "无限（不自动截止，由候选人手动结束）"
     )
     card = load_style_card(company)
+    skill = load_interview_skill(company)
+    runtime_skill = {
+        key: value
+        for key, value in skill.items()
+        if key not in {"source_refs", "evidence_level"}
+    }
     questions = select_questions(
         company,
         weak_topics,
         duration_minutes,
         specialization,
         selection_seed=selection_seed,
+        language_mode=language_mode,
+        interview_type=interview_type,
     )
     if interview_type == "technical_hr":
-        questions.extend(load_hr_question_bank(company))
+        questions.extend(load_hr_question_bank(company, language_mode))
     # Provenance is report-only metadata.  The interviewer receives just the
     # curated question content so it cannot expose internal bank/source labels
     # or URLs while interviewing.
@@ -310,6 +365,13 @@ def build_system_prompt(
                 "source_id",
                 "source_ref",
                 "source",
+                "source_url",
+                "source_title",
+                "source_path",
+                "revision",
+                "license",
+                "authenticity",
+                "status",
                 "url",
                 "platform",
                 "published_at",
@@ -331,13 +393,26 @@ def build_system_prompt(
         "last_answer": history[-1].answer if history else "",
     }
     specialization_data = json.dumps(specialization, ensure_ascii=False)
-    language_rule = (
-        "全程使用中文提问；MySQL、Redis、gRPC 等约定俗成的技术名词可保留英文，"
-        "但不要整题切换成英文。"
-        if language_mode == "zh"
-        else "以中文为主，技术术语保留英文；基础题或前沿讨论中至少安排一轮简短英文追问，"
-        "允许候选人使用中文、英文或中英混合回答，不因口音扣技术分。"
-    )
+    if language_mode == "zh":
+        language_rule = (
+            "全程使用中文提问；MySQL、Redis、gRPC 等约定俗成的技术名词可保留英文，"
+            "但不要整题切换成英文。"
+        )
+    elif language_mode == "en":
+        language_rule = (
+            "PURE ENGLISH MODE. Every candidate-facing utterance, including the opening, "
+            "follow-ups, pressure transitions, clarifications, behavioral questions, and closing, "
+            "must be natural English only. Treat any Chinese wording in the resume or candidate "
+            "question bank as source meaning and rewrite it into idiomatic spoken English before "
+            "asking. Never output Chinese characters in next_question. The candidate may ask for "
+            "a clarification in English. Evaluate clarity and professional communication, but do "
+            "not deduct technical points for accent or a non-native speaking style."
+        )
+    else:
+        language_rule = (
+            "以中文为主，技术术语保留英文；基础题或前沿讨论中至少安排一轮简短英文追问，"
+            "允许候选人使用中文、英文或中英混合回答，不因口音扣技术分。"
+        )
     interview_type_copy = (
         "技术/综合（HR）面：技术判断仍是主体，同时完整覆盖价值观契合、人生规划与选择、薪酬期待"
         if interview_type == "technical_hr"
@@ -373,6 +448,10 @@ def build_system_prompt(
 【公司风格卡】
 {json.dumps(card, ensure_ascii=False)}
 technical 面使用 stage_ratios；technical_hr 面使用 technical_hr_stage_ratios。不要混用另一种面试类型的环节。
+
+【公司针对性 interview skill】
+{json.dumps(runtime_skill, ensure_ascii=False)}
+严格应用其中的 flow、tone、topic_weights、difficulty_ladder、project_followup_rules、pressure_policy、hr_focus 和当前语言 profile；它们用于决定追问方式，不得向候选人提及 skill 或研究来源。
 
 【压力面】
 强度={pressure_profiles[stress_level]}
@@ -414,7 +493,13 @@ technical 面使用 stage_ratios；technical_hr 面使用 technical_hr_stage_rat
 failed 仅在候选人明确不会、核心原理严重错误、或追问后仍完全无有效信息时为 true。综合面问题统一把 dimension 设为 communication，topic 写成“综合面·价值观与公司契合 / 人生规划与选择 / 薪酬期待”之一。评分和扣分点绝不写进 next_question。"""
 
 
-def initial_question(company: str) -> str:
+def initial_question(company: str, language_mode: str = "bilingual") -> str:
+    if language_mode == "en":
+        return (
+            "Let's start with a brief introduction. Tell me about your academic "
+            "background, your current progress at university, and the kind of "
+            "backend internship you are looking for. We will discuss your projects separately."
+        )
     if company == "bytedance":
         return "面试开始。先用一分钟介绍一下你的基本情况、目前的学习进度和想做的技术方向，项目先不用展开。"
     if company == "meituan":
@@ -480,8 +565,53 @@ def extract_anchor_keyword(answer: str, resume: ResumeData) -> str:
 
 
 def project_followup(
-    depth: int, anchor: str, resume: ResumeData, *, vague: bool = False
+    depth: int,
+    anchor: str,
+    resume: ResumeData,
+    *,
+    vague: bool = False,
+    language_mode: str = "bilingual",
 ) -> tuple[str, str]:
+    if language_mode == "en":
+        safe_anchor = (
+            anchor
+            if anchor and not re.search(r"[\u4e00-\u9fff]", anchor)
+            else "that part of the project"
+        )
+        prefix = "Please answer directly: " if vague else ""
+        dimension = SEVEN_DRILL_DIMENSIONS[min(max(depth - 1, 0), 6)]
+        templates = {
+            "业务背景": (
+                f"{prefix}Choose one project or internship you know best. What problem "
+                "was it solving, and what were you personally responsible for?"
+            ),
+            "个人职责": (
+                f"{prefix}For {safe_anchor}, which design decisions and implementation "
+                "work were specifically yours?"
+            ),
+            "请求链路": (
+                f"{prefix}Walk me through one request involving {safe_anchor}, from "
+                "the entry point to the final data write."
+            ),
+            "技术选型理由": (
+                f"{prefix}Why did you choose this approach for {safe_anchor}, and "
+                "which concrete alternatives did you compare?"
+            ),
+            "难点与故障": (
+                f"{prefix}What production failure is most likely around {safe_anchor}, "
+                "and how would you diagnose and contain it?"
+            ),
+            "数据指标口径": (
+                f"{prefix}For the result you just claimed about {safe_anchor}, what "
+                "were the metric definition, baseline, and observation window?"
+            ),
+            "边界与trade-off": (
+                f"{prefix}If traffic increased tenfold, where would the {safe_anchor} "
+                "design fail first, and what trade-off would you make?"
+            ),
+        }
+        return templates[dimension], dimension
+
     projects = resume.projects
     internships = resume.internships
     project_name = projects[0].name if projects and projects[0].name else ""
@@ -525,13 +655,20 @@ def enforce_project_drill(
     resume: ResumeData,
     vague: bool,
     max_depth: int = 4,
+    language_mode: str = "bilingual",
 ) -> tuple[str, str, int]:
     # Turn 1 is only the candidate's overall and academic introduction. The
     # next question must independently open a project/internship topic; later
     # questions then force >=3 progressive layers before fundamentals begin.
     if 1 <= completed_turns <= max_depth:
         depth = completed_turns
-        fallback, dimension = project_followup(depth, anchor, resume, vague=vague)
+        fallback, dimension = project_followup(
+            depth,
+            anchor,
+            resume,
+            vague=vague,
+            language_mode=language_mode,
+        )
         question = decision_question.strip()
         if depth == 1 or not question or (depth >= 2 and anchor not in question):
             question = fallback

@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "company": "baidu",
+  "display_name": "百度",
+  "evidence_level": "medium",
+  "flow": ["overview_and_study", "project_or_internship", "fundamentals", "engineering_scenario", "coding_thought", "behavioral_if_selected", "candidate_questions"],
+  "tone": "Clear and technically grounded; verify fundamentals, then ask the candidate to apply them to a concrete engineering scenario.",
+  "topic_weights": {"project": 0.42, "fundamentals": 0.38, "coding_thought": 0.20},
+  "difficulty_ladder": ["definition_with_mechanism", "scenario_application", "edge_case", "engineering_validation"],
+  "project_followup_rules": ["Check the mechanism behind each fundamental claim.", "Move from the concept to a concrete production scenario.", "For coding thought, require complexity, edge cases, and tests even when the first solution is accessible."],
+  "pressure_policy": {"primary": "fundamental_to_scenario_depth", "allowed": ["counterexample", "engineering_constraint"], "interrupt_only_on_expression_problem": true},
+  "hr_focus": ["collaboration", "concrete problem handling", "learning process", "career and compensation choices"],
+  "language_profiles": {"zh": "Natural Mandarin with precise technical terms.", "bilingual": "Mandarin-led with at least one short English engineering-scenario follow-up.", "en": "Natural English only; clarify terminology before increasing scenario difficulty."},
+  "source_refs": ["research-index:0voice/interview_internal_reference", "references/INTERVIEW_SKILL_DISTILLATION.md#baidu"]
+}

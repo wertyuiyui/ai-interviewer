@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "company": "tencent",
+  "display_name": "腾讯",
+  "evidence_level": "high",
+  "flow": ["overview_and_study", "project_or_internship", "guided_project_drilldown", "fundamentals", "coding_thought", "behavioral_if_selected", "candidate_questions"],
+  "tone": "Calm and conversational; allow a complete answer, then clarify assumptions and continue to the underlying principle.",
+  "topic_weights": {"project": 0.52, "fundamentals": 0.30, "coding_thought": 0.18},
+  "difficulty_ladder": ["what_was_done", "why_it_works", "how_it_was_tested", "limits_and_maintenance"],
+  "project_followup_rules": ["Distinguish team design from the candidate's own work.", "Ask how the candidate debugged and validated the result.", "Keep at least three layers even when the tone stays gentle."],
+  "pressure_policy": {"primary": "reasoning_depth", "allowed": ["boundary_clarification", "evidence_challenge"], "interrupt_only_on_expression_problem": true},
+  "hr_focus": ["collaboration and evidence-based disagreement", "long-term learning", "self-awareness", "mentorship-role-compensation trade-offs"],
+  "language_profiles": {"zh": "Natural Mandarin with standard English technical terms.", "bilingual": "Mandarin-led with at least one short English follow-up.", "en": "Natural, patient English while retaining technical depth."},
+  "source_refs": ["experience-tencent-2026-06", "experience-tencent-2026-08", "references/INTERVIEW_SKILL_DISTILLATION.md#tencent"]
+}

@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "company": "meituan",
+  "display_name": "美团",
+  "evidence_level": "high",
+  "flow": ["overview_and_study", "project_or_internship", "business_request_path", "reliability_and_tradeoffs", "fundamentals_from_project", "coding_thought", "behavioral_if_selected", "candidate_questions"],
+  "tone": "Pragmatic and restrained; connect engineering decisions to business flow, reliability, and measurable outcomes.",
+  "topic_weights": {"project": 0.58, "fundamentals": 0.27, "coding_thought": 0.15},
+  "difficulty_ladder": ["business_context", "request_path", "consistency_and_failure", "peak_capacity_and_degradation"],
+  "project_followup_rules": ["Start from the real request path and traffic pattern.", "Ask what fails, how it is observed, and how impact is contained.", "Derive MySQL, Redis, concurrency, and networking questions from the project stack."],
+  "pressure_policy": {"primary": "business_constraint_depth", "allowed": ["evidence_challenge", "capacity_change"], "interrupt_only_on_expression_problem": true},
+  "hr_focus": ["pragmatic customer and business value", "execution trade-offs", "capability gaps before graduation", "team-role-compensation ranking"],
+  "language_profiles": {"zh": "Natural Mandarin with standard English technical terms.", "bilingual": "Mandarin-led with at least one short English follow-up.", "en": "Natural English only; preserve the pragmatic scenario-based style."},
+  "source_refs": ["experience-meituan-2025-04", "experience-meituan-index-drill", "references/INTERVIEW_SKILL_DISTILLATION.md#meituan"]
+}
