@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#f6f4ef"><meta name="description" content="砺面面试反馈报告与历史成长记录。">
+    <title>面试报告 · 砺面</title><link rel="stylesheet" href="/assets/app.css">
+  </head>
+  <body class="report-page">
+    <header class="site-header report-header">
+      <a class="brand" href="/" aria-label="砺面首页"><span class="brand-mark" aria-hidden="true">砺</span><span><strong>砺面</strong><small>AI 技术面试陪练</small></span></a>
+      <nav class="header-actions" aria-label="报告导航"><button class="report-tab is-active" id="currentTab" type="button" data-view="current">本次报告</button><button class="report-tab" id="historyTab" type="button" data-view="history">历史记录</button><a class="primary-link" href="/">再练一场 <span aria-hidden="true">→</span></a></nav>
+    </header>
+    <main class="report-shell">
+      <section id="reportLoading" class="report-loading"><div class="report-spinner"><span></span><i></i></div><h1>正在生成逐题反馈</h1><p id="loadingHint">面试官正在复核转写与评分依据，通常需要几十秒。</p><div class="skeleton-lines"><i></i><i></i><i></i></div></section>
+
+      <section id="currentView" class="report-view is-hidden" aria-labelledby="reportTitle">
+        <div class="report-hero"><div class="report-hero-copy"><span class="eyebrow"><span></span> STRUCTURED FEEDBACK</span><h1 id="reportTitle">本次面试报告</h1><p id="reportMeta">—</p><blockquote id="reportSummary">正在读取总结…</blockquote><div class="report-actions"><a class="primary-link large" href="/">针对弱项再练一场 <span aria-hidden="true">→</span></a><button class="secondary-button" id="copySummary" type="button">复制总结</button></div></div><div class="score-disc" id="scoreDisc"><span>综合得分</span><strong id="overallScore">—</strong><small>/ 10</small><i></i></div></div>
+        <section class="report-section" aria-labelledby="rubricTitle"><div class="section-heading"><div><span>01</span><h2 id="rubricTitle">公开评分 Rubric</h2></div><p>所有扣分都能回到具体回答，不做“感觉分”。</p></div><div class="rubric-grid" id="rubricGrid"></div></section>
+        <section class="report-section" aria-labelledby="questionsTitle"><div class="section-heading"><div><span>02</span><h2 id="questionsTitle">逐题复盘</h2></div><p id="questionCount">—</p></div><div class="question-list" id="questionList"></div></section>
+        <section class="report-section practice-section" aria-labelledby="practiceTitle"><div class="section-heading"><div><span>03</span><h2 id="practiceTitle">下次必练清单</h2></div><p>优先补齐最影响通过率的知识缺口。</p></div><div class="practice-grid" id="practiceGrid"></div></section>
+      </section>
+
+      <section id="historyView" class="report-view is-hidden" aria-labelledby="historyTitle">
+        <div class="history-heading"><div><span class="eyebrow"><span></span> LOCAL PROGRESS</span><h1 id="historyTitle">看见每一次进步</h1><p>用同一套标准比较，不被一次发挥定义。</p></div><button class="danger-link" id="clearHistory" type="button">清空本地历史</button></div>
+        <div class="history-dashboard">
+          <section class="radar-card" aria-labelledby="radarTitle"><header><div><span class="panel-eyebrow">ABILITY RADAR</span><h2 id="radarTitle">能力对比</h2></div><div class="chart-legend"><span><i class="current"></i>本次</span><span><i class="previous"></i>对比场次</span></div></header><div class="compare-selects"><label>本次<select id="currentCompare" aria-label="选择本次场次"></select></label><span aria-hidden="true">vs</span><label>对比<select id="previousCompare" aria-label="选择对比场次"></select></label></div><div class="canvas-wrap"><canvas id="radarCanvas" width="720" height="600" aria-label="项目深度、基础八股、手撕思路、表达逻辑雷达图"></canvas></div><div class="score-comparison" id="scoreComparison"></div></section>
+          <aside class="topic-progress" aria-labelledby="topicTitle"><header><span class="panel-eyebrow">TOPIC DELTA</span><h2 id="topicTitle">知识点变化</h2></header><div id="topicDeltas" class="topic-deltas"></div></aside>
+        </div>
+        <section class="history-list-section" aria-labelledby="historyListTitle"><div class="section-heading"><div><span>↘</span><h2 id="historyListTitle">历次报告</h2></div><p id="historyCount">0 场</p></div><div class="history-list" id="historyList"></div></section>
+      </section>
+
+      <section class="empty-state is-hidden" id="reportEmpty"><span aria-hidden="true">○</span><h1>还没有可展示的报告</h1><p>完成一场面试后，逐题反馈和成长曲线会保存在这里。</p><a class="primary-link large" href="/">开始第一场面试 <span aria-hidden="true">→</span></a></section>
+    </main>
+    <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="/js/report.js"></script>
+  </body>
+</html>
