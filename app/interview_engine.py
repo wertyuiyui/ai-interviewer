@@ -777,6 +777,16 @@ class InterviewEngine:
             and not unknown_control
             and not explicit_resume_mismatch
         )
+        unknown_in_project_opening = (
+            current_stage == "project_deep_dive"
+            and int(stage_state.get("turn_count") or 0) == 0
+            and (explicit_unknown or unknown_control)
+        )
+        unknown_in_project_followup = (
+            current_stage == "project_deep_dive"
+            and int(stage_state.get("turn_count") or 0) > 0
+            and (explicit_unknown or unknown_control)
+        )
         prior_project_corrections = [
             turn
             for turn in turns
@@ -788,22 +798,19 @@ class InterviewEngine:
             if self._explicit_project_ownership_correction(turn.answer)
             or (
                 turn.topic.startswith("项目深挖")
+                and turn.drill_depth <= 1
                 and self._explicit_unknown(turn.answer)
             )
         ]
         if project_ownership_correction:
             rejected_questions.append(str(interview.get("last_question") or ""))
-        if (
-            current_stage == "project_deep_dive"
-            and (explicit_unknown or unknown_control)
-        ):
+        if unknown_in_project_opening:
             rejected_questions.append(str(interview.get("last_question") or ""))
         drill_resume = self._resume_without_rejected_projects(
             resume, rejected_questions
         )
         switch_project_after_unknown = (
-            current_stage == "project_deep_dive"
-            and (explicit_unknown or unknown_control)
+            unknown_in_project_opening
             and bool(drill_resume.projects or drill_resume.internships)
         )
         anchor = decision.anchor_keyword.strip()
@@ -822,6 +829,18 @@ class InterviewEngine:
         elif explicit_unknown:
             anchor = ""
             response_anchor = ""
+        project_followup_anchor = anchor or (
+            next(
+                (
+                    turn.anchor_keyword
+                    for turn in reversed(turns)
+                    if turn.topic.startswith("项目深挖") and turn.anchor_keyword
+                ),
+                "",
+            )
+            if unknown_in_project_followup
+            else ""
+        )
 
         completed_turns = len(turns) + 1
         last_project_correction_ordinal = (
@@ -922,10 +941,11 @@ class InterviewEngine:
             should_advance_stage = not intro_experience_missing
         elif current_stage == "project_deep_dive":
             should_advance_stage = (
-                ((explicit_unknown or unknown_control) and not switch_project_after_unknown)
+                (unknown_in_project_opening and not switch_project_after_unknown)
                 or (
                     next_stage_state["turn_count"] >= 2
                     and (vague_answer or decision.assessment.failed)
+                    and not unknown_in_project_followup
                 )
                 or next_stage_state["turn_count"]
                 >= interview_drill_target(
@@ -980,7 +1000,7 @@ class InterviewEngine:
                     interview,
                     next_stage_state,
                     resume=drill_resume,
-                    anchor=anchor,
+                    anchor=project_followup_anchor,
                     vague=vague_answer,
                 )
         elif (
@@ -1190,6 +1210,12 @@ class InterviewEngine:
                 and interview.get("language_mode") == "en"
                 else "明白，我们换一个项目。"
                 if switch_project_after_unknown
+                else "Understood. Let's try another angle within this project. "
+                if unknown_in_project_followup
+                and next_stage_id == current_stage
+                and interview.get("language_mode") == "en"
+                else "这个点先放下，我们换个角度。"
+                if unknown_in_project_followup and next_stage_id == current_stage
                 else "Understood. Let's move on. "
                 if interview.get("language_mode") == "en"
                 else "明白，我们换一道。"

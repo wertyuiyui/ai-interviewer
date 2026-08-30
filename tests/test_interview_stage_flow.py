@@ -72,6 +72,54 @@ async def test_unknown_switches_projects_before_closing_stage(tmp_path) -> None:
 
 
 @pytest.mark.asyncio
+async def test_unknown_project_followup_uses_other_dimensions_then_stops(tmp_path) -> None:
+    settings = replace(get_settings(), mock_llm=True, db_path=tmp_path / "unknown-depth.db")
+    database = Database(settings)
+    await database.initialize()
+    engine = InterviewEngine(database, settings)
+    created = await engine.create(
+        InterviewCreate(
+            client_id="unknown-depth-client-001",
+            company="tencent",
+            interview_type="technical",
+            language_mode="zh",
+            resume=ResumeData(
+                项目=[Project(name="订单系统", role="后端开发", technologies=["Redis"])]
+            ),
+        )
+    )
+    await database.start_interview(created["id"])
+    opened = await engine.answer(
+        created["id"], "我是计算机专业学生，做过订单系统，负责后端开发。"
+    )
+    secondary = await engine.answer(
+        created["id"], "订单系统处理下单请求，我负责接口和 Redis 缓存。"
+    )
+
+    tertiary = await engine.answer(
+        created["id"], "我不知道，请继续下一题", control_intent="unknown"
+    )
+    third_angle = await engine.answer(
+        created["id"], "我不知道，请继续下一题", control_intent="unknown"
+    )
+
+    assert tertiary.stage["current"]["id"] == "project_deep_dive"
+    assert third_angle.stage["current"]["id"] == "project_deep_dive"
+    assert "订单系统" in tertiary.question
+    assert "Redis" in third_angle.question
+    assert "换个角度" in tertiary.question
+    assert len({secondary.question, tertiary.question, third_angle.question}) == 3
+
+    finished = await engine.answer(
+        created["id"], "我不知道，请继续下一题", control_intent="unknown"
+    )
+
+    assert opened.stage["current"]["id"] == "project_deep_dive"
+    assert finished.stage["current"]["id"] == "fundamentals"
+    assert "订单系统" not in finished.question
+
+
+@pytest.mark.asyncio
 async def test_manual_stage_advance_persists_without_fake_turn(tmp_path) -> None:
     settings = replace(get_settings(), mock_llm=True, db_path=tmp_path / "manual-stage.db")
     database = Database(settings)
