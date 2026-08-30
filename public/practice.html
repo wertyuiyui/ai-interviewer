@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f6f4ef">
+    <meta name="description" content="面向后端实习面试的真实题库快速练习，支持语音与文字单题作答。">
+    <title>快速刷题 · 砺面</title>
+    <link rel="stylesheet" href="/assets/app.css?v=20260830-practice">
+  </head>
+  <body class="practice-page">
+    <header class="site-header practice-header">
+      <a class="brand" href="/" aria-label="砺面首页">
+        <span class="brand-mark" aria-hidden="true">砺</span>
+        <span><strong>砺面</strong><small>快速刷题</small></span>
+      </a>
+      <nav class="header-actions" aria-label="刷题导航">
+        <a class="text-link" href="/">完整模拟</a>
+        <a class="text-link" href="/report?view=history">历史报告 <span aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+
+    <main class="practice-shell">
+      <section class="practice-setup" id="practiceSetup" aria-labelledby="practiceTitle">
+        <div class="practice-intro">
+          <span class="eyebrow"><span></span> REAL QUESTION DRILL</span>
+          <h1 id="practiceTitle">一次只练好一道题。</h1>
+          <p>从真实公开题库中按公司、方向和难度选题。答完立即看扣分点，也可以从面试报告回来重答薄弱题。</p>
+          <div class="practice-proof-grid" aria-label="刷题特点">
+            <article><strong>单题闭环</strong><small>作答、评分、改写、再练</small></article>
+            <article><strong>语音或文字</strong><small>实时转写后仍可手动修正</small></article>
+            <article><strong>三种语言</strong><small>中文、中英双语、纯英文</small></article>
+          </div>
+        </div>
+
+        <form class="practice-form" id="practiceForm">
+          <div class="practice-form-heading">
+            <div><span>创建练习</span><h2 id="practiceFormTitle">快速刷题</h2></div>
+            <span class="practice-bank-badge" id="practiceBankBadge">正在读取题库</span>
+          </div>
+
+          <div class="practice-review-notice is-hidden" id="reviewNotice">
+            <strong>正在准备面后错题重答</strong>
+            <p>会保留原题与原扣分点，新的回答单独评分，不覆盖原报告。</p>
+          </div>
+
+          <label class="practice-field" for="practiceCompany">
+            <span>目标公司</span>
+            <select id="practiceCompany" required><option value="bytedance">字节跳动</option></select>
+          </label>
+          <label class="practice-field" for="practiceTopic">
+            <span>题目方向</span>
+            <select id="practiceTopic">
+              <option value="">综合随机</option>
+              <option value="MySQL">MySQL</option>
+              <option value="Redis">Redis</option>
+              <option value="并发">Java / Go 并发</option>
+              <option value="JVM">JVM</option>
+              <option value="操作系统">操作系统</option>
+              <option value="计算机网络">计算机网络</option>
+              <option value="Go">Go</option>
+              <option value="系统设计">系统设计</option>
+              <option value="AI 工程">AI 工程 / LLM Infra</option>
+              <option value="English behavioral">行为与综合面</option>
+            </select>
+          </label>
+          <label class="practice-field" for="practiceDifficulty">
+            <span>难度</span>
+            <select id="practiceDifficulty">
+              <option value="">混合难度</option>
+              <option value="easy">基础</option>
+              <option value="medium" selected>进阶</option>
+              <option value="hard">高难</option>
+            </select>
+          </label>
+          <label class="practice-field" for="practiceCount">
+            <span>题量</span>
+            <select id="practiceCount">
+              <option value="1">1 题</option>
+              <option value="5" selected>5 题</option>
+              <option value="10">10 题</option>
+              <option value="20">20 题</option>
+            </select>
+          </label>
+
+          <fieldset class="practice-choice">
+            <legend>题目语言</legend>
+            <div class="segmented" role="radiogroup" aria-label="题目语言">
+              <label><input type="radio" name="practice_language" value="zh"><span>中文</span></label>
+              <label><input type="radio" name="practice_language" value="bilingual" checked><span>中英双语</span></label>
+              <label><input type="radio" name="practice_language" value="en"><span>纯英文</span></label>
+            </div>
+          </fieldset>
+          <fieldset class="practice-choice">
+            <legend>默认作答方式</legend>
+            <div class="segmented" role="radiogroup" aria-label="默认作答方式">
+              <label><input type="radio" name="answer_mode" value="voice" checked><span>语音作答</span></label>
+              <label><input type="radio" name="answer_mode" value="text"><span>文字作答</span></label>
+            </div>
+          </fieldset>
+
+          <button class="primary-button practice-start-button" id="practiceStart" type="submit"><span class="button-label">开始刷题</span><span aria-hidden="true">→</span></button>
+          <p class="practice-form-note">每道题都可用语音或文字作答，提交后立即查看具体扣分点。</p>
+        </form>
+      </section>
+
+      <section class="practice-session is-hidden" id="practiceSession" aria-labelledby="questionText">
+        <header class="practice-session-head">
+          <div><span id="practiceProgress">第 1 / 5 题</span><strong id="practiceSessionLabel">快速刷题</strong></div>
+          <div class="practice-session-actions"><span id="practiceElapsed">00:00</span><button id="practiceExit" type="button">结束本组</button></div>
+        </header>
+        <div class="practice-progress-track" aria-hidden="true"><i id="practiceProgressFill"></i></div>
+
+        <article class="practice-question-card">
+          <div class="practice-question-meta"><span id="questionCategory">综合</span><span id="questionDifficulty">进阶</span><span id="questionRecommended">建议 60 秒</span></div>
+          <h1 id="questionText">正在读取题目…</h1>
+          <div class="previous-attempt is-hidden" id="previousAttempt">
+            <strong>上次扣分点</strong><p id="previousDeductions"></p>
+          </div>
+        </article>
+
+        <section class="practice-answer-card" id="practiceAnswerCard">
+          <header>
+            <div><span>本题回答</span><small id="answerStatus">准备好后开始作答</small></div>
+            <div class="answer-mode-switch" role="group" aria-label="本题作答方式">
+              <button class="is-active" id="voiceModeButton" type="button">语音</button>
+              <button id="textModeButton" type="button">文字</button>
+            </div>
+          </header>
+
+          <div class="practice-recorder" id="practiceRecorder">
+            <button class="record-button" id="recordButton" type="button"><i aria-hidden="true"></i><span>开始语音回答</span></button>
+            <div class="record-level" id="recordLevel" role="progressbar" aria-label="麦克风输入电平" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i></i></div>
+            <small id="recordHint">停止后会整理完整转写，麦克风随即释放</small>
+          </div>
+
+          <label class="practice-answer-input" for="practiceAnswer">
+            <span>回答文字 <small>语音转写可在提交前修正</small></span>
+            <textarea id="practiceAnswer" rows="8" maxlength="10000" placeholder="点击开始语音回答，或切换到文字输入…"></textarea>
+          </label>
+          <div class="practice-answer-footer">
+            <button class="secondary-button" id="practiceHint" type="button">给我一个提示</button>
+            <button class="primary-button practice-submit" id="practiceSubmit" type="button"><span class="button-label">提交本题</span><span aria-hidden="true">→</span></button>
+          </div>
+          <div class="practice-hint-box is-hidden" id="practiceHintBox"><strong>提示</strong><p id="practiceHintText"></p></div>
+        </section>
+
+        <section class="practice-feedback is-hidden" id="practiceFeedback" aria-live="polite">
+          <header><div><span>本题反馈</span><h2 id="feedbackTitle">评分完成</h2></div><div class="practice-score"><strong id="practiceScore">—</strong><small>/10</small></div></header>
+          <div class="practice-feedback-grid">
+            <article><h3>做得好的地方</h3><ul id="practiceStrengths"></ul></article>
+            <article class="is-deduction"><h3>具体扣分点</h3><ul id="practiceDeductions"></ul></article>
+            <article><h3>答题要点</h3><ul id="practiceKeyPoints"></ul></article>
+            <article class="practice-better-answer"><h3>改写示范</h3><p id="practiceBetterAnswer"></p></article>
+          </div>
+          <div class="practice-feedback-actions">
+            <button class="secondary-button" id="reattemptButton" type="button">再答一次</button>
+            <button class="primary-button practice-next" id="nextQuestionButton" type="button"><span class="button-label">下一题</span><span aria-hidden="true">→</span></button>
+          </div>
+        </section>
+      </section>
+
+      <section class="practice-complete is-hidden" id="practiceComplete">
+        <span class="practice-complete-mark" aria-hidden="true">✓</span>
+        <h1>这组题练完了。</h1>
+        <p id="practiceCompleteSummary">每一次完整表达，都比只看答案更接近真实面试。</p>
+        <div><button class="primary-link large" id="practiceAgain" type="button">再刷一组</button><a class="secondary-button" href="/">去完整模拟</a></div>
+      </section>
+    </main>
+    <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="/js/practice.js?v=20260830-practice"></script>
+  </body>
+</html>

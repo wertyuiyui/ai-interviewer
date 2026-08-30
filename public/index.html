@@ -17,6 +17,7 @@
       </a>
       <nav class="header-actions" aria-label="主导航">
         <span class="mode-pill is-loading" id="modePill"><i></i><span>检测服务模式</span></span>
+        <a class="text-link" href="/practice">快速刷题</a>
         <a class="text-link" href="/report?view=history">历史报告 <span aria-hidden="true">↗</span></a>
       </nav>
     </header>
@@ -74,6 +75,9 @@
               <label class="company-option is-selected"><input type="radio" name="company" value="bytedance" checked><span class="company-symbol byte" aria-hidden="true">字</span><span><strong>字节跳动</strong><small>追问到底 · 每轮手撕</small></span><i aria-hidden="true"></i></label>
               <label class="company-option"><input type="radio" name="company" value="meituan"><span class="company-symbol meituan" aria-hidden="true">美</span><span><strong>美团</strong><small>项目深挖 · 基础延伸</small></span><i aria-hidden="true"></i></label>
               <label class="company-option"><input type="radio" name="company" value="tencent"><span class="company-symbol tencent" aria-hidden="true">腾</span><span><strong>腾讯</strong><small>循循善诱 · 温和深挖</small></span><i aria-hidden="true"></i></label>
+              <label class="company-option"><input type="radio" name="company" value="alibaba"><span class="company-symbol alibaba" aria-hidden="true">阿</span><span><strong>阿里巴巴</strong><small>技术选型 · 系统思维</small></span><i aria-hidden="true"></i></label>
+              <label class="company-option"><input type="radio" name="company" value="baidu"><span class="company-symbol baidu" aria-hidden="true">百</span><span><strong>百度</strong><small>基础原理 · 工程场景</small></span><i aria-hidden="true"></i></label>
+              <label class="company-option"><input type="radio" name="company" value="huawei"><span class="company-symbol huawei" aria-hidden="true">华</span><span><strong>华为</strong><small>技术问答 · 项目掌握</small></span><i aria-hidden="true"></i></label>
             </div>
           </fieldset>
 
@@ -109,10 +113,11 @@
               </div>
             </div>
             <div class="setting-row language-row">
-              <div class="setting-copy"><strong>面试语言</strong><small>中英双语会保留常用英文术语，并可能追问英文表达</small></div>
+              <div class="setting-copy"><strong>面试语言</strong><small id="languageHint">中英双语会保留常用英文术语，并可能追问英文表达</small></div>
               <div class="segmented language-segmented" role="radiogroup" aria-label="面试语言">
                 <label><input type="radio" name="language_mode" value="zh"><span>全程中文</span></label>
                 <label><input type="radio" name="language_mode" value="bilingual" checked><span>中英双语</span></label>
+                <label><input type="radio" name="language_mode" value="en"><span>Pure English</span></label>
               </div>
             </div>
             <div class="setting-row setting-row-stacked">
